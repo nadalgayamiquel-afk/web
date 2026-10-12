@@ -100,8 +100,10 @@ export function saveStoredRivales(rivales: RivalConfig[]): void {
   try {
     localStorage.setItem(RIVALES_STORAGE_KEY, JSON.stringify(rivales));
     window.dispatchEvent(new Event("rivales_updated"));
-    // Sincronizar asíncronamente con BBDD
-    saveRivalesBBDD(rivales).catch(console.error);
+    // Sincronizar asíncronamente con BBDD sin colisionar con ciclos de render de React
+    setTimeout(() => {
+      saveRivalesBBDD(rivales).catch(console.error);
+    }, 0);
   } catch (e) {
     console.error("Error guardando custom_rivales_config:", e);
   }

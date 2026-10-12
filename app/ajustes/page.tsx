@@ -291,18 +291,18 @@ export default function AjustesPage() {
       const dataUrl = uploadEvent.target?.result as string;
       if (dataUrl) {
         if (index !== undefined) {
-          setRivalesConfig((prev) => {
-            const next = prev.map((r, i) => (i === index ? { ...r, escudoUrl: dataUrl } : r));
-            saveStoredRivales(next);
-            if (index !== undefined && prev[index]) {
+          const next = rivalesConfig.map((r, i) => (i === index ? { ...r, escudoUrl: dataUrl } : r));
+          setRivalesConfig(next);
+          saveStoredRivales(next);
+          if (index !== undefined && rivalesConfig[index]) {
+            setTimeout(() => {
               upsertSingleRivalBBDD({
-                id: prev[index].id,
-                nombre: prev[index].nombre,
+                id: rivalesConfig[index].id,
+                nombre: rivalesConfig[index].nombre,
                 escudo_url: dataUrl
               }).catch(console.error);
-            }
-            return next;
-          });
+            }, 0);
+          }
         } else {
           setNewRivalEscudoUrl(dataUrl);
         }
@@ -2099,17 +2099,16 @@ for (let i = localStorage.length - 1; i >= 0; i--) {
                         }
                         const id = trimmed.toLowerCase().replace(/[^a-z0-9]/g, "-");
                         const cleanUrl = newRivalEscudoUrl.trim();
-                        upsertSingleRivalBBDD({
-                          id,
-                          nombre: trimmed,
-                          escudo_url: cleanUrl
-                        }).catch(console.error);
-
-                        setRivalesConfig((prev) => {
-                          const next = [{ id, nombre: trimmed, escudoUrl: cleanUrl }, ...prev.filter(r => r.id !== id)];
-                          saveStoredRivales(next);
-                          return next;
-                        });
+                        const next = [{ id, nombre: trimmed, escudoUrl: cleanUrl }, ...rivalesConfig.filter(r => r.id !== id)];
+                        setRivalesConfig(next);
+                        saveStoredRivales(next);
+                        setTimeout(() => {
+                          upsertSingleRivalBBDD({
+                            id,
+                            nombre: trimmed,
+                            escudo_url: cleanUrl
+                          }).catch(console.error);
+                        }, 0);
                         setNewRivalName("");
                         setNewRivalEscudoUrl("");
                       }}
@@ -2188,18 +2187,19 @@ for (let i = localStorage.length - 1; i >= 0; i--) {
                                 value={rival.nombre}
                                 onChange={(e) => {
                                   const val = e.target.value.toUpperCase();
-                                  setRivalesConfig((prev) => {
-                                    const next = prev.map((r, i) => (i === originalIdx ? { ...r, nombre: val } : r));
-                                    saveStoredRivales(next);
-                                    if (prev[originalIdx]) {
+                                  setRivalesConfig((prev) => prev.map((r, i) => (i === originalIdx ? { ...r, nombre: val } : r)));
+                                }}
+                                onBlur={() => {
+                                  saveStoredRivales(rivalesConfig);
+                                  if (rivalesConfig[originalIdx]) {
+                                    setTimeout(() => {
                                       upsertSingleRivalBBDD({
-                                        id: prev[originalIdx].id,
-                                        nombre: val,
-                                        escudo_url: prev[originalIdx].escudoUrl
+                                        id: rivalesConfig[originalIdx].id,
+                                        nombre: rivalesConfig[originalIdx].nombre,
+                                        escudo_url: rivalesConfig[originalIdx].escudoUrl
                                       }).catch(console.error);
-                                    }
-                                    return next;
-                                  });
+                                    }, 0);
+                                  }
                                 }}
                                 style={{ width: "100%", fontSize: "13px", fontWeight: 700, color: "#1e293b", padding: "6px 10px", borderRadius: "6px", border: "1px solid #cbd5e1" }}
                               />
@@ -2211,18 +2211,19 @@ for (let i = localStorage.length - 1; i >= 0; i--) {
                                 value={rival.escudoUrl || ""}
                                 onChange={(e) => {
                                   const val = e.target.value;
-                                  setRivalesConfig((prev) => {
-                                    const next = prev.map((r, i) => (i === originalIdx ? { ...r, escudoUrl: val } : r));
-                                    saveStoredRivales(next);
-                                    if (prev[originalIdx]) {
+                                  setRivalesConfig((prev) => prev.map((r, i) => (i === originalIdx ? { ...r, escudoUrl: val } : r)));
+                                }}
+                                onBlur={() => {
+                                  saveStoredRivales(rivalesConfig);
+                                  if (rivalesConfig[originalIdx]) {
+                                    setTimeout(() => {
                                       upsertSingleRivalBBDD({
-                                        id: prev[originalIdx].id,
-                                        nombre: prev[originalIdx].nombre,
-                                        escudo_url: val
+                                        id: rivalesConfig[originalIdx].id,
+                                        nombre: rivalesConfig[originalIdx].nombre,
+                                        escudo_url: rivalesConfig[originalIdx].escudoUrl
                                       }).catch(console.error);
-                                    }
-                                    return next;
-                                  });
+                                    }, 0);
+                                  }
                                 }}
                                 style={{ width: "100%", fontSize: "12px", padding: "6px 10px", borderRadius: "6px", border: "1px solid #cbd5e1", color: "#0f172a" }}
                               />
@@ -2254,11 +2255,14 @@ for (let i = localStorage.length - 1; i >= 0; i--) {
                                 <button
                                   onClick={() => {
                                     if (confirm("¿Eliminar rival \"" + rival.nombre + "\"?")) {
-                                      setRivalesConfig((prev) => {
-                                        const next = prev.filter((_, i) => i !== originalIdx);
-                                        saveStoredRivales(next);
-                                        return next;
-                                      });
+                                      const next = rivalesConfig.filter((_, i) => i !== originalIdx);
+                                      setRivalesConfig(next);
+                                      saveStoredRivales(next);
+                                      if (rival.id) {
+                                        setTimeout(() => {
+                                          deleteRivalBBDD(rival.id).catch(console.error);
+                                        }, 0);
+                                      }
                                     }
                                   }}
                                   style={{

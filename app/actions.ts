@@ -3285,7 +3285,6 @@ export async function saveRivalesBBDD(rivales: any[]) {
       return { success: false, error: error.message };
     }
     revalidatePath("/calendario");
-    revalidatePath("/ajustes");
     return { success: true };
   } catch (err: any) {
     console.error("Error saveRivalesBBDD:", err);
@@ -3327,7 +3326,6 @@ export async function upsertSingleRivalBBDD(rival: { id?: string; nombre: string
     }
 
     revalidatePath("/calendario");
-    revalidatePath("/ajustes");
     revalidatePath("/base-datos/bbdd");
     return { success: true, rival: data };
   } catch (err: any) {
@@ -3345,7 +3343,6 @@ export async function deleteRivalBBDD(id: string) {
       return { success: false, error: error.message };
     }
     revalidatePath("/calendario");
-    revalidatePath("/ajustes");
     return { success: true };
   } catch (err: any) {
     console.error("Error deleteRivalBBDD:", err);
