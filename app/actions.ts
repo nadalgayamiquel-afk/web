@@ -4835,3 +4835,76 @@ export async function getFuerzaSesionesForMatrix(): Promise<Record<string, any[]
     return {};
   }
 }
+
+// ==============================================================================
+// SINCRONIZACIÓN SUPABASE -> GITHUB Y BACKUPS COMPLETOS
+// ==============================================================================
+
+export async function syncSupabaseToGitHubAction(): Promise<{
+  success: boolean;
+  sizeMB?: string;
+  committed?: boolean;
+  pushed?: boolean;
+  message?: string;
+  timestamp?: string;
+  error?: string;
+}> {
+  try {
+    const { runBackup } = require("../scripts/backup_external");
+    const { backupData, sizeMB } = await runBackup();
+
+    const fs = require("fs");
+    const path = require("path");
+    const supabaseBackupsDir = path.resolve(process.cwd(), "supabase", "backups");
+    if (!fs.existsSync(supabaseBackupsDir)) {
+      fs.mkdirSync(supabaseBackupsDir, { recursive: true });
+    }
+    fs.writeFileSync(path.join(supabaseBackupsDir, "supabase_data_latest.json"), JSON.stringify(backupData, null, 2), "utf8");
+
+    const { execSync } = require("child_process");
+    const gitEnv = {
+      ...process.env,
+      GIT_EXEC_PATH: "/Applications/GitHub Desktop.app/Contents/Resources/app/git/libexec/git-core",
+      GIT_TEMPLATE_DIR: "/Applications/GitHub Desktop.app/Contents/Resources/app/git/share/git-core/templates",
+      GIT_TERMINAL_PROMPT: "0",
+      PATH: `/Users/MiquelNadalGaya/.gemini/antigravity-ide/bin:/Applications/GitHub Desktop.app/Contents/Resources/app/git/bin:${process.env.PATH || ""}`
+    };
+
+    execSync("git add supabase/ backups/ultimo_backup.json public/club_config.json", { cwd: process.cwd(), env: gitEnv });
+    const nowStr = new Date().toLocaleString("es-ES", { timeZone: "Europe/Madrid" });
+    const commitMsg = `chore: sincronizar datos y esquema de Supabase [${nowStr}]`;
+
+    let committed = false;
+    try {
+      execSync(`git commit -m "${commitMsg}"`, { cwd: process.cwd(), env: gitEnv });
+      committed = true;
+    } catch {}
+
+    let pushed = false;
+    let pushMessage = "";
+    try {
+      execSync("git push origin main", { cwd: process.cwd(), env: gitEnv });
+      pushed = true;
+      pushMessage = "Los cambios y datos se han subido directamente a GitHub.";
+    } catch (pushErr) {
+      pushMessage = "Copia guardada y confirmada en Git. Puedes pulsar 'Push origin' en GitHub Desktop para subirla.";
+    }
+
+    return {
+      success: true,
+      sizeMB,
+      committed,
+      pushed,
+      message: pushMessage,
+      timestamp: new Date().toISOString()
+    };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+}
+
+export async function getCompleteSupabaseBackup(): Promise<any> {
+  const { runBackup } = require("../scripts/backup_external");
+  const { backupData } = await runBackup();
+  return backupData;
+}

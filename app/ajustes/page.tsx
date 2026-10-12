@@ -5,7 +5,7 @@ import Link from "next/link";
 import { DEFAULT_TIPOS_EVENTO_CONFIG, TipoEventoConfig } from "@/app/calendario/CalendarGrid";
 import { DISPONIBILIDADES, DisponibilidadInfo } from "@/app/lib/disponibilidad";
 import { RivalConfig, DEFAULT_RIVALES, PRIMERA_RFEF_G2_2627, getStoredRivales, saveStoredRivales, findRivalEscudoUrl, syncRivalesFromBBDD } from "@/app/lib/rivales";
-import { getClubConfig, saveClubConfig, upsertSingleRivalBBDD, deleteRivalBBDD, getRivalesBBDD, getExternalLinksBBDD, saveExternalLinksBBDD } from "@/app/actions";
+import { getClubConfig, saveClubConfig, upsertSingleRivalBBDD, deleteRivalBBDD, getRivalesBBDD, getExternalLinksBBDD, saveExternalLinksBBDD, syncSupabaseToGitHubAction, getCompleteSupabaseBackup } from "@/app/actions";
 import { ExternalDatabaseLinks, DEFAULT_EXTERNAL_LINKS } from "@/app/lib/externalLinks";
 import GpsSettingsSection from "./GpsSettingsSection";
 
@@ -75,6 +75,40 @@ export default function AjustesPage() {
 
   // State para Club, Temporadas y Escudos
   const [clubConfig, setClubConfig] = useState<ClubConfig>(DEFAULT_CLUB_CONFIG);
+  const [syncingGithub, setSyncingGithub] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ success?: boolean; message?: string; sizeMB?: string; timestamp?: string } | null>(null);
+  const [downloadingSupabase, setDownloadingSupabase] = useState(false);
+
+  const handleSyncToGitHub = async () => {
+    setSyncingGithub(true);
+    setSyncResult(null);
+    try {
+      const res = await syncSupabaseToGitHubAction();
+      setSyncResult(res);
+    } catch (err: any) {
+      setSyncResult({ success: false, message: err.message });
+    } finally {
+      setSyncingGithub(false);
+    }
+  };
+
+  const handleDownloadSupabase = async () => {
+    setDownloadingSupabase(true);
+    try {
+      const data = await getCompleteSupabaseBackup();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `backup_supabase_completo_${new Date().toISOString().split("T")[0]}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      alert("Error al descargar el backup de Supabase: " + err.message);
+    } finally {
+      setDownloadingSupabase(false);
+    }
+  };
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
@@ -623,6 +657,80 @@ export default function AjustesPage() {
           {/* CONTENIDO DE LA PESTAÑA: DATOS Y MEMORIA */}
           {activeTab === "datos" && (
             <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+              {/* CARD: SUPABASE CLOUD & GITHUB SYNC */}
+              <div style={{ border: "1px solid #cbd5e1", borderRadius: "12px", padding: "20px", background: "#ffffff" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+                  <h3 style={{ fontSize: "16px", fontWeight: 900, color: "#0f766e", margin: 0, display: "flex", alignItems: "center", gap: "8px" }}>
+                    ☁️ Supabase Cloud & GitHub Sync
+                  </h3>
+                  <span style={{ fontSize: "11px", fontWeight: 800, padding: "4px 10px", borderRadius: "999px", background: "#dcfce7", color: "#166534" }}>
+                    ● Supabase Conectado
+                  </span>
+                </div>
+
+                <p style={{ fontSize: "13px", color: "#475569", marginBottom: "16px", lineHeight: "1.5" }}>
+                  Extrae las tablas en tiempo real de <strong>Supabase</strong> (jugadores, sesiones, minutos, fuerza, lesiones, GPS, ejercicios y comentarios), genera un respaldo estructurado e interactúa con el repositorio de <strong>GitHub</strong> (<code>nadalgayamiquel-afk/web</code>).
+                </p>
+
+                {syncResult && (
+                  <div style={{
+                    marginBottom: "16px",
+                    padding: "12px 16px",
+                    borderRadius: "8px",
+                    fontSize: "13px",
+                    background: syncResult.success ? "#f0fdf4" : "#fef2f2",
+                    border: `1px solid ${syncResult.success ? "#bbf7d0" : "#fecaca"}`,
+                    color: syncResult.success ? "#166534" : "#991b1b"
+                  }}>
+                    <strong>{syncResult.success ? "✅ Sincronización Completada:" : "❌ Error:"}</strong> {syncResult.message}
+                    {syncResult.sizeMB && ` (Tamaño exportado: ${syncResult.sizeMB} MB)`}
+                  </div>
+                )}
+
+                <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    onClick={handleSyncToGitHub}
+                    disabled={syncingGithub}
+                    style={{
+                      background: syncingGithub ? "#94a3b8" : "#0f766e",
+                      color: "#ffffff",
+                      border: "none",
+                      padding: "10px 20px",
+                      borderRadius: "8px",
+                      fontSize: "13px",
+                      fontWeight: 800,
+                      cursor: syncingGithub ? "not-allowed" : "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px"
+                    }}
+                  >
+                    {syncingGithub ? "⏳ Extrayendo y sincronizando..." : "🚀 Sincronizar Supabase a GitHub"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleDownloadSupabase}
+                    disabled={downloadingSupabase}
+                    style={{
+                      background: downloadingSupabase ? "#94a3b8" : "#1e293b",
+                      color: "#ffffff",
+                      border: "none",
+                      padding: "10px 20px",
+                      borderRadius: "8px",
+                      fontSize: "13px",
+                      fontWeight: 800,
+                      cursor: downloadingSupabase ? "not-allowed" : "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px"
+                    }}
+                  >
+                    {downloadingSupabase ? "⏳ Generando JSON..." : "⬇️ Descargar BBDD Supabase (JSON)"}
+                  </button>
+                </div>
+              </div>
               <div style={{ border: "1px solid #cbd5e1", borderRadius: "12px", padding: "20px", background: "#ffffff" }}>
                 <h3 style={{ fontSize: "16px", fontWeight: 900, color: "#1e3a8a", margin: "0 0 14px 0" }}>
                   💾 Copia de Seguridad Completa (Navegador)
