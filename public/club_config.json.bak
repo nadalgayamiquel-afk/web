@@ -1,0 +1,49 @@
+{
+  "nombreClub": "CE EUROPA",
+  "siglas": "CEE",
+  "categoria": "1er Equipo",
+  "escudoUrl": "/ce-europa.png",
+  "escudoSecundarioUrl": "",
+  "temporadaActiva": "2026/27",
+  "temporadas": [
+    {
+      "liga": "Primera Federación",
+      "grupo": "Grupo 2",
+      "equipo": "CE EUROPA",
+      "esActiva": true,
+      "escudoUrl": "/ce-europa.png",
+      "temporada": "2026/27"
+    },
+    {
+      "liga": "Segunda Federación",
+      "grupo": "Grupo 2",
+      "equipo": "CE MANRESA",
+      "esActiva": false,
+      "escudoUrl": "/ce-manresa.png",
+      "temporada": "2026/27"
+    },
+    {
+      "liga": "Lliga Elit",
+      "grupo": "Único",
+      "equipo": "AE PRAT",
+      "esActiva": false,
+      "escudoUrl": "https://cdn.prod.website-files.com/633a8e278241ee3c4e97f8b2/6346c26d0d29e4499f17f752_prat.png",
+      "temporada": "2025/26"
+    }
+  ],
+  "enlacesExternos": {
+    "gps": {
+      "url": "https://docs.google.com/spreadsheets/d/1Q_jYilNR1KQk3YSmugbYXbeW8xdWUqQlWtcDJ2Np9JA/edit?gid=0#gid=0",
+      "notas": "Repositorio o plataforma de métricas GPS de entrenamientos y partidos.",
+      "nombre": "Base de Datos GPS (Carga Externa)",
+      "proveedor": "Otro"
+    },
+    "wellness": {
+      "url": "https://docs.google.com/spreadsheets/d/1JQXKfCrGCxom-N-RM-6nbDqQ0asnL_le0Z4EOwFc5Ds/edit?gid=432486581#gid=432486581",
+      "notas": "Cuestionarios diarios de fatiga, sueño, dolor muscular y bienestar general.",
+      "nombre": "Base de Datos Wellness (Carga Interna)",
+      "proveedor": "Google Sheets"
+    },
+    "adicionales": []
+  }
+}

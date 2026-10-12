@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 360" width="300" height="360">
+  <defs>
+    <!-- Sombras finas -->
+    <filter id="drop-shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#000000" flood-opacity="0.25" />
+    </filter>
+    <!-- Gradiente Marco Dorado -->
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FCD34D" />
+      <stop offset="50%" stop-color="#D97706" />
+      <stop offset="100%" stop-color="#92400E" />
+    </linearGradient>
+    <!-- Gradiente Mástil -->
+    <linearGradient id="woodGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#B45309" />
+      <stop offset="100%" stop-color="#78350F" />
+    </linearGradient>
+  </defs>
+
+  <!-- MÁSTIL DE MADERA Y POMO SUPERIOR -->
+  <g filter="url(#drop-shadow)">
+    <line x1="32" y1="328" x2="270" y2="40" stroke="url(#woodGrad)" stroke-width="15" stroke-linecap="round" />
+    <circle cx="270" cy="40" r="12" fill="#F59E0B" stroke="#78350F" stroke-width="2.5" />
+  </g>
+
+  <!-- CUERPO PRINCIPAL DEL ESCUDO -->
+  <g filter="url(#drop-shadow)">
+    <!-- Borde exterior dorado esculpido -->
+    <polygon points="55,42 95,20 150,42 205,20 245,42 262,185 150,340 38,185" fill="url(#goldGrad)" stroke="#451A03" stroke-width="4" stroke-linejoin="round" />
+    <!-- Interior blanco -->
+    <polygon points="62,48 95,28 150,48 205,28 238,48 254,180 150,330 46,180" fill="#FFFFFF" />
+  </g>
+
+  <!-- MITAD SUPERIOR: SENYERA (BARRAS ROJAS Y AMARILLAS) CON TITULO Cd'EM -->
+  <g clip-path="url(#topClip)">
+    <clipPath id="topClip">
+      <polygon points="62,48 95,28 150,48 205,28 238,48 252,175 48,175" />
+    </clipPath>
+    <!-- Fondo amarillo oro -->
+    <rect x="40" y="20" width="220" height="160" fill="#FFCC00" />
+    <!-- 4 Barras rojas vivas del Manresa -->
+    <rect x="74" y="10" width="20" height="170" fill="#DC2626" />
+    <rect x="114" y="10" width="20" height="170" fill="#DC2626" />
+    <rect x="154" y="10" width="20" height="170" fill="#DC2626" />
+    <rect x="194" y="10" width="20" height="170" fill="#DC2626" />
+
+    <!-- Texto emblemático Cd'EM -->
+    <text x="150" y="76" font-family="Arial Black, Impact, sans-serif" font-size="28" font-weight="900" fill="#0F172A" text-anchor="middle" letter-spacing="-0.5">Cd'EM</text>
+  </g>
+
+  <!-- MITAD INFERIOR: CRUZ ROJA DE SANT JORDI SOBRE FONDO BLANCO -->
+  <g clip-path="url(#bottomClip)">
+    <clipPath id="bottomClip">
+      <polygon points="48,175 252,175 150,330" />
+    </clipPath>
+    <rect x="40" y="170" width="220" height="170" fill="#FFFFFF" />
+    <!-- Cruz de Sant Jordi (Vertical y Horizontal) -->
+    <rect x="136" y="170" width="28" height="170" fill="#DC2626" />
+    <rect x="40" y="222" width="220" height="28" fill="#DC2626" />
+  </g>
+
+  <!-- REBORDE DE SEPARACIÓN INTERNO Y SILUETA -->
+  <polygon points="55,42 95,20 150,42 205,20 245,42 262,185 150,340 38,185" fill="none" stroke="#78350F" stroke-width="3" stroke-linejoin="round" />
+
+  <!-- BANDA / CINTA ONDULADA EMBLEMÁTICA ROJA Y BLANCA DIAGONAL -->
+  <g filter="url(#drop-shadow)">
+    <!-- Cuerpo de la bandera ondeando -->
+    <path d="M 40,48 C 65,12 135,38 255,75 C 275,135 240,195 218,215 C 135,172 65,160 40,48 Z" fill="#FFFFFF" stroke="#991B1B" stroke-width="3.5" stroke-linejoin="round" />
+    <!-- Franjas rojas ondeantes paralelas -->
+    <path d="M 42,70 C 72,34 138,58 253,93" fill="none" stroke="#DC2626" stroke-width="7" stroke-linecap="round" />
+    <path d="M 44,95 C 75,59 142,83 245,118" fill="none" stroke="#DC2626" stroke-width="7" stroke-linecap="round" />
+    <path d="M 47,120 C 78,84 146,108 235,143" fill="none" stroke="#DC2626" stroke-width="7" stroke-linecap="round" />
+    <path d="M 51,145 C 82,109 150,133 223,168" fill="none" stroke="#DC2626" stroke-width="7" stroke-linecap="round" />
+  </g>
+</svg>
