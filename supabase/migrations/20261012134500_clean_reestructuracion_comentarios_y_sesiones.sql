@@ -82,7 +82,7 @@ UPDATE "public"."estado_diario_jugador"
   WHERE duracion_evento IS NULL AND minutos IS NOT NULL;
 
 UPDATE "public"."estado_diario_jugador"
-  SET minutos = duracion_evento
+  SET minutos = NULLIF(regexp_replace(duracion_evento, '[^0-9]', '', 'g'), '')::integer
   WHERE minutos IS NULL AND duracion_evento IS NOT NULL;
 
 -- RLS y Políticas de acceso libre para Minutos y Estado Diario
@@ -94,7 +94,7 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_policies WHERE tablename = 'minutos_jugador_evento' AND policyname = 'Permitir todo en minutos_jugador_evento'
   ) THEN
-    CREATE POLICY 'Permitir todo en minutos_jugador_evento' ON "public"."minutos_jugador_evento" FOR ALL USING (true) WITH CHECK (true);
+    CREATE POLICY "Permitir todo en minutos_jugador_evento" ON "public"."minutos_jugador_evento" FOR ALL USING (true) WITH CHECK (true);
   END IF;
 END $$;
 
@@ -103,7 +103,7 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_policies WHERE tablename = 'estado_diario_jugador' AND policyname = 'Permitir todo en estado_diario_jugador'
   ) THEN
-    CREATE POLICY 'Permitir todo en estado_diario_jugador' ON "public"."estado_diario_jugador" FOR ALL USING (true) WITH CHECK (true);
+    CREATE POLICY "Permitir todo en estado_diario_jugador" ON "public"."estado_diario_jugador" FOR ALL USING (true) WITH CHECK (true);
   END IF;
 END $$;
 
@@ -143,9 +143,30 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_policies WHERE tablename = 'fuerza_sesiones' AND policyname = 'Permitir todo en fuerza_sesiones'
   ) THEN
-    CREATE POLICY 'Permitir todo en fuerza_sesiones' ON "public"."fuerza_sesiones" FOR ALL USING (true) WITH CHECK (true);
+    CREATE POLICY "Permitir todo en fuerza_sesiones" ON "public"."fuerza_sesiones" FOR ALL USING (true) WITH CHECK (true);
   END IF;
 END $$;
 
 CREATE INDEX IF NOT EXISTS "idx_fuerza_sesiones_jugador_id" ON "public"."fuerza_sesiones" ("jugador_id");
 CREATE INDEX IF NOT EXISTS "idx_fuerza_sesiones_fecha" ON "public"."fuerza_sesiones" ("fecha");
+
+
+-- 6. Políticas de acceso completo para jugadores, sesiones y GPS en entorno local y producción
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'jugadores' AND policyname = 'Permitir todo en jugadores') THEN
+    CREATE POLICY "Permitir todo en jugadores" ON "public"."jugadores" FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'sesiones_dia' AND policyname = 'Permitir todo en sesiones_dia') THEN
+    CREATE POLICY "Permitir todo en sesiones_dia" ON "public"."sesiones_dia" FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'sesiones_dia_bloques' AND policyname = 'Permitir todo en sesiones_dia_bloques') THEN
+    CREATE POLICY "Permitir todo en sesiones_dia_bloques" ON "public"."sesiones_dia_bloques" FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'gps_datos' AND policyname = 'Permitir todo en gps_datos') THEN
+    CREATE POLICY "Permitir todo en gps_datos" ON "public"."gps_datos" FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'lesiones' AND policyname = 'Permitir todo en lesiones') THEN
+    CREATE POLICY "Permitir todo en lesiones" ON "public"."lesiones" FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+END $$;
