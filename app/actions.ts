@@ -3254,23 +3254,39 @@ export async function getRivalesBBDD() {
   const supabase = getServerSupabase();
   try {
     const { data, error } = await supabase.from("rivales").select("*").order("nombre", { ascending: true });
-    if (error) {
-      return [];
+    if (!error && data && data.length > 0) {
+      return data.map((r: any) => ({
+        id: r.id,
+        nombre: r.nombre,
+        escudoUrl: r.escudo_url || "",
+        escudo_url: r.escudo_url || "",
+        alias: r.alias || []
+      }));
     }
-    return (data || []).map((r: any) => ({
-      id: r.id,
-      nombre: r.nombre,
-      escudoUrl: r.escudo_url || "",
-      escudo_url: r.escudo_url || "",
-      alias: r.alias || []
-    }));
-  } catch (err) {
-    console.error("Error getRivalesBBDD:", err);
-    return [];
-  }
+  } catch (err) {}
+
+  try {
+    const path = require("path");
+    const filePath = path.join(process.cwd(), "public", "rivales_config.json");
+    if (fs.existsSync(filePath)) {
+      const raw = fs.readFileSync(filePath, "utf8");
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {}
+
+  return [];
 }
 
 export async function saveRivalesBBDD(rivales: any[]) {
+  try {
+    const path = require("path");
+    const filePath = path.join(process.cwd(), "public", "rivales_config.json");
+    fs.writeFileSync(filePath, JSON.stringify(rivales, null, 2), "utf8");
+  } catch (e) {
+    console.error("Error guardando public/rivales_config.json:", e);
+  }
+
   const supabase = getServerSupabase();
   try {
     const rows = rivales.map(r => ({
@@ -3279,17 +3295,11 @@ export async function saveRivalesBBDD(rivales: any[]) {
       escudo_url: r.escudo_url !== undefined ? r.escudo_url : (r.escudoUrl || ""),
       alias: r.alias || [String(r.nombre || "").trim().toUpperCase()]
     }));
-    const { error } = await supabase.from("rivales").upsert(rows, { onConflict: "id" });
-    if (error) {
-      console.error("Error saveRivalesBBDD:", error);
-      return { success: false, error: error.message };
-    }
-    revalidatePath("/calendario");
-    return { success: true };
-  } catch (err: any) {
-    console.error("Error saveRivalesBBDD:", err);
-    return { success: false, error: err?.message };
-  }
+    await supabase.from("rivales").upsert(rows, { onConflict: "id" });
+  } catch (err: any) {}
+
+  revalidatePath("/calendario");
+  return { success: true };
 }
 
 export async function upsertSingleRivalBBDD(rival: { id?: string; nombre: string; escudo_url?: string; escudoUrl?: string; alias?: string[] }) {

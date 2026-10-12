@@ -2040,6 +2040,13 @@ for (let i = localStorage.length - 1; i >= 0; i--) {
                       placeholder="Ej: CF Badalona"
                       value={newRivalName}
                       onChange={(e) => setNewRivalName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          const btn = document.getElementById("btn-add-rival");
+                          btn?.click();
+                        }
+                      }}
                       style={{ width: "100%", fontSize: "13px", fontWeight: 600, padding: "8px 12px", borderRadius: "6px", border: "1px solid #cbd5e1" }}
                     />
                   </div>
@@ -2049,9 +2056,16 @@ for (let i = localStorage.length - 1; i >= 0; i--) {
                     </label>
                     <input
                       type="text"
-                      placeholder="https://.../escudo.png"
+                      placeholder="https://.../escudo.png (opcional)"
                       value={newRivalEscudoUrl}
                       onChange={(e) => setNewRivalEscudoUrl(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          const btn = document.getElementById("btn-add-rival");
+                          btn?.click();
+                        }
+                      }}
                       style={{ width: "100%", fontSize: "13px", padding: "8px 12px", borderRadius: "6px", border: "1px solid #cbd5e1" }}
                     />
                   </div>
@@ -2091,6 +2105,8 @@ for (let i = localStorage.length - 1; i >= 0; i--) {
                     )}
 
                     <button
+                      id="btn-add-rival"
+                      type="button"
                       onClick={() => {
                         const trimmed = newRivalName.trim().toUpperCase();
                         if (!trimmed) {
@@ -2098,8 +2114,14 @@ for (let i = localStorage.length - 1; i >= 0; i--) {
                           return;
                         }
                         const id = trimmed.toLowerCase().replace(/[^a-z0-9]/g, "-");
-                        const cleanUrl = newRivalEscudoUrl.trim();
-                        const next = [{ id, nombre: trimmed, escudoUrl: cleanUrl }, ...rivalesConfig.filter(r => r.id !== id)];
+                        let cleanUrl = newRivalEscudoUrl.trim();
+                        if (!cleanUrl) {
+                          cleanUrl = findRivalEscudoUrl(trimmed);
+                        }
+                        const next = [
+                          { id, nombre: trimmed, escudoUrl: cleanUrl },
+                          ...rivalesConfig.filter(r => r.id !== id && r.nombre.toUpperCase() !== trimmed)
+                        ];
                         setRivalesConfig(next);
                         saveStoredRivales(next);
                         setTimeout(() => {

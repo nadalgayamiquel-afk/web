@@ -56,30 +56,29 @@ export function getStoredRivales(): RivalConfig[] {
   try {
     const defaultMap = new Map(PRIMERA_RFEF_G2_2627.map((d) => [d.id, d.escudoUrl]));
     const nameMap = new Map(PRIMERA_RFEF_G2_2627.map((d) => [normalizeTeamName(d.nombre), d.escudoUrl]));
-    const validNorms = new Set(PRIMERA_RFEF_G2_2627.map((d) => normalizeTeamName(d.nombre)));
-    const validIds = new Set(PRIMERA_RFEF_G2_2627.map((d) => d.id));
 
     const saved = localStorage.getItem(RIVALES_STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        // Filtrar y eliminar estrictamente equipos de otras divisiones o clubes pasados (ej: Manresa, Olot, Prat, etc.)
-        const validItems = parsed.filter((item: any) => {
-          const norm = normalizeTeamName(item?.nombre || "");
-          return validNorms.has(norm) || validIds.has(item?.id);
-        });
+        // Aceptar TODOS los equipos con nombre válido (no filtrar los creados por el usuario)
+        const validItems = parsed.filter(
+          (item: any) => item && typeof item === "object" && item.nombre && String(item.nombre).trim().length > 0
+        );
 
         const updated = validItems.map((item: any) => {
-          const defUrl = defaultMap.get(item.id) || nameMap.get(normalizeTeamName(item.nombre));
-          const upperName = (item.nombre || "").toUpperCase();
-          if (defUrl) {
-            return { ...item, nombre: upperName, escudoUrl: defUrl };
-          }
-          return { ...item, nombre: upperName };
+          const upperName = String(item.nombre || "").trim().toUpperCase();
+          const defUrl = defaultMap.get(item.id) || nameMap.get(normalizeTeamName(upperName));
+          const escudoUrl = item.escudoUrl || defUrl || "";
+          return {
+            id: item.id || normalizeTeamName(upperName) || String(Date.now()),
+            nombre: upperName,
+            escudoUrl: escudoUrl
+          };
         });
 
-        const existingIds = new Set(updated.map((p: any) => p.id));
-        const missingDefaults = PRIMERA_RFEF_G2_2627.filter((d) => !existingIds.has(d.id));
+        const existingNorms = new Set(updated.map((p: any) => normalizeTeamName(p.nombre)));
+        const missingDefaults = PRIMERA_RFEF_G2_2627.filter((d) => !existingNorms.has(normalizeTeamName(d.nombre)));
         const fullList = [...updated, ...missingDefaults];
 
         localStorage.setItem(RIVALES_STORAGE_KEY, JSON.stringify(fullList));
@@ -114,12 +113,20 @@ export async function syncRivalesFromBBDD(): Promise<void> {
   try {
     const dbRivales = await getRivalesBBDD();
     if (dbRivales && dbRivales.length > 0) {
-      const formatted = dbRivales.map((r: any) => ({
-        id: r.id,
-        nombre: r.nombre,
-        escudoUrl: r.escudo_url || ""
-      }));
-      localStorage.setItem(RIVALES_STORAGE_KEY, JSON.stringify(formatted));
+      const current = getStoredRivales();
+      const currentMap = new Map(current.map(r => [normalizeTeamName(r.nombre), r]));
+      dbRivales.forEach((r: any) => {
+        const norm = normalizeTeamName(r.nombre);
+        if (norm && !currentMap.has(norm)) {
+          currentMap.set(norm, {
+            id: r.id || norm,
+            nombre: String(r.nombre).trim().toUpperCase(),
+            escudoUrl: r.escudo_url || r.escudoUrl || ""
+          });
+        }
+      });
+      const merged = Array.from(currentMap.values());
+      localStorage.setItem(RIVALES_STORAGE_KEY, JSON.stringify(merged));
       window.dispatchEvent(new Event("rivales_updated"));
     }
   } catch (e) {
