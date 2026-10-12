@@ -732,9 +732,14 @@ export default function AjustesPage() {
                 </div>
               </div>
               <div style={{ border: "1px solid #cbd5e1", borderRadius: "12px", padding: "20px", background: "#ffffff" }}>
-                <h3 style={{ fontSize: "16px", fontWeight: 900, color: "#1e3a8a", margin: "0 0 14px 0" }}>
-                  💾 Copia de Seguridad Completa (Navegador)
-                </h3>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px", flexWrap: "wrap", gap: "8px" }}>
+                  <h3 style={{ fontSize: "16px", fontWeight: 900, color: "#1e3a8a", margin: 0 }}>
+                    💾 Caché Local del Navegador (Historial de Versiones Anteriores)
+                  </h3>
+                  <span style={{ fontSize: "11px", fontWeight: 800, padding: "4px 8px", borderRadius: "6px", background: "#f0fdf4", color: "#166534", border: "1px solid #bbf7d0" }}>
+                    ✅ BBDD Principal Activa: Supabase Cloud
+                  </span>
+                </div>
                 
                 {/* INDICADOR DE MEMORIA */}
                 <div style={{ marginBottom: "20px", padding: "16px", background: "#f8fafc", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
@@ -749,9 +754,11 @@ export default function AjustesPage() {
                   </div>
                 </div>
 
-                <p style={{ fontSize: "13px", color: "#475569", marginBottom: "16px", lineHeight: "1.5" }}>
-                  Toda la información, planificaciones, configuraciones y datos de tu cuenta se guardan actualmente en la memoria local (<strong>localStorage</strong>) de este navegador web. Si vacías la caché del navegador, podrías perderlo todo. Aquí puedes exportar una copia idéntica a un archivo seguro en tu ordenador y restaurarla cuando lo necesites, o vaciarla si está llena.
-                </p>
+                <div style={{ padding: "12px 16px", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "8px", marginBottom: "16px" }}>
+                  <p style={{ fontSize: "13px", color: "#1e40af", margin: 0, lineHeight: "1.5" }}>
+                    ℹ️ <strong>Tu base de datos principal activa es Supabase Cloud.</strong> Los {memoryUsage.mb} MB mostrados arriba corresponden a la caché acumulada en la memoria temporal de este navegador (localStorage) durante versiones anteriores. Puedes pulsar en <strong>☁️ Migrar Datos a Supabase</strong> para asegurarte de que cualquier dato antiguo pase a la nube, o limpiar la caché local con seguridad.
+                  </p>
+                </div>
                 
                 <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
                   <button
@@ -954,7 +961,7 @@ export default function AjustesPage() {
                     type="button"
                     disabled={isMigrating}
                     onClick={async () => {
-                      if (!window.confirm("Asegúrate de haber creado primero las tablas SQL en Supabase (comentarios_diarios_jugador y minutos_jugador_evento). ¿Continuar?")) return;
+                      if (!window.confirm("¿Deseas volcar cualquier dato o comentario antiguo guardado en el navegador directamente a Supabase Cloud?")) return;
                       
                       setIsMigrating(true);
                       setMigracionStatus("Conectando con Supabase...");
