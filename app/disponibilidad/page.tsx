@@ -2418,18 +2418,7 @@ function DisponibilidadContent() {
                   <line x1="120" y1="700" x2="365" y2="700" stroke="rgba(255, 255, 255, 0.28)" strokeWidth="2" strokeDasharray="4 4" />
                   <line x1="635" y1="700" x2="880" y2="700" stroke="rgba(255, 255, 255, 0.28)" strokeWidth="2" strokeDasharray="4 4" />
                   
-                  {/* Etiqueta sutil */}
-                  <text
-                    x="500"
-                    y="676"
-                    textAnchor="middle"
-                    fill="rgba(255, 255, 255, 0.4)"
-                    fontSize="13"
-                    fontWeight="900"
-                    letterSpacing="3"
-                  >
-                    CUADRADO INTERIOR
-                  </text>
+
                 </g>
               )}
             </svg>
