@@ -2398,29 +2398,7 @@ function DisponibilidadContent() {
               <path d="M 400 1130 A 120 120 0 0 1 600 1130" fill="none" stroke="#ffffff" strokeWidth="4" strokeOpacity="0.85" />
               <rect x="410" y="1350" width="180" height="32" fill="rgba(255,255,255,0.15)" stroke="#ffffff" strokeWidth="3" strokeDasharray="4 4" />
 
-              {/* TÁCTICA 3-6-1: DIBUJO DEL CUADRADO INTERIOR Y CONECTORES DE CARRILES */}
-              {pitchSystem === "3-6-1" && (
-                <g>
-                  {/* Cuadrado Táctico Interior (Box Midfield) */}
-                  <rect
-                    x="365"
-                    y="500"
-                    width="270"
-                    height="340"
-                    rx="18"
-                    ry="18"
-                    fill="rgba(255, 255, 255, 0.05)"
-                    stroke="rgba(255, 255, 255, 0.45)"
-                    strokeWidth="2.5"
-                    strokeDasharray="8 6"
-                  />
-                  {/* Conectores tácticos punteados hacia los carrileros exteriores */}
-                  <line x1="120" y1="700" x2="365" y2="700" stroke="rgba(255, 255, 255, 0.28)" strokeWidth="2" strokeDasharray="4 4" />
-                  <line x1="635" y1="700" x2="880" y2="700" stroke="rgba(255, 255, 255, 0.28)" strokeWidth="2" strokeDasharray="4 4" />
-                  
 
-                </g>
-              )}
             </svg>
 
             {/* TARJETAS DE JUGADORES EN EL CAMPO TÁCTICO */}
