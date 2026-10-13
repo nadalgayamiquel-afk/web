@@ -317,13 +317,38 @@ function getPlayerStatus(
 // Mapeo táctico de posiciones en el campo
 
 const getPitchPositions = (system: string): Record<string, { top: string; left: string }> => {
-  const base = {
+  // Sistema 3-6-1 con cuadrado interior (por defecto)
+  const p361: Record<string, { top: string; left: string }> = {
+    PORTERO: { top: "88%", left: "50%" },
+    CENTRAL_IZQ: { top: "75%", left: "26%" },
+    CENTRAL_CEN: { top: "76%", left: "50%" },
+    CENTRAL_DER: { top: "75%", left: "74%" },
+    LATERAL_IZQ: { top: "50%", left: "12%" }, // Carril Izquierdo
+    LATERAL_DER: { top: "50%", left: "88%" }, // Carril Derecho
+    PIVOTE_IZQ: { top: "59%", left: "37%" },  // Base Izq del Cuadrado
+    PIVOTE_DER: { top: "59%", left: "63%" },  // Base Der del Cuadrado
+    PIVOTE: { top: "59%", left: "50%" },
+    INTERIOR_IZQ: { top: "37%", left: "37%" }, // Cúspide Izq del Cuadrado
+    INTERIOR_DER: { top: "37%", left: "63%" }, // Cúspide Der del Cuadrado
+    EXTREMO_IZQ: { top: "37%", left: "37%" },
+    EXTREMO_DER: { top: "37%", left: "63%" },
+    DELANTERO: { top: "17%", left: "50%" },
+  };
+
+  if (system === "3-6-1") {
+    return p361;
+  }
+
+  const base: Record<string, { top: string; left: string }> = {
     PORTERO: { top: "86%", left: "50%" },
     LATERAL_IZQ: { top: "68%", left: "16%" },
     CENTRAL_IZQ: { top: "72%", left: "37%" },
+    CENTRAL_CEN: { top: "72%", left: "50%" },
     CENTRAL_DER: { top: "72%", left: "63%" },
     LATERAL_DER: { top: "68%", left: "84%" },
     PIVOTE: { top: "50%", left: "50%" },
+    PIVOTE_IZQ: { top: "50%", left: "42%" },
+    PIVOTE_DER: { top: "50%", left: "58%" },
     INTERIOR_IZQ: { top: "42%", left: "32%" },
     INTERIOR_DER: { top: "42%", left: "68%" },
     EXTREMO_IZQ: { top: "22%", left: "18%" },
@@ -332,19 +357,19 @@ const getPitchPositions = (system: string): Record<string, { top: string; left: 
   };
 
   if (system === "4-4-2") {
-    return { ...base, PIVOTE: { top: "50%", left: "40%" }, INTERIOR_IZQ: { top: "50%", left: "40%" }, INTERIOR_DER: { top: "50%", left: "60%" }, EXTREMO_IZQ: { top: "42%", left: "16%" }, EXTREMO_DER: { top: "42%", left: "84%" } };
+    return { ...base, PIVOTE: { top: "50%", left: "40%" }, PIVOTE_IZQ: { top: "50%", left: "40%" }, PIVOTE_DER: { top: "50%", left: "60%" }, INTERIOR_IZQ: { top: "50%", left: "40%" }, INTERIOR_DER: { top: "50%", left: "60%" }, EXTREMO_IZQ: { top: "42%", left: "16%" }, EXTREMO_DER: { top: "42%", left: "84%" } };
   }
   if (system === "4-2-3-1") {
-    return { ...base, PIVOTE: { top: "54%", left: "38%" }, INTERIOR_IZQ: { top: "36%", left: "50%" }, INTERIOR_DER: { top: "54%", left: "62%" }, EXTREMO_IZQ: { top: "30%", left: "20%" }, EXTREMO_DER: { top: "30%", left: "80%" } };
+    return { ...base, PIVOTE: { top: "54%", left: "38%" }, PIVOTE_IZQ: { top: "54%", left: "38%" }, PIVOTE_DER: { top: "54%", left: "62%" }, INTERIOR_IZQ: { top: "36%", left: "50%" }, INTERIOR_DER: { top: "54%", left: "62%" }, EXTREMO_IZQ: { top: "30%", left: "20%" }, EXTREMO_DER: { top: "30%", left: "80%" } };
   }
   if (system === "5-3-2") {
-    return { ...base, LATERAL_IZQ: { top: "62%", left: "14%" }, LATERAL_DER: { top: "62%", left: "86%" }, CENTRAL_IZQ: { top: "72%", left: "28%" }, CENTRAL_DER: { top: "72%", left: "72%" }, PIVOTE: { top: "74%", left: "50%" }, INTERIOR_IZQ: { top: "44%", left: "35%" }, INTERIOR_DER: { top: "44%", left: "65%" }, EXTREMO_IZQ: { top: "44%", left: "35%" }, EXTREMO_DER: { top: "44%", left: "65%" } };
+    return { ...base, LATERAL_IZQ: { top: "62%", left: "14%" }, LATERAL_DER: { top: "62%", left: "86%" }, CENTRAL_IZQ: { top: "72%", left: "28%" }, CENTRAL_DER: { top: "72%", left: "72%" }, PIVOTE: { top: "74%", left: "50%" }, PIVOTE_IZQ: { top: "74%", left: "42%" }, PIVOTE_DER: { top: "74%", left: "58%" }, INTERIOR_IZQ: { top: "44%", left: "35%" }, INTERIOR_DER: { top: "44%", left: "65%" }, EXTREMO_IZQ: { top: "44%", left: "35%" }, EXTREMO_DER: { top: "44%", left: "65%" } };
   }
   
-  return base; // 4-3-3 default
+  return base; // 4-3-3
 };
 
-const pitchPositions = getPitchPositions("4-3-3");
+const pitchPositions = getPitchPositions("3-6-1");
 
 
 // Resolver la posición táctica en el campo basándose estrictamente en el perfil del deportista (j.posicion)
@@ -355,31 +380,41 @@ function resolvePitchPosition(j: any): string {
   const pos = posicionRaw.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
 
   if (pos.includes("PORT") || pos.includes("GK") || pos.includes("GUARD")) return "PORTERO";
-  if (pos.includes("LAT")) {
+  
+  if (pos.includes("LAT") || pos.includes("CARRIL")) {
     if (pos.includes("IZQ") || pos.includes("LEFT") || pos.includes("ZURD")) return "LATERAL_IZQ";
     if (pos.includes("DER") || pos.includes("RIGHT") || pos.includes("DIESTR")) return "LATERAL_DER";
     return "__LATERAL";
   }
+
   if (pos.includes("CENTRAL")) {
     if (pos.includes("IZQ") || pos.includes("LEFT") || pos.includes("ZURD")) return "CENTRAL_IZQ";
     if (pos.includes("DER") || pos.includes("RIGHT") || pos.includes("DIESTR")) return "CENTRAL_DER";
-    return "__CENTRAL";
+    return "CENTRAL_CEN"; // En defensa de 3, el central sin lateralidad va al eje (ej: Àlex Cano)
   }
-  if (pos.includes("PIV") || pos.includes("MEDIOCENTRO") || pos.includes("MEDIO CENTRO")) return "PIVOTE";
-  if (pos.includes("INT")) {
+
+  if (pos.includes("PIV") || pos.includes("MEDIOCENTRO") || pos.includes("MEDIO CENTRO")) {
+    if (pos.includes("IZQ") || pos.includes("LEFT") || pos.includes("ZURD")) return "PIVOTE_IZQ";
+    if (pos.includes("DER") || pos.includes("RIGHT") || pos.includes("DIESTR")) return "PIVOTE_DER";
+    return "__PIVOTE"; // Se reparte en el doble pivote base del cuadrado
+  }
+
+  if (pos.includes("INT") || pos.includes("MEDIAPUNTA") || pos.includes("MEDIA PUNTA") || pos.includes("ENGANCHE")) {
     if (pos.includes("IZQ") || pos.includes("LEFT") || pos.includes("ZURD")) return "INTERIOR_IZQ";
     if (pos.includes("DER") || pos.includes("RIGHT") || pos.includes("DIESTR")) return "INTERIOR_DER";
     return "__INTERIOR";
   }
+
   if (pos.includes("EXT") || pos.includes("WING") || pos.includes("BANDA")) {
-    if (pos.includes("IZQ") || pos.includes("LEFT") || pos.includes("ZURD")) return "EXTREMO_IZQ";
-    if (pos.includes("DER") || pos.includes("RIGHT") || pos.includes("DIESTR")) return "EXTREMO_DER";
-    return "__EXTREMO";
+    if (pos.includes("IZQ") || pos.includes("LEFT") || pos.includes("ZURD")) return "INTERIOR_IZQ";
+    if (pos.includes("DER") || pos.includes("RIGHT") || pos.includes("DIESTR")) return "INTERIOR_DER";
+    return "__INTERIOR";
   }
+
   if (pos.includes("DEL") || pos.includes("PUNTA") || pos.includes("STRIKER") || pos.includes("ATAC")) return "DELANTERO";
 
   const exactKey = pos.replace(/\s+/g, "_");
-  if (getPitchPositions("4-3-3")[exactKey]) return exactKey;
+  if (getPitchPositions("3-6-1")[exactKey]) return exactKey;
 
   return "DELANTERO";
 }
@@ -394,10 +429,10 @@ function getPositionCategoryName(posRaw?: string | null): string {
   if (!posRaw) return "Otros";
   const pos = posRaw.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
   if (pos.includes("PORT") || pos.includes("GK") || pos.includes("GUARD") || pos === "PO" || pos === "POR") return "Porteros";
-  if (pos.includes("LAT")) return "Laterales";
   if (pos.includes("CENTRAL")) return "Centrales";
+  if (pos.includes("LAT") || pos.includes("CARRIL")) return "Carrileros";
   if (pos.includes("PIV") || pos.includes("MEDIO")) return "Pivotes";
-  if (pos.includes("INT")) return "Interiores";
+  if (pos.includes("INT") || pos.includes("MEDIAPUNTA")) return "Interiores";
   if (pos.includes("EXT") || pos.includes("WING") || pos.includes("BANDA")) return "Extremos";
   if (pos.includes("DEL") || pos.includes("PUNTA") || pos.includes("STRIKER") || pos.includes("ATAC")) return "Delanteros";
   return "Otros";
@@ -408,7 +443,7 @@ function getPositionCategoryName(posRaw?: string | null): string {
 const safeSetItem = (key: string, value: string) => {
   if (typeof window === "undefined") return;
   try {
-    safeSetItem(key, value);
+    localStorage.setItem(key, value);
   } catch (e: any) {
     console.warn(`Aviso (espacio insuficiente en caché para ${key}):`, e.message);
   }
@@ -426,7 +461,13 @@ function DisponibilidadContent() {
 
   const [seasons, setSeasons] = useState<Array<keyof typeof teamsBySeason>>(["2026/27"]);
   const [team, setTeam] = useState<string>("CE Europa");
-  const [pitchSystem, setPitchSystem] = useState<string>("4-3-3");
+  const [pitchSystem, setPitchSystem] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("disponibilidad_pitch_system");
+      if (saved) return saved;
+    }
+    return "3-6-1";
+  });
 
   useEffect(() => {
     try {
@@ -1436,7 +1477,12 @@ function DisponibilidadContent() {
             {/* SELECTOR DE SISTEMA */}
             <select
               value={pitchSystem}
-              onChange={(e) => setPitchSystem(e.target.value)}
+              onChange={(e) => {
+                setPitchSystem(e.target.value);
+                try {
+                  localStorage.setItem("disponibilidad_pitch_system", e.target.value);
+                } catch (err) {}
+              }}
               style={{
                 padding: "6px 12px",
                 borderRadius: "8px",
@@ -1450,6 +1496,7 @@ function DisponibilidadContent() {
                 boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
               }}
             >
+              <option value="3-6-1">Sist: 3-6-1 (Cuadrado)</option>
               <option value="4-3-3">Sist: 4-3-3</option>
               <option value="4-4-2">Sist: 4-4-2</option>
               <option value="4-2-3-1">Sist: 4-2-3-1</option>
@@ -2204,7 +2251,7 @@ function DisponibilidadContent() {
               }
             });
 
-            const posOrder = ["Porteros", "Laterales", "Centrales", "Pivotes", "Interiores", "Extremos", "Delanteros", "Otros"];
+            const posOrder = ["Porteros", "Centrales", "Carrileros", "Pivotes", "Interiores", "Extremos", "Delanteros", "Otros"];
             const hasRegen = regenJugadoresCount + regenPorterosCount > 0;
             const hasCompensa = compensaJugadoresCount + compensaPorterosCount > 0;
 
@@ -2350,6 +2397,41 @@ function DisponibilidadContent() {
               <circle cx="500" cy="1210" r="6" fill="#ffffff" fillOpacity="0.85" />
               <path d="M 400 1130 A 120 120 0 0 1 600 1130" fill="none" stroke="#ffffff" strokeWidth="4" strokeOpacity="0.85" />
               <rect x="410" y="1350" width="180" height="32" fill="rgba(255,255,255,0.15)" stroke="#ffffff" strokeWidth="3" strokeDasharray="4 4" />
+
+              {/* TÁCTICA 3-6-1: DIBUJO DEL CUADRADO INTERIOR Y CONECTORES DE CARRILES */}
+              {pitchSystem === "3-6-1" && (
+                <g>
+                  {/* Cuadrado Táctico Interior (Box Midfield) */}
+                  <rect
+                    x="365"
+                    y="500"
+                    width="270"
+                    height="340"
+                    rx="18"
+                    ry="18"
+                    fill="rgba(255, 255, 255, 0.05)"
+                    stroke="rgba(255, 255, 255, 0.45)"
+                    strokeWidth="2.5"
+                    strokeDasharray="8 6"
+                  />
+                  {/* Conectores tácticos punteados hacia los carrileros exteriores */}
+                  <line x1="120" y1="700" x2="365" y2="700" stroke="rgba(255, 255, 255, 0.28)" strokeWidth="2" strokeDasharray="4 4" />
+                  <line x1="635" y1="700" x2="880" y2="700" stroke="rgba(255, 255, 255, 0.28)" strokeWidth="2" strokeDasharray="4 4" />
+                  
+                  {/* Etiqueta sutil */}
+                  <text
+                    x="500"
+                    y="676"
+                    textAnchor="middle"
+                    fill="rgba(255, 255, 255, 0.4)"
+                    fontSize="13"
+                    fontWeight="900"
+                    letterSpacing="3"
+                  >
+                    CUADRADO INTERIOR
+                  </text>
+                </g>
+              )}
             </svg>
 
             {/* TARJETAS DE JUGADORES EN EL CAMPO TÁCTICO */}
@@ -2362,8 +2444,9 @@ function DisponibilidadContent() {
               const splitMap: Record<string, [string, string]> = {
                 "__CENTRAL": ["CENTRAL_IZQ", "CENTRAL_DER"],
                 "__INTERIOR": ["INTERIOR_IZQ", "INTERIOR_DER"],
-                "__EXTREMO": ["EXTREMO_DER", "EXTREMO_IZQ"],
+                "__EXTREMO": ["INTERIOR_IZQ", "INTERIOR_DER"],
                 "__LATERAL": ["LATERAL_IZQ", "LATERAL_DER"],
+                "__PIVOTE": ["PIVOTE_IZQ", "PIVOTE_DER"],
               };
 
               const catIndices: Record<string, number[]> = {};
@@ -2419,7 +2502,7 @@ function DisponibilidadContent() {
 
                 const st = getPlayerStatus(record, j.id, statusOverrides, calStatus, selectedDate);
                 const currentPitchPositions = getPitchPositions(typeof pitchSystem !== "undefined" ? pitchSystem : "4-3-3");
-                const posCoords = currentPitchPositions[resolvedKey];
+                const posCoords = currentPitchPositions[resolvedKey] || currentPitchPositions["DELANTERO"] || { top: "50%", left: "50%" };
                 const group = groups[resolvedKey].filter(item => !hiddenPlayers.includes(item.j.id));
                 const posInGroup = group.findIndex(item => (item.j.id || item.idx) === (j.id || idx));
                 const groupSize = group.length;
