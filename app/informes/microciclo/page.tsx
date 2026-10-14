@@ -705,87 +705,95 @@ function InformeGpsDiarioContent() {
   }, []);
 
   // Sincronizar automáticamente con las favoritas recuperadas para gráficos y tablas (Equipo y Jugador)
+  const favsFingerprint = favoriteKeys.filter((k) => k !== "HSR Abs (m)").join("|");
+
   useEffect(() => {
     const cleanFavs = favoriteKeys.filter((k) => k !== "HSR Abs (m)");
-    if (cleanFavs && cleanFavs.length > 0) {
-      // 1. Gráficos de Equipo: inicializar con las variables favoritas del usuario
-      setChart1LeftMetric((prev) => {
-        const stored = typeof window !== "undefined" ? localStorage.getItem("microciclo_chart1_left_metric") : null;
-        if (stored && stored !== "HSR Abs (m)" && cleanFavs.includes(stored)) return stored;
-        return cleanFavs[0] || "Distance(m)";
-      });
-      setChart1RightMetric((prev) => {
-        const stored = typeof window !== "undefined" ? localStorage.getItem("microciclo_chart1_right_metric") : null;
-        if (stored && stored !== "HSR Abs (m)" && cleanFavs.includes(stored)) return stored;
-        return cleanFavs[1] || "Distance +21 (m)";
-      });
-      setChart2LeftMetric((prev) => {
-        const stored = typeof window !== "undefined" ? localStorage.getItem("microciclo_chart2_left_metric") : null;
-        if (stored && stored !== "HSR Abs (m)" && cleanFavs.includes(stored)) return stored;
-        return cleanFavs[2] || "MAX Speed(km/h)";
-      });
-      setChart2RightMetric((prev) => {
-        const stored = typeof window !== "undefined" ? localStorage.getItem("microciclo_chart2_right_metric") : null;
-        if (stored && stored !== "HSR Abs (m)" && cleanFavs.includes(stored)) return stored;
-        return cleanFavs[3] || cleanFavs[4] || "Player Load";
-      });
+    if (!cleanFavs || cleanFavs.length === 0) return;
 
-      // 2. Tabla de Equipo: mostrar todas las favoritas del usuario por defecto
-      setTableMetrics((prev) => {
-        if (typeof window !== "undefined") {
-          const stored = localStorage.getItem("microciclo_equipo_table_metrics");
-          if (stored) {
-            try {
-              const parsed = JSON.parse(stored);
-              if (Array.isArray(parsed) && parsed.length > 0) {
-                const cleaned = parsed.filter((k) => k !== "HSR Abs (m)" && cleanFavs.includes(k));
-                if (cleaned.length > 0) return cleaned;
-              }
-            } catch (e) {}
-          }
-        }
-        return cleanFavs;
-      });
+    // 1. Gráficos de Equipo: inicializar con las variables favoritas del usuario si no hay selección previa
+    setChart1LeftMetric((prev) => {
+      const stored = typeof window !== "undefined" ? localStorage.getItem("microciclo_chart1_left_metric") : null;
+      const target = (stored && stored !== "HSR Abs (m)" && cleanFavs.includes(stored)) ? stored : (cleanFavs[0] || "Distance(m)");
+      return prev === target ? prev : target;
+    });
+    setChart1RightMetric((prev) => {
+      const stored = typeof window !== "undefined" ? localStorage.getItem("microciclo_chart1_right_metric") : null;
+      const target = (stored && stored !== "HSR Abs (m)" && cleanFavs.includes(stored)) ? stored : (cleanFavs[1] || "Distance +21 (m)");
+      return prev === target ? prev : target;
+    });
+    setChart2LeftMetric((prev) => {
+      const stored = typeof window !== "undefined" ? localStorage.getItem("microciclo_chart2_left_metric") : null;
+      const target = (stored && stored !== "HSR Abs (m)" && cleanFavs.includes(stored)) ? stored : (cleanFavs[2] || "MAX Speed(km/h)");
+      return prev === target ? prev : target;
+    });
+    setChart2RightMetric((prev) => {
+      const stored = typeof window !== "undefined" ? localStorage.getItem("microciclo_chart2_right_metric") : null;
+      const target = (stored && stored !== "HSR Abs (m)" && cleanFavs.includes(stored)) ? stored : (cleanFavs[3] || cleanFavs[4] || "Player Load");
+      return prev === target ? prev : target;
+    });
 
-      // 3. Tabla de Jugador: mostrar todas las favoritas del usuario por defecto
-      setPlayerTableMetrics((prev) => {
-        if (typeof window !== "undefined") {
-          const stored = localStorage.getItem("microciclo_player_table_metrics");
-          if (stored) {
-            try {
-              const parsed = JSON.parse(stored);
-              if (Array.isArray(parsed) && parsed.length > 0) {
-                const cleaned = parsed.filter((k) => k !== "HSR Abs (m)" && cleanFavs.includes(k));
-                if (cleaned.length > 0) return cleaned;
-              }
-            } catch (e) {}
-          }
+    // 2. Tabla de Equipo: mostrar todas las favoritas del usuario por defecto
+    setTableMetrics((prev) => {
+      let target = cleanFavs;
+      if (typeof window !== "undefined") {
+        const stored = localStorage.getItem("microciclo_equipo_table_metrics");
+        if (stored) {
+          try {
+            const parsed = JSON.parse(stored);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              const cleaned = parsed.filter((k) => k !== "HSR Abs (m)" && cleanFavs.includes(k));
+              if (cleaned.length > 0) target = cleaned;
+            }
+          } catch (e) {}
         }
-        return cleanFavs;
-      });
+      }
+      if (prev.length === target.length && prev.every((v, i) => v === target[i])) return prev;
+      return target;
+    });
 
-      // 4. Gráficos de Jugador: vincular a las primeras 4 favoritas del usuario
-      setPlayerChartVars((prev) => {
-        if (typeof window !== "undefined") {
-          const stored = localStorage.getItem("microciclo_player_chart_vars");
-          if (stored) {
-            try {
-              const parsed = JSON.parse(stored);
-              if (Array.isArray(parsed) && parsed.length >= 4) {
-                return parsed.map((k, i) => (k === "HSR Abs (m)" ? (cleanFavs[i] || "Distance +21 (m)") : k));
-              }
-            } catch (e) {}
-          }
+    // 3. Tabla de Jugador: mostrar todas las favoritas del usuario por defecto
+    setPlayerTableMetrics((prev) => {
+      let target = cleanFavs;
+      if (typeof window !== "undefined") {
+        const stored = localStorage.getItem("microciclo_player_table_metrics");
+        if (stored) {
+          try {
+            const parsed = JSON.parse(stored);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              const cleaned = parsed.filter((k) => k !== "HSR Abs (m)" && cleanFavs.includes(k));
+              if (cleaned.length > 0) target = cleaned;
+            }
+          } catch (e) {}
         }
-        return [
-          cleanFavs[0] || "Distance(m)",
-          cleanFavs[1] || "Distance +21 (m)",
-          cleanFavs[2] || "MAX Speed(km/h)",
-          cleanFavs[3] || cleanFavs[4] || "Player Load",
-        ];
-      });
-    }
-  }, [favoriteKeys]);
+      }
+      if (prev.length === target.length && prev.every((v, i) => v === target[i])) return prev;
+      return target;
+    });
+
+    // 4. Gráficos de Jugador: vincular a las primeras 4 favoritas del usuario
+    setPlayerChartVars((prev) => {
+      let target = [
+        cleanFavs[0] || "Distance(m)",
+        cleanFavs[1] || "Distance +21 (m)",
+        cleanFavs[2] || "MAX Speed(km/h)",
+        cleanFavs[3] || cleanFavs[4] || "Player Load",
+      ];
+      if (typeof window !== "undefined") {
+        const stored = localStorage.getItem("microciclo_player_chart_vars");
+        if (stored) {
+          try {
+            const parsed = JSON.parse(stored);
+            if (Array.isArray(parsed) && parsed.length >= 4) {
+              target = parsed.map((k, i) => (k === "HSR Abs (m)" ? (cleanFavs[i] || "Distance +21 (m)") : k));
+            }
+          } catch (e) {}
+        }
+      }
+      if (prev.length === target.length && prev.every((v, i) => v === target[i])) return prev;
+      return target;
+    });
+  }, [favsFingerprint]);
 
   const handlePlayerChartVarChange = (chartIdx: number, val: string) => {
     const next = [...playerChartVars];

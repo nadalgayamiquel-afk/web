@@ -866,6 +866,9 @@ export function useFavoriteGpsVariables() {
         const cleaned = res.favoriteVariables.filter((k: string) => k !== "HSR Abs (m)");
         setFavoriteKeys((prev) => {
           const merged = Array.from(new Set([...prev, ...cleaned]));
+          if (prev.length === merged.length && prev.every((v, i) => v === merged[i])) {
+            return prev;
+          }
           try {
             localStorage.setItem(STORAGE_FAVORITES_KEY, JSON.stringify(merged));
           } catch (e) {}
@@ -875,8 +878,11 @@ export function useFavoriteGpsVariables() {
     }).catch(() => {});
 
     const handleFavUpdate = (e: any) => {
-      if (Array.isArray(e.detail)) setFavoriteKeys(e.detail.filter((k: string) => k !== "HSR Abs (m)"));
-      else setFavoriteKeys(getStoredFavoriteKeys());
+      const next = Array.isArray(e.detail) ? e.detail.filter((k: string) => k !== "HSR Abs (m)") : getStoredFavoriteKeys();
+      setFavoriteKeys((prev) => {
+        if (prev.length === next.length && prev.every((v, i) => v === next[i])) return prev;
+        return next;
+      });
     };
 
     const handleDerivedUpdate = (e: any) => {
