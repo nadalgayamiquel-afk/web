@@ -986,6 +986,20 @@ export function CalendarGrid({
         const saved = localStorage.getItem("comentarios_jugadores_v2");
         let list: ComentarioJugadorDia[] = saved ? JSON.parse(saved) : [];
 
+        // Limpieza de duplicados residuales en cliente entre CON y WEL
+        const welKeys = new Set(
+          list
+            .filter((c) => c && c.tipo === "WEL" && c.texto)
+            .map((c) => `${c.jugador_id}_${c.fecha || c.day_id}_${c.texto.trim()}`)
+        );
+        list = list.filter((c) => {
+          if (c && c.tipo === "CON" && c.texto) {
+            const key = `${c.jugador_id}_${c.fecha || c.day_id}_${c.texto.trim()}`;
+            if (welKeys.has(key)) return false;
+          }
+          return true;
+        });
+
         const rawPitch = localStorage.getItem("disponibilidad_pitch_comments_v1");
         if (rawPitch) {
           const pitchMap = JSON.parse(rawPitch);
@@ -1125,11 +1139,19 @@ export function CalendarGrid({
             });
           };
 
-          parseAndAdd(est.comentario_fisico || est.comentario_preparacion_fisica, "CON", "con");
+          const condicionalText = est.comentario_fisico || est.comentario_preparacion_fisica;
+          const wellnessText = est.comentario_wellness;
+
+          // Separación estricta de bloques: Condicional (CON) vs Wellness (WEL)
+          if (condicionalText && condicionalText.trim() !== (wellnessText || "").trim()) {
+            parseAndAdd(condicionalText, "CON", "con");
+          }
           parseAndAdd(est.comentario_tecnico || est.comentario_tecnico_tactico, "TEC", "tec");
           parseAndAdd(est.objetivo, "TEC", "obj");
           parseAndAdd(est.comentario_lesiones || est.comentario_fisioterapia, "FIS", "fis");
-          parseAndAdd(est.comentario_wellness, "WEL", "wel");
+          if (wellnessText) {
+            parseAndAdd(wellnessText, "WEL", "wel");
+          }
           parseAndAdd(est.comentario_medico, "OTR", "med");
           parseAndAdd(est.comentario_nutricion, "OTR", "nut");
         });
@@ -1168,7 +1190,19 @@ export function CalendarGrid({
           parseAndAddTeam(d.comentario_fisico, "CON", "con");
         });
 
-        const merged = Array.from(map.values());
+        // Garantizar que ningún comentario Condicional duplique a uno de Wellness
+        const welSet = new Set(
+          Array.from(map.values())
+            .filter((c) => c.tipo === "WEL" && c.texto)
+            .map((c) => `${c.jugador_id}_${c.fecha || c.day_id}_${c.texto.trim()}`)
+        );
+        const merged = Array.from(map.values()).filter((c) => {
+          if (c.tipo === "CON" && c.texto) {
+            const key = `${c.jugador_id}_${c.fecha || c.day_id}_${c.texto.trim()}`;
+            if (welSet.has(key)) return false;
+          }
+          return true;
+        });
         if (typeof window !== "undefined") {
           try {
             localStorage.setItem("comentarios_jugadores_v2", JSON.stringify(merged));
@@ -1405,6 +1439,22 @@ export function CalendarGrid({
             map.set(key, c);
           });
           let hasChanges = false;
+
+          // Si existe algún comentario CON residual con el mismo texto y fecha de este deportista, eliminarlo
+          newWelComments.forEach((wc) => {
+            for (const [k, c] of map.entries()) {
+              if (
+                c.jugador_id === wc.jugador_id &&
+                (c.fecha === wc.fecha || c.day_id === wc.day_id) &&
+                c.tipo === "CON" &&
+                c.texto.trim() === wc.texto.trim()
+              ) {
+                map.delete(k);
+                hasChanges = true;
+              }
+            }
+          });
+
           newWelComments.forEach((wc) => {
             const key = wc.id || `wel_${wc.jugador_id}_${wc.fecha}_${wc.texto}`;
             const existing = map.get(key);

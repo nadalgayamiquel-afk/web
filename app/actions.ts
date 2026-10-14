@@ -2000,7 +2000,7 @@ export async function saveFullPlanificacionBBDD(sessionsPayload: any[], comments
     if (isEmpty) {
       emptyEstadoRows.push(rawRow);
     } else {
-      // Objeto limpio con solo columnas válidas en PostgreSQL
+      // Objeto limpio con columnas dedicadas en PostgreSQL: bloques separados para Condicional y Wellness
       const cleanRow: any = {
         jugador_id: String(rawRow.jugador_id),
         sesion_dia_id: String(rawRow.sesion_dia_id),
@@ -2009,7 +2009,11 @@ export async function saveFullPlanificacionBBDD(sessionsPayload: any[], comments
         comentario_lesiones: rawRow.comentario_lesiones || rawRow.comentario_fisioterapia || null,
         comentario_medico: rawRow.comentario_medico || null,
         comentario_nutricion: rawRow.comentario_nutricion || null,
-        comentario_fisico: rawRow.comentario_fisico || rawRow.comentario_wellness || null,
+        // BLOQUE CONDICIONAL: exclusivo para tipo CON (físico/condicional)
+        comentario_fisico: rawRow.comentario_fisico || null,
+        // BLOQUE WELLNESS: exclusivo para tipo WEL (cuestionario wellness)
+        comentario_wellness: rawRow.comentario_wellness || null,
+        comentario_psicologico: rawRow.comentario_psicologico || null,
         comentario_tecnico: rawRow.comentario_tecnico || null,
         evento_asignado: rawRow.evento_asignado || null,
         minutos: rawRow.minutos ? Number(rawRow.minutos) : null,
@@ -2414,10 +2418,16 @@ export async function getPlayerCommentsBBDD(): Promise<Array<{
         });
       };
 
+      const fisicoTexto = (e.comentario_fisico || "").trim();
+      const wellnessTexto = (e.comentario_wellness || "").trim();
+
       addComment(e.comentario_lesiones, "FIS", "fis");
-      addComment(e.comentario_fisico, "CON", "con");
-      addComment(e.comentario_tecnico, "TEC", "tec");
+      // Bloque Condicional vs Bloque Wellness: evitar duplicar si son idénticos
+      if (fisicoTexto && fisicoTexto !== wellnessTexto) {
+        addComment(e.comentario_fisico, "CON", "con");
+      }
       addComment(e.comentario_wellness, "WEL", "wel");
+      addComment(e.comentario_tecnico, "TEC", "tec");
       addComment(e.comentario_psicologico, "PSI", "psi");
       addComment(e.comentario_medico, "OTR", "med");
       addComment(e.comentario_nutricion, "NUT", "nut");
@@ -2595,7 +2605,7 @@ export async function saveEventDetailBBDD(params: {
           await supabase.from("estado_diario_jugador").update(payload).eq("id", existing.id);
         }
       } else {
-        if (payload.evento_asignado || payload.minutos || payload.comentario_lesiones || payload.comentario_tecnico || payload.comentario_fisico || payload.comentario_medico || payload.comentario_nutricion) {
+        if (payload.evento_asignado || payload.minutos || payload.comentario_lesiones || payload.comentario_tecnico || payload.comentario_fisico || payload.comentario_wellness || payload.comentario_medico || payload.comentario_nutricion || payload.comentario_psicologico) {
           payload.jugador_id = jId;
           payload.sesion_dia_id = sessionId;
           if (!payload.disponibilidad) payload.disponibilidad = "D";
