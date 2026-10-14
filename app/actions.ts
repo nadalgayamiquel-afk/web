@@ -1604,6 +1604,26 @@ export async function getOptimizadorSessionNumber(targetDateISO: string): Promis
   }
 }
 
+
+function cleanNumericValue(val: any): number | null {
+  if (val === null || val === undefined || val === "") return null;
+  if (typeof val === "number") return isNaN(val) ? null : val;
+  const s = String(val).trim().replace(",", ".");
+  const n = Number(s);
+  if (!isNaN(n)) return n;
+  const match = s.match(/[-+]?[0-9]*\.?[0-9]+/);
+  if (match) {
+    const p = parseFloat(match[0]);
+    if (!isNaN(p)) return p;
+  }
+  return null;
+}
+
+function cleanIntegerValue(val: any): number | null {
+  const n = cleanNumericValue(val);
+  return n !== null ? Math.round(n) : null;
+}
+
 export async function updateSesionDia(id: string, datos: Record<string, any>) {
   const supabase = getServerSupabase();
   
@@ -1622,6 +1642,10 @@ export async function updateSesionDia(id: string, datos: Record<string, any>) {
         payload["evento_pm"] = datos[k] || null;
       } else if (k === "comentario" || k === "comentario_microciclo" || k === "comentario_fisico" || k === "comentario_tecnico") {
         payload["comentario_microciclo"] = datos[k] || null;
+      } else if (k === "carga" || k === "volumen" || k === "intensidad") {
+        payload[k] = cleanNumericValue(datos[k]);
+      } else if (k === "semana") {
+        payload[k] = cleanIntegerValue(datos[k]);
       } else if (VALID_COLS.includes(k)) {
         payload[k] = datos[k] === "" ? null : datos[k];
       }
@@ -1666,6 +1690,10 @@ export async function batchUpdateSesionesDia(updates: Array<{ id: string; datos:
           payload["evento_pm"] = item.datos[k] || null;
         } else if (k === "comentario" || k === "comentario_microciclo" || k === "comentario_fisico" || k === "comentario_tecnico") {
           payload["comentario_microciclo"] = item.datos[k] || null;
+        } else if (k === "carga" || k === "volumen" || k === "intensidad") {
+          payload[k] = cleanNumericValue(item.datos[k]);
+        } else if (k === "semana") {
+          payload[k] = cleanIntegerValue(item.datos[k]);
         } else if (VALID_COLS.includes(k)) {
           payload[k] = item.datos[k] === "" ? null : item.datos[k];
         }
@@ -1703,12 +1731,12 @@ export async function saveFullPlanificacionBBDD(sessionsPayload: any[], comments
       equipo: s.equipo ?? "CE EUROPA",
       periodo: s.periodo ?? null,
       subperiodo: s.subperiodo ?? null,
-      semana: s.semana ?? null,
+      semana: cleanIntegerValue(s.semana),
       md: s.md ?? null,
       rival: s.rival ?? null,
-      carga: s.carga !== undefined && s.carga !== null && s.carga !== "" ? (isNaN(Number(s.carga)) ? s.carga : Number(s.carga)) : null,
-      volumen: s.volumen !== undefined && s.volumen !== null && s.volumen !== "" ? (isNaN(Number(s.volumen)) ? s.volumen : Number(s.volumen)) : null,
-      intensidad: s.intensidad !== undefined && s.intensidad !== null && s.intensidad !== "" ? (isNaN(Number(s.intensidad)) ? s.intensidad : Number(s.intensidad)) : null,
+      carga: cleanNumericValue(s.carga),
+      volumen: cleanNumericValue(s.volumen),
+      intensidad: cleanNumericValue(s.intensidad),
       evento_am: s.evento_am ?? s.evento ?? s.evento_principal ?? s.evento_1 ?? null,
       evento_pm: s.evento_pm ?? s.evento_2 ?? null,
       comentario_microciclo: s.comentario_microciclo ?? s.comentario ?? null,
