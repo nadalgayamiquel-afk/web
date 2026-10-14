@@ -30,6 +30,7 @@ async function getJugadores() {
   } catch {}
   if (!club) {
     try {
+      const fs = require("fs");
       const path = require("path");
       const confPath = path.join(process.cwd(), "public", "club_config.json");
       if (fs.existsSync(confPath)) {

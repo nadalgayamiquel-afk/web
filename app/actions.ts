@@ -1374,9 +1374,18 @@ export async function syncAllDownloadsGpsFiles() {
  * Conexión server-side para leer hojas de Excel Web / Google Sheets.
  * Soporta autoconversión de enlaces "Insertar" (Embed) de Excel Web y Google Sheets.
  */
-export async function fetchLiveWellnessSheet(sheetUrl: string) {
+export async function fetchLiveWellnessSheet(sheetUrl?: string) {
   try {
-    let targetUrl = sheetUrl.trim();
+    let targetUrl = (sheetUrl || "").trim();
+    if (!targetUrl) {
+      try {
+        const ext = await getExternalLinksBBDD();
+        targetUrl = (ext?.wellness?.url || "").trim();
+      } catch (e) {}
+    }
+    if (!targetUrl) {
+      targetUrl = "https://docs.google.com/spreadsheets/d/1JQXKfCrGCxom-N-RM-6nbDqQ0asnL_le0Z4EOwFc5Ds/edit?resourcekey=&gid=432486581#gid=432486581";
+    }
 
     // Si pegan el código iframe entero de Excel Web, extraer la URL del src
     if (targetUrl.includes("<iframe") && targetUrl.includes("src=")) {
@@ -2333,7 +2342,7 @@ export async function getPlayerCommentsBBDD(): Promise<Array<{
     const supabase = getServerSupabase();
     const [{ data: sesiones }, { data: estados }] = await Promise.all([
       supabase.from("sesiones_dia").select("id, fecha, comentario_microciclo, comentario_tecnico, comentario_fisico"),
-      supabase.from("estado_diario_jugador").select("id, jugador_id, sesion_dia_id, comentario_lesiones, comentario_tecnico, comentario_fisico, comentario_medico, comentario_nutricion"),
+      supabase.from("estado_diario_jugador").select("id, jugador_id, sesion_dia_id, comentario_lesiones, comentario_tecnico, comentario_fisico, comentario_wellness, comentario_psicologico, comentario_medico, comentario_nutricion"),
     ]);
 
     const idToFecha = new Map<string, string>();
@@ -2686,7 +2695,7 @@ export async function getEventosBloquesBBDD(dayIds?: string[]) {
 
 export async function getEstadoDiarioJugadores(sesionDiaIds?: string[]) {
   const supabase = getServerSupabase();
-  const selectFields = "jugador_id, sesion_dia_id, disponibilidad, objetivo, comentario_fisico, comentario_tecnico, comentario_lesiones, comentario_medico, comentario_nutricion, evento_asignado, minutos";
+  const selectFields = "jugador_id, sesion_dia_id, disponibilidad, objetivo, comentario_fisico, comentario_tecnico, comentario_lesiones, comentario_wellness, comentario_psicologico, comentario_medico, comentario_nutricion, evento_asignado, minutos";
 
   if (!sesionDiaIds || sesionDiaIds.length === 0) {
     const { data, error } = await supabase
@@ -4307,6 +4316,97 @@ export async function deletePlayerCommentBBDD(params: {
     texto: "",
   });
 }
+
+export async function syncWellnessCommentsBatchBBDD(comments: Array<{
+  jugadorId: string;
+  fecha: string;
+  texto: string;
+}>): Promise<{ success: boolean; count: number; error?: string }> {
+  try {
+    if (!comments || comments.length === 0) return { success: true, count: 0 };
+    const supabase = getServerSupabase();
+
+    const fechas = Array.from(new Set(comments.map((c) => c.fecha).filter(Boolean)));
+    const { data: sesiones } = await supabase
+      .from("sesiones_dia")
+      .select("id, fecha")
+      .in("fecha", fechas);
+
+    const fechaToSessionId = new Map<string, string>();
+    (sesiones || []).forEach((s: any) => {
+      if (s.id && s.fecha) fechaToSessionId.set(s.fecha, s.id);
+    });
+
+    for (const f of fechas) {
+      if (!fechaToSessionId.has(f)) {
+        const { data: newS } = await supabase
+          .from("sesiones_dia")
+          .insert({ fecha: f, equipo: "CE EUROPA", temporada: "2026/27" })
+          .select("id")
+          .maybeSingle();
+        if (newS?.id) {
+          fechaToSessionId.set(f, newS.id);
+        }
+      }
+    }
+
+    const sessionIds = Array.from(fechaToSessionId.values());
+    if (sessionIds.length === 0) return { success: true, count: 0 };
+
+    const { data: existingStates } = await supabase
+      .from("estado_diario_jugador")
+      .select("id, jugador_id, sesion_dia_id, comentario_wellness")
+      .in("sesion_dia_id", sessionIds);
+
+    const stateMap = new Map<string, any>();
+    (existingStates || []).forEach((st: any) => {
+      stateMap.set(`${st.jugador_id}_${st.sesion_dia_id}`, st);
+    });
+
+    let updatedCount = 0;
+
+    for (const c of comments) {
+      if (!c.jugadorId || !c.fecha || !c.texto?.trim()) continue;
+      const sessionId = fechaToSessionId.get(c.fecha);
+      if (!sessionId) continue;
+
+      const key = `${c.jugadorId}_${sessionId}`;
+      const existing = stateMap.get(key);
+      const cleanText = c.texto.trim();
+
+      if (existing) {
+        if (existing.comentario_wellness !== cleanText) {
+          await supabase
+            .from("estado_diario_jugador")
+            .update({ comentario_wellness: cleanText })
+            .eq("id", existing.id);
+          updatedCount++;
+        }
+      } else {
+        const { data: newRow } = await supabase
+          .from("estado_diario_jugador")
+          .insert({
+            jugador_id: c.jugadorId,
+            sesion_dia_id: sessionId,
+            disponibilidad: "D",
+            comentario_wellness: cleanText,
+          })
+          .select("id")
+          .maybeSingle();
+        if (newRow?.id) {
+          stateMap.set(key, { id: newRow.id, jugador_id: c.jugadorId, sesion_dia_id: sessionId, comentario_wellness: cleanText });
+          updatedCount++;
+        }
+      }
+    }
+
+    return { success: true, count: updatedCount };
+  } catch (err: any) {
+    console.error("Error en syncWellnessCommentsBatchBBDD:", err);
+    return { success: false, count: 0, error: err?.message };
+  }
+}
+
 
 
 // ==========================================

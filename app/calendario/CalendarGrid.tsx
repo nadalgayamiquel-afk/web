@@ -2,7 +2,7 @@
 
 import { pruneStaleFutureLocalStorage } from "@/app/lib/cleanStorage";
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { updateSesionDia, batchUpdateSesionesDia, saveFullPlanificacionBBDD, updateEstadoDiarioJugador, fetchLiveWellnessSheet, updateFullBBDDRow, addLesion, forceBackupSyncDataLocal, getEventosBloquesBBDD, saveClubConfig, upsertSingleRivalBBDD, getRivalesBBDD, saveSingleBloqueBBDD, getPlayerEventsBBDD, updatePlayerEventAssignmentBBDD, savePlayerEventAssignments, savePlayerCommentBBDD, deletePlayerCommentBBDD } from "../actions";
+import { updateSesionDia, batchUpdateSesionesDia, saveFullPlanificacionBBDD, updateEstadoDiarioJugador, fetchLiveWellnessSheet, updateFullBBDDRow, addLesion, forceBackupSyncDataLocal, getEventosBloquesBBDD, saveClubConfig, upsertSingleRivalBBDD, getRivalesBBDD, saveSingleBloqueBBDD, getPlayerEventsBBDD, updatePlayerEventAssignmentBBDD, savePlayerEventAssignments, savePlayerCommentBBDD, deletePlayerCommentBBDD, syncWellnessCommentsBatchBBDD } from "../actions";
 import { getDisponibilidadInfo, CODIGOS_MANUALES, normalizeDisponibilidadCodigo } from "@/app/lib/disponibilidad";
 import LesionControlModal, { LesionFormData } from "./LesionControlModal";
 import { findRivalEscudoUrl, getStoredRivales, saveStoredRivales, RivalConfig, syncRivalesFromBBDD } from "@/app/lib/rivales";
@@ -1236,25 +1236,28 @@ export function CalendarGrid({
     count: number;
   }>({ status: "idle", message: "", count: 0 });
   const [showWellnessConfigModal, setShowWellnessConfigModal] = useState<boolean>(false);
+  const DEFAULT_WELLNESS_URL = "https://docs.google.com/spreadsheets/d/1JQXKfCrGCxom-N-RM-6nbDqQ0asnL_le0Z4EOwFc5Ds/edit?resourcekey=&gid=432486581#gid=432486581";
+
   const [customWellnessUrl, setCustomWellnessUrl] = useState<string>(() => {
     if (typeof window !== "undefined") {
-      return localStorage.getItem("wellness_sheet_url_v2") || "";
+      return localStorage.getItem("wellness_sheet_url_v2") || DEFAULT_WELLNESS_URL;
     }
-    return "";
+    return DEFAULT_WELLNESS_URL;
   });
 
   const extractRecordDateISO = (rec: Record<string, any>): string => {
     if (!rec) return "";
+    const explicitDate = rec["1. FECHA"] || rec["Fecha"] || rec["FECHA"] || rec["fecha"] || rec["_colB"] || rec["_col1"];
+    if (explicitDate && typeof explicitDate === "string") {
+      const iso = normalizeDateStr(explicitDate.split("T")[0]);
+      if (iso) return iso;
+    }
     if (rec.created_at && typeof rec.created_at === "string") {
       const iso = normalizeDateStr(rec.created_at.split("T")[0]);
       if (iso) return iso;
     }
-    if (rec.fecha && typeof rec.fecha === "string") {
-      const iso = normalizeDateStr(rec.fecha);
-      if (iso) return iso;
-    }
     const keys = Object.keys(rec);
-    const rawA = rec["_colA"] || rec["_col0"] || (keys.length > 0 ? rec[keys[0]] : null) || rec["Marca temporal"] || rec["Timestamp"] || rec["Fecha"] || "";
+    const rawA = rec["_colA"] || rec["_col0"] || (keys.length > 0 ? rec[keys[0]] : null) || rec["Marca temporal"] || rec["Timestamp"] || "";
     let iso = normalizeDateStr(String(rawA).split("T")[0]);
     if (iso) return iso;
     const rawB = rec["_colB"] || rec["_col1"] || (keys.length > 1 ? rec[keys[1]] : "");
@@ -1333,7 +1336,7 @@ export function CalendarGrid({
   // Sincronización automática en tiempo real con Google Sheets y Webhook de Microsoft Forms/Supabase para Comentarios Wellness
   const syncWellnessComments = async () => {
     try {
-      const urlToUse = customWellnessUrl || "";
+      const urlToUse = customWellnessUrl || DEFAULT_WELLNESS_URL;
       
       let allRecords: any[] = [];
       let sheetErrMessage = "";
@@ -1395,8 +1398,6 @@ export function CalendarGrid({
       });
 
       if (newWelComments.length > 0) {
-        const commentsToUpdateInDB: { cellId: string, texto: string }[] = [];
-
         setComentarios((prev) => {
           const map = new Map<string, ComentarioJugadorDia>();
           prev.forEach((c) => {
@@ -1405,17 +1406,11 @@ export function CalendarGrid({
           });
           let hasChanges = false;
           newWelComments.forEach((wc) => {
-            const alreadyExists = Array.from(map.values()).some(
-              (c) => c.jugador_id === wc.jugador_id && c.fecha === wc.fecha && c.tipo === wc.tipo && c.texto === wc.texto
-            );
-            if (!alreadyExists) {
-              const key = wc.id || `wel_${wc.jugador_id}_${wc.fecha}_${wc.texto}`;
+            const key = wc.id || `wel_${wc.jugador_id}_${wc.fecha}_${wc.texto}`;
+            const existing = map.get(key);
+            if (!existing || existing.texto !== wc.texto) {
               map.set(key, wc);
               hasChanges = true;
-              
-              // Recolectar para persistir fuera del updater de estado
-              const cellId = `${wc.jugador_id}_${wc.fecha}`;
-              commentsToUpdateInDB.push({ cellId, texto: wc.texto });
             }
           });
           if (!hasChanges) return prev;
@@ -1428,15 +1423,21 @@ export function CalendarGrid({
           return nextArr;
         });
 
-        // Ejecutar los side-effects fuera del setState updater para evitar errores de Next.js Router
-        commentsToUpdateInDB.forEach(c => {
-          updateFullBBDDRow(c.cellId, "comentario_wellness", c.texto).catch(() => {});
+        // Persistir en Supabase Cloud BBDD (estado_diario_jugador)
+        syncWellnessCommentsBatchBBDD(
+          newWelComments.map((wc) => ({
+            jugadorId: wc.jugador_id,
+            fecha: wc.fecha,
+            texto: wc.texto,
+          }))
+        ).catch((err) => {
+          console.error("Error persistiendo comentarios wellness en BBDD:", err);
         });
       }
 
       setWellnessSyncState({
         status: "success",
-        message: `${newWelComments.length} comentarios Wellness cargados`,
+        message: `${newWelComments.length} comentarios Wellness sincronizados con BBDD`,
         count: newWelComments.length,
       });
     } catch (err: any) {
@@ -5481,10 +5482,12 @@ export function CalendarGrid({
                             );
                             const comFisText = estObj?.comentario_fisico;
                             const comTecText = estObj?.comentario_tecnico;
-                            const hasComText = comFisText || comTecText;
+                            const comWelText = estObj?.comentario_wellness;
+                            const hasComText = comFisText || comTecText || comWelText;
                             const tooltipTitle = [
                               comFisText ? `🏋️ CONDICIONAL: ${comFisText}` : "",
                               comTecText ? `⚽ TÉCNICO-TÁCTICO: ${comTecText}` : "",
+                              comWelText ? `💚 WELLNESS: ${comWelText}` : "",
                             ].filter(Boolean).join(" \n");
 
                             return (
@@ -6002,7 +6005,8 @@ export function CalendarGrid({
                                       style={{
                                         display: "inline-flex",
                                         alignItems: "center",
-                                        padding: "1px 4px",
+                                        gap: "3px",
+                                        padding: "2px 5px",
                                         borderRadius: "4px",
                                         fontSize: "9.5px",
                                         fontWeight: 800,
@@ -6011,10 +6015,18 @@ export function CalendarGrid({
                                         border: `1px solid ${meta.border}`,
                                         cursor: "pointer",
                                         userSelect: "none",
+                                        maxWidth: "102px",
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        whiteSpace: "nowrap",
+                                        boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
                                       }}
                                       title={`[${meta.nombre}] ${com.texto}\n(Haz doble clic para borrar)`}
                                     >
-                                      ({com.tipo})
+                                      <span style={{ flexShrink: 0 }}>({com.tipo})</span>
+                                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600 }}>
+                                        {com.texto}
+                                      </span>
                                     </span>
                                   );
                                 })}
