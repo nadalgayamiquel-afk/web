@@ -1,5 +1,7 @@
 "use client";
 
+import { getGpsFavoritesServer, saveGpsFavoritesServer } from "@/app/actions";
+
 import { useState, useEffect, useCallback, useMemo } from "react";
 
 export interface GpsVariableDef {
@@ -377,6 +379,8 @@ export const DEFAULT_FAVORITE_GPS_VARIABLES: string[] = [
   "Decs Count",
   "Player Load",
   "Duration(min)",
+  "Distancia / Min",
+  "Acc+Dec",
 ];
 
 const STORAGE_FAVORITES_KEY = "gps_favorite_variables";
@@ -412,6 +416,7 @@ export function saveStoredFavoriteKeys(keys: string[]): void {
     const val = cleaned.length > 0 ? cleaned : DEFAULT_FAVORITE_GPS_VARIABLES;
     localStorage.setItem(STORAGE_FAVORITES_KEY, JSON.stringify(val));
     window.dispatchEvent(new CustomEvent("gps_favorites_updated", { detail: val }));
+    saveGpsFavoritesServer(val).catch(() => {});
   } catch (e) {}
 }
 
@@ -854,6 +859,20 @@ export function useFavoriteGpsVariables() {
   useEffect(() => {
     setFavoriteKeys(getStoredFavoriteKeys());
     setDerivedVariables(getStoredDerivedVariables());
+
+    // Sincronización y recuperación automática con el servidor para que nunca se pierdan
+    getGpsFavoritesServer().then((res) => {
+      if (res && Array.isArray(res.favoriteVariables) && res.favoriteVariables.length > 0) {
+        const cleaned = res.favoriteVariables.filter((k: string) => k !== "HSR Abs (m)");
+        setFavoriteKeys((prev) => {
+          const merged = Array.from(new Set([...prev, ...cleaned]));
+          try {
+            localStorage.setItem(STORAGE_FAVORITES_KEY, JSON.stringify(merged));
+          } catch (e) {}
+          return merged;
+        });
+      }
+    }).catch(() => {});
 
     const handleFavUpdate = (e: any) => {
       if (Array.isArray(e.detail)) setFavoriteKeys(e.detail.filter((k: string) => k !== "HSR Abs (m)"));

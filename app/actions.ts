@@ -3910,6 +3910,10 @@ export interface ClubConfigData {
     liga?: string;
     grupo?: string;
   }>;
+  gpsConfig?: {
+    favoriteVariables?: string[];
+    derivedVariables?: any[];
+  };
 }
 
 export async function getClubConfig(): Promise<ClubConfigData | null> {
@@ -4023,6 +4027,51 @@ export async function saveClubConfig(config: ClubConfigData): Promise<{ success:
 
 import { ExternalDatabaseLinks, DEFAULT_EXTERNAL_LINKS } from "./lib/externalLinks";
 export type { ExternalDatabaseLinks };
+
+export async function getGpsFavoritesServer(): Promise<{ favoriteVariables: string[]; derivedVariables: any[] }> {
+  try {
+    const config = await getClubConfig();
+    if (config?.gpsConfig?.favoriteVariables && Array.isArray(config.gpsConfig.favoriteVariables) && config.gpsConfig.favoriteVariables.length > 0) {
+      return {
+        favoriteVariables: config.gpsConfig.favoriteVariables,
+        derivedVariables: config.gpsConfig.derivedVariables || [],
+      };
+    }
+  } catch (e) {}
+  return {
+    favoriteVariables: [
+      "Distance(m)",
+      "Distance +21 (m)",
+      "MAX Speed(km/h)",
+      "Sprints Count",
+      "Accs Count",
+      "Decs Count",
+      "Player Load",
+      "Duration(min)",
+      "Distancia / Min",
+      "Acc+Dec",
+    ],
+    derivedVariables: [],
+  };
+}
+
+export async function saveGpsFavoritesServer(
+  favoriteKeys: string[],
+  derivedVariables?: any[]
+): Promise<{ success: boolean }> {
+  try {
+    const config = (await getClubConfig()) || ({} as any);
+    config.gpsConfig = {
+      ...(config.gpsConfig || {}),
+      favoriteVariables: favoriteKeys,
+      derivedVariables: derivedVariables !== undefined ? derivedVariables : (config.gpsConfig?.derivedVariables || []),
+    };
+    await saveClubConfig(config);
+    return { success: true };
+  } catch (e) {
+    return { success: false };
+  }
+}
 
 export async function getExternalLinksBBDD(): Promise<ExternalDatabaseLinks> {
   try {

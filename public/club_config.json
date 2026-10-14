@@ -45,5 +45,20 @@
       "proveedor": "Google Sheets"
     },
     "adicionales": []
+  },
+  "gpsConfig": {
+    "favoriteVariables": [
+      "Distance(m)",
+      "Distance +21 (m)",
+      "MAX Speed(km/h)",
+      "Sprints Count",
+      "Accs Count",
+      "Decs Count",
+      "Player Load",
+      "Duration(min)",
+      "Distancia / Min",
+      "Acc+Dec"
+    ],
+    "derivedVariables": []
   }
 }

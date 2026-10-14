@@ -1,7 +1,7 @@
 "use client";
 
 import { comparePlayersByTacticalPosition } from "@/app/lib/posiciones";
-import React, { useEffect, useState, useRef, Suspense } from "react";
+import React, { useEffect, useState, useRef, useMemo, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { getActiveJugadores, getGpsDatosReport, getOptimizadorSessionNumber } from "@/app/actions";
@@ -443,20 +443,37 @@ function InformeGpsDiarioContent() {
     };
   };
 
+  const categories = useMemo(() => {
+    const cats = Array.from(new Set(allVariables.map((v) => v.categoria)));
+    return cats.filter(Boolean);
+  }, [allVariables]);
+
   const renderGpsMetricOptions = (currentVal?: string) => {
     const favList = favoriteVariables.filter((m) => m.key !== "HSR Abs (m)");
+    const derivedList = allVariables.filter((v) => v.esDerivada && v.key !== "HSR Abs (m)");
     const isCurrentInFav = favList.some((m) => m.key === currentVal);
     const extraCurrent = (!isCurrentInFav && currentVal && currentVal !== "HSR Abs (m)") ? getVariableDef(currentVal) : null;
 
     return (
       <>
-        <optgroup label="⭐ Mis Favoritas (Ajustes)">
-          {favList.map((m) => (
-            <option key={m.key} value={m.key}>
-              {m.label} {m.unit ? `(${m.unit})` : ""}
-            </option>
-          ))}
-        </optgroup>
+        {favList.length > 0 && (
+          <optgroup label="⭐ Mis Favoritas (Ajustes)">
+            {favList.map((m) => (
+              <option key={m.key} value={m.key}>
+                {m.label} {m.unit ? `(${m.unit})` : ""}
+              </option>
+            ))}
+          </optgroup>
+        )}
+        {derivedList.length > 0 && (
+          <optgroup label="➕ Variables Derivadas / Sumas">
+            {derivedList.map((m) => (
+              <option key={m.key} value={m.key}>
+                {m.label} {m.unit ? `(${m.unit})` : ""}
+              </option>
+            ))}
+          </optgroup>
+        )}
         {extraCurrent && extraCurrent.key && (
           <optgroup label="Selección Actual">
             <option value={extraCurrent.key}>
@@ -464,6 +481,21 @@ function InformeGpsDiarioContent() {
             </option>
           </optgroup>
         )}
+        {categories.map((cat: string) => {
+          const inCat = allVariables.filter(
+            (v) => v.categoria === cat && !v.esDerivada && !favList.some((f) => f.key === v.key) && v.key !== "HSR Abs (m)"
+          );
+          if (inCat.length === 0) return null;
+          return (
+            <optgroup key={cat} label={cat}>
+              {inCat.map((m) => (
+                <option key={m.key} value={m.key}>
+                  {m.label} {m.unit ? `(${m.unit})` : ""}
+                </option>
+              ))}
+            </optgroup>
+          );
+        })}
       </>
     );
   };
@@ -672,10 +704,33 @@ function InformeGpsDiarioContent() {
     }
   }, []);
 
-  // Sincronizar automáticamente con las favoritas si no hay configuración previa
+  // Sincronizar automáticamente con las favoritas recuperadas para gráficos y tablas (Equipo y Jugador)
   useEffect(() => {
     const cleanFavs = favoriteKeys.filter((k) => k !== "HSR Abs (m)");
     if (cleanFavs && cleanFavs.length > 0) {
+      // 1. Gráficos de Equipo: inicializar con las variables favoritas del usuario
+      setChart1LeftMetric((prev) => {
+        const stored = typeof window !== "undefined" ? localStorage.getItem("microciclo_chart1_left_metric") : null;
+        if (stored && stored !== "HSR Abs (m)" && cleanFavs.includes(stored)) return stored;
+        return cleanFavs[0] || "Distance(m)";
+      });
+      setChart1RightMetric((prev) => {
+        const stored = typeof window !== "undefined" ? localStorage.getItem("microciclo_chart1_right_metric") : null;
+        if (stored && stored !== "HSR Abs (m)" && cleanFavs.includes(stored)) return stored;
+        return cleanFavs[1] || "Distance +21 (m)";
+      });
+      setChart2LeftMetric((prev) => {
+        const stored = typeof window !== "undefined" ? localStorage.getItem("microciclo_chart2_left_metric") : null;
+        if (stored && stored !== "HSR Abs (m)" && cleanFavs.includes(stored)) return stored;
+        return cleanFavs[2] || "MAX Speed(km/h)";
+      });
+      setChart2RightMetric((prev) => {
+        const stored = typeof window !== "undefined" ? localStorage.getItem("microciclo_chart2_right_metric") : null;
+        if (stored && stored !== "HSR Abs (m)" && cleanFavs.includes(stored)) return stored;
+        return cleanFavs[3] || cleanFavs[4] || "Player Load";
+      });
+
+      // 2. Tabla de Equipo: mostrar todas las favoritas del usuario por defecto
       setTableMetrics((prev) => {
         if (typeof window !== "undefined") {
           const stored = localStorage.getItem("microciclo_equipo_table_metrics");
@@ -689,13 +744,11 @@ function InformeGpsDiarioContent() {
             } catch (e) {}
           }
         }
-        return cleanFavs.slice(0, 5);
+        return cleanFavs;
       });
 
+      // 3. Tabla de Jugador: mostrar todas las favoritas del usuario por defecto
       setPlayerTableMetrics((prev) => {
-        if (prev.filter((k) => k !== "HSR Abs (m)" && cleanFavs.includes(k)).length > 0) {
-          return prev.filter((k) => k !== "HSR Abs (m)" && cleanFavs.includes(k));
-        }
         if (typeof window !== "undefined") {
           const stored = localStorage.getItem("microciclo_player_table_metrics");
           if (stored) {
@@ -708,9 +761,10 @@ function InformeGpsDiarioContent() {
             } catch (e) {}
           }
         }
-        return cleanFavs.slice(0, 6);
+        return cleanFavs;
       });
 
+      // 4. Gráficos de Jugador: vincular a las primeras 4 favoritas del usuario
       setPlayerChartVars((prev) => {
         if (typeof window !== "undefined") {
           const stored = localStorage.getItem("microciclo_player_chart_vars");
@@ -718,21 +772,17 @@ function InformeGpsDiarioContent() {
             try {
               const parsed = JSON.parse(stored);
               if (Array.isArray(parsed) && parsed.length >= 4) {
-                return parsed.map((k) => (k === "HSR Abs (m)" ? (cleanFavs[1] || "Distance +21 (m)") : k));
+                return parsed.map((k, i) => (k === "HSR Abs (m)" ? (cleanFavs[i] || "Distance +21 (m)") : k));
               }
             } catch (e) {}
           }
         }
-        if (prev.every((k) => ["Distancia", "HSR", "TopSpeed", "PlayerLoad", "Distance(m)", "HSR Abs (m)", "MAX Speed(km/h)"].includes(k))) {
-          const defaults = [...cleanFavs.slice(0, 4)];
-          const fallbacks = ["Distance(m)", "Distance +21 (m)", "MAX Speed(km/h)", "Player Load"];
-          while (defaults.length < 4) {
-            const nextFallback = fallbacks.find((f) => !defaults.includes(f)) || "Distance(m)";
-            defaults.push(nextFallback);
-          }
-          return defaults;
-        }
-        return prev.map((k) => (k === "HSR Abs (m)" ? (cleanFavs[1] || "Distance +21 (m)") : k));
+        return [
+          cleanFavs[0] || "Distance(m)",
+          cleanFavs[1] || "Distance +21 (m)",
+          cleanFavs[2] || "MAX Speed(km/h)",
+          cleanFavs[3] || cleanFavs[4] || "Player Load",
+        ];
       });
     }
   }, [favoriteKeys]);
@@ -1265,8 +1315,8 @@ function InformeGpsDiarioContent() {
       });
     })();
 
-    const filteredTableMetrics = tableMetrics.filter((k) => favoriteKeys.includes(k) && k !== "HSR Abs (m)");
-    const activeTableMetricsList = (filteredTableMetrics.length > 0 ? filteredTableMetrics : favoriteKeys.filter((k) => k !== "HSR Abs (m)").slice(0, 5))
+    const filteredTableMetrics = tableMetrics.filter((k) => k !== "HSR Abs (m)");
+    const activeTableMetricsList = (filteredTableMetrics.length > 0 ? filteredTableMetrics : favoriteKeys.filter((k) => k !== "HSR Abs (m)"))
       .map(getVariableDef)
       .filter(Boolean);
 
@@ -2554,8 +2604,8 @@ function InformeGpsDiarioContent() {
 
                     {/* 3. TABLA MATRICIAL DE MÉTRICAS (ESTILO EQUIPO PERO POR DÍA) */}
                     {(() => {
-                      const filteredPlayerMetrics = playerTableMetrics.filter((k) => favoriteKeys.includes(k) && k !== "HSR Abs (m)");
-                      const activeTableMetricsList = (filteredPlayerMetrics.length > 0 ? filteredPlayerMetrics : favoriteKeys.filter((k) => k !== "HSR Abs (m)").slice(0, 6)).map(getVariableDef).filter(Boolean);
+                      const filteredPlayerMetrics = playerTableMetrics.filter((k) => k !== "HSR Abs (m)");
+                      const activeTableMetricsList = (filteredPlayerMetrics.length > 0 ? filteredPlayerMetrics : favoriteKeys.filter((k) => k !== "HSR Abs (m)")).map(getVariableDef).filter(Boolean);
                       
                       // Días a mostrar: los del microciclo
                       let displayDays = [...currentWeekInfo.dates];
@@ -2637,23 +2687,39 @@ function InformeGpsDiarioContent() {
 
                               <div style={{ display: "flex", alignItems: "center", gap: "4px", flexWrap: "wrap" }}>
                                 <span style={{ fontSize: "10.5px", fontWeight: 600, color: "#64748b", marginRight: "2px" }}>Variables:</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const cleanFavs = favoriteKeys.filter((k) => k !== "HSR Abs (m)");
+                                    handlePlayerTableMetricsChange(cleanFavs);
+                                  }}
+                                  title="Cargar todas tus variables favoritas configuradas en Ajustes"
+                                  style={{
+                                    fontSize: "9.5px",
+                                    fontWeight: 800,
+                                    padding: "2px 6px",
+                                    borderRadius: "4px",
+                                    border: "1px solid #bfdbfe",
+                                    background: "#eff6ff",
+                                    color: "#1e3a8a",
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  ⭐ Todas las Favoritas
+                                </button>
                                 {favoriteVariables.filter((m) => m.key !== "HSR Abs (m)").map((m) => {
-                                  const filteredList = playerTableMetrics.filter((k) => favoriteKeys.includes(k) && k !== "HSR Abs (m)");
-                                  const currentList = filteredList.length > 0 ? filteredList : favoriteKeys.filter((k) => k !== "HSR Abs (m)").slice(0, 6);
-                                  const isSelected = currentList.includes(m.key);
+                                  const isSelected = playerTableMetrics.includes(m.key);
                                   return (
                                     <button
                                       key={m.key}
                                       type="button"
                                       onClick={() => {
                                         if (isSelected) {
-                                          if (currentList.length > 3) {
-                                            handlePlayerTableMetricsChange(currentList.filter((k) => k !== m.key));
+                                          if (playerTableMetrics.length > 1) {
+                                            handlePlayerTableMetricsChange(playerTableMetrics.filter((k) => k !== m.key));
                                           }
                                         } else {
-                                          if (currentList.length < 8) {
-                                            handlePlayerTableMetricsChange([...currentList, m.key]);
-                                          }
+                                          handlePlayerTableMetricsChange([...playerTableMetrics, m.key]);
                                         }
                                       }}
                                       style={{
@@ -3417,9 +3483,10 @@ function InformeGpsDiarioContent() {
                               <button
                                 type="button"
                                 onClick={() => {
-                                  handleTableMetricsChange(favoriteKeys.filter((k) => k !== "HSR Abs (m)").slice(0, 5));
+                                  const cleanFavs = favoriteKeys.filter((k) => k !== "HSR Abs (m)");
+                                  handleTableMetricsChange(cleanFavs);
                                 }}
-                                title="Cargar automáticamente tus variables favoritas configuradas en Ajustes"
+                                title="Cargar todas tus variables favoritas configuradas en Ajustes"
                                 style={{
                                   fontSize: "9.5px",
                                   fontWeight: 800,
@@ -3431,25 +3498,22 @@ function InformeGpsDiarioContent() {
                                   cursor: "pointer",
                                 }}
                               >
-                                ⭐ Cargar Favoritas
+                                ⭐ Todas las Favoritas
                               </button>
                             </div>
                             {favoriteVariables.filter((m) => m.key !== "HSR Abs (m)").map((m) => {
-                              const filteredList = tableMetrics.filter((k) => favoriteKeys.includes(k) && k !== "HSR Abs (m)");
-                              const isSelected = filteredList.includes(m.key);
+                              const isSelected = tableMetrics.includes(m.key);
                               return (
                                 <button
                                   key={m.key}
                                   type="button"
                                   onClick={() => {
                                     if (isSelected) {
-                                      if (filteredList.length > 3) {
-                                        handleTableMetricsChange(filteredList.filter((k) => k !== m.key));
+                                      if (tableMetrics.length > 1) {
+                                        handleTableMetricsChange(tableMetrics.filter((k) => k !== m.key));
                                       }
                                     } else {
-                                      if (filteredList.length < 6) {
-                                        handleTableMetricsChange([...filteredList, m.key]);
-                                      }
+                                      handleTableMetricsChange([...tableMetrics, m.key]);
                                     }
                                   }}
                                   style={{

@@ -97,6 +97,9 @@ export function deduplicateComentarios(
 
   list.forEach((c) => {
     if (!c || !c.texto) return;
+    // Descartar comentarios inventados o generados automáticamente
+    if (c.id && (c.id.startsWith("pitch_team_") || c.id.startsWith("tasks_team_") || c.id.includes("_obj_"))) return;
+    if (c.texto.startsWith("(ACT:") || c.texto.startsWith("ACT:")) return;
     const norm = normalizeCommentText(c.texto);
     if (!norm) return;
 
@@ -1084,59 +1087,13 @@ export function CalendarGrid({
           return true;
         });
 
-        const rawPitch = localStorage.getItem("disponibilidad_pitch_comments_v1");
-        if (rawPitch) {
-          const pitchMap = JSON.parse(rawPitch);
-          Object.entries(pitchMap).forEach(([fecha, txt]) => {
-            if (txt && typeof txt === "string" && txt.trim()) {
-              const alreadyHas = list.some(
-                (c) => c && c.jugador_id === "TEAM" && (c.fecha === fecha || c.day_id === fecha) && c.texto === txt.trim()
-              );
-              if (!alreadyHas) {
-                list.push({
-                  id: `pitch_team_${fecha}`,
-                  jugador_id: "TEAM",
-                  day_id: fecha,
-                  fecha: fecha,
-                  tipo: "CON",
-                  texto: txt.trim(),
-                });
-              }
-            }
-          });
-        }
-        
-        const rawTasks = localStorage.getItem("disponibilidad_session_tasks_v1");
-        if (rawTasks) {
-          const tasksMap = JSON.parse(rawTasks);
-          Object.entries(tasksMap).forEach(([fecha, t]: [string, any]) => {
-            if (t) {
-              const parts: string[] = [];
-              if (t.act?.trim()) parts.push(`ACT:${t.act.trim()}`);
-              if (t.t1?.trim()) parts.push(`T1:${t.t1.trim()}`);
-              if (t.t2?.trim()) parts.push(`T2:${t.t2.trim()}`);
-              if (t.t3?.trim()) parts.push(`T3:${t.t3.trim()}`);
-              if (t.t4?.trim()) parts.push(`T4:${t.t4.trim()}`);
-              const tasksStr = parts.length > 0 ? `(${parts.join(" ")})` : "";
-              
-              if (tasksStr) {
-                const alreadyHas = list.some(
-                  (c) => c && c.jugador_id === "TEAM" && (c.fecha === fecha || c.day_id === fecha) && c.texto === tasksStr
-                );
-                if (!alreadyHas) {
-                  list.push({
-                    id: `tasks_team_${fecha}`,
-                    jugador_id: "TEAM",
-                    day_id: fecha,
-                    fecha: fecha,
-                    tipo: "TEC",
-                    texto: tasksStr,
-                  });
-                }
-              }
-            }
-          });
-        }
+        // Purgar de forma estricta cualquier comentario sintético o generado (solo comentarios del usuario o wellness)
+        list = list.filter((c) => {
+          if (!c || !c.texto) return false;
+          if (c.id && (c.id.startsWith("pitch_team_") || c.id.startsWith("tasks_team_") || c.id.includes("_obj_"))) return false;
+          if (c.texto.startsWith("(ACT:") || c.texto.startsWith("ACT:")) return false;
+          return true;
+        });
         list = deduplicateComentarios(list);
         if (list.length > 0) {
           setComentarios(prev => {
@@ -1253,7 +1210,7 @@ export function CalendarGrid({
             parseAndAdd(condicionalText, "CON", "con");
           }
           parseAndAdd(est.comentario_tecnico || est.comentario_tecnico_tactico, "TEC", "tec");
-          parseAndAdd(est.objetivo, "TEC", "obj");
+          // No convertir objetivos en comentarios inventados
           parseAndAdd(est.comentario_lesiones || est.comentario_fisioterapia, "FIS", "fis");
           if (wellnessText) {
             parseAndAdd(wellnessText, "WEL", "wel");
