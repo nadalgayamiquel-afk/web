@@ -1,7 +1,5 @@
 "use client";
 
-import { getGpsFavoritesServer, saveGpsFavoritesServer } from "@/app/actions";
-
 import { useState, useEffect, useCallback, useMemo } from "react";
 
 export interface GpsVariableDef {
@@ -416,7 +414,11 @@ export function saveStoredFavoriteKeys(keys: string[]): void {
     const val = cleaned.length > 0 ? cleaned : DEFAULT_FAVORITE_GPS_VARIABLES;
     localStorage.setItem(STORAGE_FAVORITES_KEY, JSON.stringify(val));
     window.dispatchEvent(new CustomEvent("gps_favorites_updated", { detail: val }));
-    saveGpsFavoritesServer(val).catch(() => {});
+    fetch("/api/gps/favorites", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ favoriteVariables: val }),
+    }).catch(() => {});
   } catch (e) {}
 }
 
@@ -436,6 +438,11 @@ export function saveStoredDerivedVariables(list: GpsDerivedVariable[]): void {
   try {
     localStorage.setItem(STORAGE_DERIVED_KEY, JSON.stringify(list));
     window.dispatchEvent(new CustomEvent("gps_derived_updated", { detail: list }));
+    fetch("/api/gps/favorites", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ derivedVariables: list }),
+    }).catch(() => {});
     // Asegurar que las variables derivadas también estén registradas en favoritas
     const currentFavs = getStoredFavoriteKeys();
     const newFavs = [...currentFavs];
@@ -861,21 +868,44 @@ export function useFavoriteGpsVariables() {
     setDerivedVariables(getStoredDerivedVariables());
 
     // Sincronización y recuperación automática con el servidor para que nunca se pierdan
-    getGpsFavoritesServer().then((res) => {
-      if (res && Array.isArray(res.favoriteVariables) && res.favoriteVariables.length > 0) {
-        const cleaned = res.favoriteVariables.filter((k: string) => k !== "HSR Abs (m)");
-        setFavoriteKeys((prev) => {
-          const merged = Array.from(new Set([...prev, ...cleaned]));
-          if (prev.length === merged.length && prev.every((v, i) => v === merged[i])) {
+    fetch("/api/gps/favorites")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((res) => {
+        if (res && Array.isArray(res.favoriteVariables) && res.favoriteVariables.length > 0) {
+          const cleaned = res.favoriteVariables.filter((k: string) => k !== "HSR Abs (m)");
+          setFavoriteKeys((prev) => {
+            const merged = Array.from(new Set([...prev, ...cleaned]));
+            if (prev.length === merged.length && prev.every((v, i) => v === merged[i])) {
+              return prev;
+            }
+            try {
+              localStorage.setItem(STORAGE_FAVORITES_KEY, JSON.stringify(merged));
+            } catch (e) {}
+            return merged;
+          });
+        }
+        if (res && Array.isArray(res.derivedVariables) && res.derivedVariables.length > 0) {
+          setDerivedVariables((prev) => {
+            const existingIds = new Set(prev.map((d) => d.id));
+            const merged = [...prev];
+            let changed = false;
+            for (const d of res.derivedVariables) {
+              if (!existingIds.has(d.id)) {
+                merged.push(d);
+                changed = true;
+              }
+            }
+            if (changed) {
+              try {
+                localStorage.setItem(STORAGE_DERIVED_KEY, JSON.stringify(merged));
+              } catch (e) {}
+              return merged;
+            }
             return prev;
-          }
-          try {
-            localStorage.setItem(STORAGE_FAVORITES_KEY, JSON.stringify(merged));
-          } catch (e) {}
-          return merged;
-        });
-      }
-    }).catch(() => {});
+          });
+        }
+      })
+      .catch(() => {});
 
     const handleFavUpdate = (e: any) => {
       const next = Array.isArray(e.detail) ? e.detail.filter((k: string) => k !== "HSR Abs (m)") : getStoredFavoriteKeys();
@@ -934,7 +964,9 @@ export function useFavoriteGpsVariables() {
       const next = exists ? prev.filter((k) => k !== key) : [...prev, key];
       const result = next.filter((k) => k !== "HSR Abs (m)");
       const finalRes = result.length > 0 ? result : [key];
-      saveStoredFavoriteKeys(finalRes);
+      setTimeout(() => {
+        saveStoredFavoriteKeys(finalRes);
+      }, 0);
       return finalRes;
     });
   }, []);
