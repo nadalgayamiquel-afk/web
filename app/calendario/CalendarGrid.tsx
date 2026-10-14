@@ -58,6 +58,90 @@ const TIPOS_COMENTARIO = [
   { codigo: "OTR" as const, nombre: "Otros", color: "#475569", bg: "#f8fafc", border: "#cbd5e1" },
 ];
 
+export function normalizeCommentText(txt?: string | null): string {
+  if (!txt) return "";
+  return txt
+    .replace(/^["']|["']$/g, "")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+export function deduplicateComentarios(
+  list: ComentarioJugadorDia[],
+  dayDateMap?: Map<string, string>
+): ComentarioJugadorDia[] {
+  if (!Array.isArray(list) || list.length === 0) return [];
+
+  const resolveFecha = (c: ComentarioJugadorDia): string => {
+    if (c.fecha && c.fecha.trim()) return c.fecha.trim();
+    if (c.day_id) {
+      if (dayDateMap && dayDateMap.has(c.day_id)) {
+        return dayDateMap.get(c.day_id)!;
+      }
+      return String(c.day_id).replace(/^d_/, "").trim();
+    }
+    return "";
+  };
+
+  const welTextSet = new Set<string>();
+  list.forEach((c) => {
+    if (!c || c.tipo !== "WEL" || !c.texto) return;
+    const f = resolveFecha(c);
+    const norm = normalizeCommentText(c.texto).toLowerCase();
+    if (f && norm) {
+      welTextSet.add(`${c.jugador_id}_${f}_${norm}`);
+    }
+  });
+
+  const map = new Map<string, ComentarioJugadorDia>();
+
+  list.forEach((c) => {
+    if (!c || !c.texto) return;
+    const norm = normalizeCommentText(c.texto);
+    if (!norm) return;
+
+    const f = resolveFecha(c);
+    const normLower = norm.toLowerCase();
+
+    // Descartar comentarios CON si duplican el texto de un comentario WEL
+    if (c.tipo === "CON" && f && welTextSet.has(`${c.jugador_id}_${f}_${normLower}`)) {
+      return;
+    }
+
+    let key: string;
+    if (c.tipo === "WEL") {
+      // REGLA ESTRICTA: como máximo UN solo comentario wellness por jugador y fecha
+      key = `wel_${c.jugador_id}_${f || c.day_id || "nodate"}`;
+    } else {
+      key = `${c.jugador_id}_${f || c.day_id || "nodate"}_${c.tipo}_${normLower}`;
+    }
+
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, {
+        ...c,
+        fecha: f || c.fecha,
+        texto: norm,
+        id: c.tipo === "WEL" ? key : (c.id || key),
+      });
+    } else {
+      if (c.tipo === "WEL") {
+        const existingNorm = normalizeCommentText(existing.texto);
+        if (norm.length >= existingNorm.length) {
+          map.set(key, {
+            ...c,
+            fecha: f || c.fecha || existing.fecha,
+            texto: norm,
+            id: key,
+          });
+        }
+      }
+    }
+  });
+
+  return Array.from(map.values());
+}
+
 export type TipoEvento = {
   codigo: string;
   texto: string;
@@ -1053,12 +1137,14 @@ export function CalendarGrid({
             }
           });
         }
+        list = deduplicateComentarios(list);
         if (list.length > 0) {
           setComentarios(prev => {
-            const map = new Map<string, ComentarioJugadorDia>();
-            prev.forEach(c => map.set(c.id || `${c.jugador_id}_${c.fecha}_${c.texto}`, c));
-            list.forEach(c => map.set(c.id || `${c.jugador_id}_${c.fecha}_${c.texto}`, c));
-            return Array.from(map.values());
+            const merged = deduplicateComentarios([...prev, ...list]);
+            try {
+              localStorage.setItem("comentarios_jugadores_v2", JSON.stringify(merged));
+            } catch (e) {}
+            return merged;
           });
         }
       } catch (e) {
@@ -1075,12 +1161,7 @@ export function CalendarGrid({
         if (saved) {
           const list: ComentarioJugadorDia[] = JSON.parse(saved);
           if (Array.isArray(list)) {
-            setComentarios((prev) => {
-              const map = new Map<string, ComentarioJugadorDia>();
-              prev.forEach((c) => map.set(c.id || `${c.jugador_id}_${c.fecha}_${c.tipo}_${c.texto}`, c));
-              list.forEach((c) => map.set(c.id || `${c.jugador_id}_${c.fecha}_${c.tipo}_${c.texto}`, c));
-              return Array.from(map.values());
-            });
+            setComentarios((prev) => deduplicateComentarios([...prev, ...list]));
           }
         }
       } catch (e) {}
@@ -1118,13 +1199,38 @@ export function CalendarGrid({
             if (!textoVal || !textoVal.trim()) return;
             const lines = textoVal.split("\n").map((l: string) => l.trim()).filter(Boolean);
             lines.forEach((lineText: string, idx: number) => {
+              const cleanLine = normalizeCommentText(lineText);
+              if (!cleanLine) return;
+
+              if (tipoCod === "WEL") {
+                const welKey = `wel_${est.jugador_id}_${fechaISO}`;
+                // Si ya existe algún comentario WEL para este deportista y fecha, no añadir otro
+                const hasWel = Array.from(map.values()).some(
+                  (existing) =>
+                    existing.tipo === "WEL" &&
+                    existing.jugador_id === est.jugador_id &&
+                    (existing.day_id === est.sesion_dia_id || existing.fecha === fechaISO)
+                );
+                if (!hasWel) {
+                  map.set(welKey, {
+                    id: welKey,
+                    jugador_id: est.jugador_id,
+                    day_id: est.sesion_dia_id,
+                    fecha: fechaISO,
+                    tipo: "WEL",
+                    texto: cleanLine,
+                  });
+                }
+                return;
+              }
+
               const key = `db_${prefix}_${est.jugador_id}_${est.sesion_dia_id}_${idx}`;
               const alreadyExists = Array.from(map.values()).some(
                 (existing) =>
                   existing.jugador_id === est.jugador_id &&
                   (existing.day_id === est.sesion_dia_id || existing.fecha === fechaISO) &&
                   existing.tipo === tipoCod &&
-                  existing.texto === lineText
+                  normalizeCommentText(existing.texto).toLowerCase() === cleanLine.toLowerCase()
               );
               if (!alreadyExists) {
                 map.set(key, {
@@ -1133,7 +1239,7 @@ export function CalendarGrid({
                   day_id: est.sesion_dia_id,
                   fecha: fechaISO,
                   tipo: tipoCod,
-                  texto: lineText,
+                  texto: cleanLine,
                 });
               }
             });
@@ -1190,19 +1296,7 @@ export function CalendarGrid({
           parseAndAddTeam(d.comentario_fisico, "CON", "con");
         });
 
-        // Garantizar que ningún comentario Condicional duplique a uno de Wellness
-        const welSet = new Set(
-          Array.from(map.values())
-            .filter((c) => c.tipo === "WEL" && c.texto)
-            .map((c) => `${c.jugador_id}_${c.fecha || c.day_id}_${c.texto.trim()}`)
-        );
-        const merged = Array.from(map.values()).filter((c) => {
-          if (c.tipo === "CON" && c.texto) {
-            const key = `${c.jugador_id}_${c.fecha || c.day_id}_${c.texto.trim()}`;
-            if (welSet.has(key)) return false;
-          }
-          return true;
-        });
+        const merged = deduplicateComentarios(Array.from(map.values()), dayDateMap);
         if (typeof window !== "undefined") {
           try {
             localStorage.setItem("comentarios_jugadores_v2", JSON.stringify(merged));
@@ -1407,20 +1501,23 @@ export function CalendarGrid({
         return;
       }
 
-      const newWelComments: ComentarioJugadorDia[] = [];
+      // Deduplicar newWelComments asegurando estrictamente 1 por jugador y fecha
+      const uniqueWelMap = new Map<string, ComentarioJugadorDia>();
 
       allRecords.forEach((rec) => {
         const fechaISO = extractRecordDateISO(rec);
         const nombreRaw = extractPlayerNameFromRow(rec) || extractRecordPlayerName(rec);
-        const comentarioTexto = getStrictWellnessComment(rec);
+        let comentarioTexto = getStrictWellnessComment(rec);
 
         if (!comentarioTexto || !fechaISO || !nombreRaw) return;
+        comentarioTexto = normalizeCommentText(comentarioTexto);
+        if (!comentarioTexto) return;
 
         const matchingPlayer = findMatchingJugadorInGrid(nombreRaw, jugadoresList);
 
         if (matchingPlayer) {
           const commentId = `wel_${matchingPlayer.id}_${fechaISO}`;
-          newWelComments.push({
+          uniqueWelMap.set(commentId, {
             id: commentId,
             jugador_id: matchingPlayer.id,
             day_id: `d_${fechaISO}`,
@@ -1431,46 +1528,17 @@ export function CalendarGrid({
         }
       });
 
+      const newWelComments = Array.from(uniqueWelMap.values());
+
       if (newWelComments.length > 0) {
         setComentarios((prev) => {
-          const map = new Map<string, ComentarioJugadorDia>();
-          prev.forEach((c) => {
-            const key = c.id || `${c.jugador_id}_${c.fecha}_${c.tipo}_${c.texto}`;
-            map.set(key, c);
-          });
-          let hasChanges = false;
-
-          // Si existe algún comentario CON residual con el mismo texto y fecha de este deportista, eliminarlo
-          newWelComments.forEach((wc) => {
-            for (const [k, c] of map.entries()) {
-              if (
-                c.jugador_id === wc.jugador_id &&
-                (c.fecha === wc.fecha || c.day_id === wc.day_id) &&
-                c.tipo === "CON" &&
-                c.texto.trim() === wc.texto.trim()
-              ) {
-                map.delete(k);
-                hasChanges = true;
-              }
-            }
-          });
-
-          newWelComments.forEach((wc) => {
-            const key = wc.id || `wel_${wc.jugador_id}_${wc.fecha}_${wc.texto}`;
-            const existing = map.get(key);
-            if (!existing || existing.texto !== wc.texto) {
-              map.set(key, wc);
-              hasChanges = true;
-            }
-          });
-          if (!hasChanges) return prev;
-          const nextArr = Array.from(map.values());
+          const merged = deduplicateComentarios([...prev, ...newWelComments]);
           if (typeof window !== "undefined") {
             try {
-              localStorage.setItem("comentarios_jugadores_v2", JSON.stringify(nextArr));
+              localStorage.setItem("comentarios_jugadores_v2", JSON.stringify(merged));
             } catch (e) {}
           }
-          return nextArr;
+          return merged;
         });
 
         // Persistir en Supabase Cloud BBDD (estado_diario_jugador)
@@ -3112,7 +3180,7 @@ export function CalendarGrid({
         }
       });
 
-      const scopedComentarios = comentarios.filter(c => targetDates.has(c.fecha) || targetIds.has(c.day_id));
+      const scopedComentarios = deduplicateComentarios(comentarios.filter(c => targetDates.has(c.fecha) || targetIds.has(c.day_id)));
 
       const res = await saveFullPlanificacionBBDD(daysToSave, scopedComentarios, scopedPlayerEvents, undefined, scopedBloques, scopedEstados);
       setLastSavedTime(nowStr);
@@ -5871,11 +5939,23 @@ export function CalendarGrid({
                     {daysChunk.map((d) => {
                       const borderRight = isSundayDate(d.fecha) ? "3px solid #0f172a" : "1px solid #cbd5e1";
 
-                      // Filtrar comentarios para TEAM en este día
-                      const teamComentarios = comentarios.filter(
+                      // Filtrar comentarios para TEAM en este día con deduplicación defensiva
+                      const rawTeamComentarios = comentarios.filter(
                         (c) => (c.jugador_id === "TEAM" || c.jugador_id === "team" || c.jugador_id === "EQUIPO") &&
                                (c.day_id === d.id || c.fecha === d.fecha)
                       ).filter((c) => filterCommentType === "TODOS" || c.tipo === filterCommentType);
+
+                      const seenTeamKeys = new Set<string>();
+                      const teamComentarios: ComentarioJugadorDia[] = [];
+                      for (const c of rawTeamComentarios) {
+                        if (!c || !c.texto) continue;
+                        const norm = normalizeCommentText(c.texto).toLowerCase();
+                        if (!norm) continue;
+                        const key = `${c.tipo}_${norm}`;
+                        if (seenTeamKeys.has(key)) continue;
+                        seenTeamKeys.add(key);
+                        teamComentarios.push(c);
+                      }
 
                       return (
                         <td
@@ -6010,10 +6090,30 @@ export function CalendarGrid({
                         {daysChunk.map((d) => {
                           const borderRight = isSundayDate(d.fecha) ? "3px solid #0f172a" : "1px solid #f1f5f9";
 
-                          // Filtrar comentarios para este jugador y este día
-                          const cellComentarios = comentarios.filter(
+                          // Filtrar comentarios para este jugador y este día con deduplicación estricta (máx 1 WEL)
+                          const rawCellComentarios = comentarios.filter(
                             (c) => c.jugador_id === p.id && (c.day_id === d.id || c.fecha === d.fecha)
                           ).filter((c) => filterCommentType === "TODOS" || c.tipo === filterCommentType);
+
+                          let seenWel = false;
+                          const seenCellKeys = new Set<string>();
+                          const cellComentarios: ComentarioJugadorDia[] = [];
+
+                          for (const c of rawCellComentarios) {
+                            if (!c || !c.texto) continue;
+                            const normTxt = normalizeCommentText(c.texto).toLowerCase();
+                            if (!normTxt) continue;
+
+                            if (c.tipo === "WEL") {
+                              if (seenWel) continue; // estrictamente sólo una vez!
+                              seenWel = true;
+                            } else {
+                              const key = `${c.tipo}_${normTxt}`;
+                              if (seenCellKeys.has(key)) continue;
+                              seenCellKeys.add(key);
+                            }
+                            cellComentarios.push(c);
+                          }
 
                           return (
                             <td
@@ -7728,7 +7828,7 @@ export function CalendarGrid({
 
                 let nextComs: ComentarioJugadorDia[] = [];
                 setComentarios((prev) => {
-                  nextComs = [...prev, nuevo];
+                  nextComs = deduplicateComentarios([...prev, nuevo]);
                   return nextComs;
                 });
 
@@ -7975,7 +8075,18 @@ export function CalendarGrid({
                   const target = deleteComentarioTarget;
                   if (target) {
                     setComentarios((prev) => {
-                      const nextComs = prev.filter((c) => c.id !== target.id);
+                      const nextComs = prev.filter((c) => {
+                        if (c.id === target.id) return false;
+                        if (
+                          target.tipo === "WEL" &&
+                          c.tipo === "WEL" &&
+                          c.jugador_id === target.jugador_id &&
+                          (c.day_id === target.day_id || c.fecha === target.fecha)
+                        ) {
+                          return false;
+                        }
+                        return true;
+                      });
                       if (typeof window !== "undefined") {
                         try {
                           localStorage.setItem("comentarios_jugadores_v2", JSON.stringify(nextComs));

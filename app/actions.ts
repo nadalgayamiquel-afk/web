@@ -1967,7 +1967,10 @@ export async function saveFullPlanificacionBBDD(sessionsPayload: any[], comments
       };
 
       if (c.tipo === "WEL") {
-        row.comentario_wellness = appendComment(row.comentario_wellness, c.texto);
+        const cleanWel = (c.texto || "").replace(/^[\"']|[\"']$/g, "").trim();
+        if (cleanWel) {
+          row.comentario_wellness = cleanWel;
+        }
       } else if (c.tipo === "FIS") {
         row.comentario_lesiones = appendComment(row.comentario_lesiones, c.texto);
         row.comentario_fisioterapia = appendComment(row.comentario_fisioterapia, c.texto);
@@ -2426,7 +2429,19 @@ export async function getPlayerCommentsBBDD(): Promise<Array<{
       if (fisicoTexto && fisicoTexto !== wellnessTexto) {
         addComment(e.comentario_fisico, "CON", "con");
       }
-      addComment(e.comentario_wellness, "WEL", "wel");
+      if (wellnessTexto) {
+        const cleanWel = wellnessTexto.replace(/^[\"']|[\"']$/g, "").trim();
+        if (cleanWel) {
+          result.push({
+            id: `wel_${e.jugador_id}_${fecha}`,
+            jugador_id: e.jugador_id,
+            day_id: e.sesion_dia_id,
+            fecha: fecha,
+            tipo: "WEL",
+            texto: cleanWel,
+          });
+        }
+      }
       addComment(e.comentario_tecnico, "TEC", "tec");
       addComment(e.comentario_psicologico, "PSI", "psi");
       addComment(e.comentario_medico, "OTR", "med");
