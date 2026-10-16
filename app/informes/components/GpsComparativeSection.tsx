@@ -72,6 +72,547 @@ interface GpsComparativeSectionProps {
   allVariables?: GpsVariableDef[];
 }
 
+
+function getDatesInRange(startStr: string, endStr: string): string[] {
+  if (!startStr || !endStr) return [];
+  const [s, e] = startStr <= endStr ? [startStr, endStr] : [endStr, startStr];
+  const list: string[] = [];
+  let curr = new Date(s + "T12:00:00");
+  const end = new Date(e + "T12:00:00");
+  while (curr <= end) {
+    list.push(curr.toISOString().split("T")[0]);
+    curr.setDate(curr.getDate() + 1);
+  }
+  return list;
+}
+
+
+interface MiniCalendarModalProps {
+  target: "A" | "B";
+  initialStart: string;
+  initialEnd: string;
+  onApply: (start: string, end: string) => void;
+  onClose: () => void;
+  resolveDayInfo: (fecha: string) => { md: string; isMatch: boolean; rival?: string };
+  teamGpsRecords: GpsRecordRef[];
+  availableWeeks: WeekOptionRef[];
+}
+
+function MiniCalendarModal({
+  target,
+  initialStart,
+  initialEnd,
+  onApply,
+  onClose,
+  resolveDayInfo,
+  teamGpsRecords,
+  availableWeeks,
+}: MiniCalendarModalProps) {
+  const initDate = initialStart ? new Date(initialStart + "T12:00:00") : new Date();
+  const [viewYear, setViewYear] = useState<number>(initDate.getFullYear());
+  const [viewMonth, setViewMonth] = useState<number>(initDate.getMonth()); // 0-indexed
+
+  const [tempStart, setTempStart] = useState<string>(initialStart);
+  const [tempEnd, setTempEnd] = useState<string>(initialEnd);
+
+  const monthNames = [
+    "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+  ];
+  const weekDays = ["LUN", "MAR", "MIÉ", "JUE", "VIE", "SÁB", "DOM"];
+
+  const handlePrevMonth = () => {
+    if (viewMonth === 0) {
+      setViewYear(viewYear - 1);
+      setViewMonth(11);
+    } else {
+      setViewMonth(viewMonth - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (viewMonth === 11) {
+      setViewYear(viewYear + 1);
+      setViewMonth(0);
+    } else {
+      setViewMonth(viewMonth + 1);
+    }
+  };
+
+  // Generar cuadrícula de 42 días (6 semanas)
+  const calendarCells = useMemo(() => {
+    const firstDay = new Date(viewYear, viewMonth, 1);
+    const startOffset = (firstDay.getDay() + 6) % 7; // Lunes = 0, Domingo = 6
+    const totalDaysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+    const prevMonthDays = new Date(viewYear, viewMonth, 0).getDate();
+
+    const cells: {
+      dateStr: string;
+      dayNum: number;
+      isCurrentMonth: boolean;
+      dayInfo: { md: string; isMatch: boolean; rival?: string };
+      hasGps: boolean;
+    }[] = [];
+
+    // Días del mes anterior
+    for (let i = startOffset - 1; i >= 0; i--) {
+      const dNum = prevMonthDays - i;
+      const prevM = viewMonth === 0 ? 11 : viewMonth - 1;
+      const prevY = viewMonth === 0 ? viewYear - 1 : viewYear;
+      const mm = String(prevM + 1).padStart(2, "0");
+      const dd = String(dNum).padStart(2, "0");
+      const dStr = `${prevY}-${mm}-${dd}`;
+      cells.push({
+        dateStr: dStr,
+        dayNum: dNum,
+        isCurrentMonth: false,
+        dayInfo: resolveDayInfo(dStr),
+        hasGps: teamGpsRecords.some((r) => r.fecha === dStr),
+      });
+    }
+
+    // Días del mes actual
+    for (let d = 1; d <= totalDaysInMonth; d++) {
+      const mm = String(viewMonth + 1).padStart(2, "0");
+      const dd = String(d).padStart(2, "0");
+      const dStr = `${viewYear}-${mm}-${dd}`;
+      cells.push({
+        dateStr: dStr,
+        dayNum: d,
+        isCurrentMonth: true,
+        dayInfo: resolveDayInfo(dStr),
+        hasGps: teamGpsRecords.some((r) => r.fecha === dStr),
+      });
+    }
+
+    // Días del mes siguiente para completar múltiplos de 7
+    const remaining = (7 - (cells.length % 7)) % 7;
+    const paddingCount = cells.length + remaining < 35 ? remaining + 7 : remaining;
+    for (let nextD = 1; nextD <= paddingCount; nextD++) {
+      const nextM = viewMonth === 11 ? 0 : viewMonth + 1;
+      const nextY = viewMonth === 11 ? viewYear + 1 : viewYear;
+      const mm = String(nextM + 1).padStart(2, "0");
+      const dd = String(nextD).padStart(2, "0");
+      const dStr = `${nextY}-${mm}-${dd}`;
+      cells.push({
+        dateStr: dStr,
+        dayNum: nextD,
+        isCurrentMonth: false,
+        dayInfo: resolveDayInfo(dStr),
+        hasGps: teamGpsRecords.some((r) => r.fecha === dStr),
+      });
+    }
+
+    return cells;
+  }, [viewYear, viewMonth, teamGpsRecords, resolveDayInfo]);
+
+  const handleCellClick = (dateStr: string) => {
+    if (!tempStart || (tempStart && tempEnd)) {
+      setTempStart(dateStr);
+      setTempEnd("");
+    } else {
+      if (dateStr < tempStart) {
+        setTempStart(dateStr);
+        setTempEnd("");
+      } else {
+        setTempEnd(dateStr);
+      }
+    }
+  };
+
+  const formatDateDisplayLocal = (dStr: string) => {
+    if (!dStr) return "-";
+    const parts = dStr.split("-");
+    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    return dStr;
+  };
+
+  const isThemeA = target === "A";
+  const primaryColor = isThemeA ? "#1e3a8a" : "#ea580c";
+  const lightBgColor = isThemeA ? "#eff6ff" : "#fff7ed";
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: "rgba(15, 23, 42, 0.65)",
+        backdropFilter: "blur(4px)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 99999,
+        padding: "16px",
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          background: "#ffffff",
+          borderRadius: "16px",
+          width: "100%",
+          maxWidth: "520px",
+          boxShadow: "0 20px 40px rgba(0,0,0,0.25)",
+          border: `2px solid ${primaryColor}`,
+          overflow: "hidden",
+          display: "flex",
+          flexDirection: "column",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Cabecera del modal */}
+        <div
+          style={{
+            background: primaryColor,
+            color: "#ffffff",
+            padding: "14px 18px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <span style={{ fontSize: "16px" }}>📅</span>
+              <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 900, textTransform: "uppercase" }}>
+                Seleccionar Microciclo ${target} (Del día al día)
+              </h3>
+            </div>
+            <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.85)", fontWeight: 600 }}>
+              Marca el día de inicio y el día de fin del microciclo para compararlo
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              background: "rgba(255,255,255,0.2)",
+              border: "none",
+              color: "#ffffff",
+              width: "28px",
+              height: "28px",
+              borderRadius: "50%",
+              fontSize: "14px",
+              fontWeight: 900,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Leyenda explicativa: MD en rojo, tipos en gris debajo */}
+        <div
+          style={{
+            background: "#f8fafc",
+            padding: "8px 16px",
+            borderBottom: "1px solid #e2e8f0",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: "8px",
+            fontSize: "11px",
+            fontWeight: 700,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+              <span style={{ color: "#dc2626", fontWeight: 900, fontSize: "13px" }}>🔴 MD</span>
+              <span style={{ color: "#475569" }}>(Día de Partido en Rojo)</span>
+            </span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+              <span style={{ color: "#64748b", fontWeight: 800 }}>MD-X</span>
+              <span style={{ color: "#475569" }}>(Tipo MD en gris debajo)</span>
+            </span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+              <span style={{ color: "#16a34a" }}>●</span>
+              <span style={{ color: "#475569" }}>GPS</span>
+            </span>
+          </div>
+        </div>
+
+        {/* Barra de navegación de mes */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "10px 18px",
+            background: "#ffffff",
+            borderBottom: "1px solid #f1f5f9",
+          }}
+        >
+          <button
+            type="button"
+            onClick={handlePrevMonth}
+            style={{
+              padding: "5px 12px",
+              borderRadius: "6px",
+              border: "1px solid #cbd5e1",
+              background: "#f8fafc",
+              color: "#334155",
+              fontSize: "12px",
+              fontWeight: 800,
+              cursor: "pointer",
+            }}
+          >
+            ◀ Mes Anterior
+          </button>
+
+          <span style={{ fontSize: "15px", fontWeight: 900, color: "#0f172a" }}>
+            {monthNames[viewMonth]} {viewYear}
+          </span>
+
+          <button
+            type="button"
+            onClick={handleNextMonth}
+            style={{
+              padding: "5px 12px",
+              borderRadius: "6px",
+              border: "1px solid #cbd5e1",
+              background: "#f8fafc",
+              color: "#334155",
+              fontSize: "12px",
+              fontWeight: 800,
+              cursor: "pointer",
+            }}
+          >
+            Mes Siguiente ▶
+          </button>
+        </div>
+
+        {/* Cuadrícula de calendario */}
+        <div style={{ padding: "10px 16px" }}>
+          {/* Cabecera días de la semana */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(7, 1fr)",
+              gap: "4px",
+              textAlign: "center",
+              marginBottom: "6px",
+            }}
+          >
+            {weekDays.map((wd) => (
+              <span key={wd} style={{ fontSize: "11px", fontWeight: 900, color: "#64748b" }}>
+                {wd}
+              </span>
+            ))}
+          </div>
+
+          {/* Días del mes */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(7, 1fr)",
+              gap: "4px",
+            }}
+          >
+            {calendarCells.map((cell) => {
+              const isStart = tempStart === cell.dateStr;
+              const isEnd = tempEnd === cell.dateStr;
+              const inRange =
+                tempStart && tempEnd && cell.dateStr >= tempStart && cell.dateStr <= tempEnd;
+
+              const isMatch = cell.dayInfo.isMatch;
+
+              // Estilos de celda
+              let bg = cell.isCurrentMonth ? "#ffffff" : "#f8fafc";
+              let border = "1px solid #e2e8f0";
+              let textColor = cell.isCurrentMonth ? (isMatch ? "#dc2626" : "#0f172a") : "#94a3b8";
+
+              if (inRange) {
+                bg = lightBgColor;
+                border = `1px solid ${primaryColor}`;
+              }
+              if (isStart || isEnd) {
+                bg = primaryColor;
+                textColor = "#ffffff";
+              }
+
+              return (
+                <button
+                  key={cell.dateStr}
+                  type="button"
+                  onClick={() => handleCellClick(cell.dateStr)}
+                  style={{
+                    height: "56px",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "1px",
+                    borderRadius: isStart || isEnd ? "8px" : "6px",
+                    border,
+                    background: bg,
+                    color: textColor,
+                    cursor: "pointer",
+                    position: "relative",
+                    transition: "all 0.1s ease",
+                    padding: "2px",
+                  }}
+                  title={`${cell.dateStr}${cell.dayInfo.md ? ` · [${cell.dayInfo.md}]` : ""}${isMatch ? " (Día de Partido)" : ""}`}
+                >
+                  {/* Indicador de GPS */}
+                  {cell.hasGps && (
+                    <span
+                      style={{
+                        position: "absolute",
+                        top: "3px",
+                        right: "4px",
+                        width: "6px",
+                        height: "6px",
+                        borderRadius: "50%",
+                        background: isStart || isEnd ? "#86efac" : "#16a34a",
+                      }}
+                      title="Tiene datos GPS"
+                    />
+                  )}
+
+                  {/* Número de día: en ROJO si es MD */}
+                  <span
+                    style={{
+                      fontSize: "13px",
+                      fontWeight: isMatch || isStart || isEnd ? 900 : 700,
+                      color: isStart || isEnd ? "#ffffff" : isMatch ? "#dc2626" : cell.isCurrentMonth ? "#0f172a" : "#94a3b8",
+                      lineHeight: 1,
+                    }}
+                  >
+                    {cell.dayNum}
+                  </span>
+
+                  {/* Tipo de MD en GRIS debajo del número */}
+                  <span
+                    style={{
+                      fontSize: "9px",
+                      fontWeight: 800,
+                      color: isStart || isEnd ? "rgba(255,255,255,0.9)" : "#64748b",
+                      lineHeight: 1,
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    {cell.dayInfo.md || (isMatch ? "MD" : "—")}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Semanas predefinidas (Atajos rápidos) */}
+        {availableWeeks.length > 0 && (
+          <div style={{ padding: "0 16px 8px 16px" }}>
+            <span style={{ fontSize: "10.5px", fontWeight: 800, color: "#64748b", textTransform: "uppercase" }}>
+              ⚡ O seleccionar semana completa:
+            </span>
+            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "4px", maxHeight: "64px", overflowY: "auto" }}>
+              {availableWeeks.map((w) => (
+                <button
+                  key={w.start}
+                  type="button"
+                  onClick={() => {
+                    setTempStart(w.start);
+                    setTempEnd(w.end);
+                  }}
+                  style={{
+                    padding: "3px 8px",
+                    borderRadius: "4px",
+                    border: tempStart === w.start && tempEnd === w.end ? `1.5px solid ${primaryColor}` : "1px solid #cbd5e1",
+                    background: tempStart === w.start && tempEnd === w.end ? lightBgColor : "#f8fafc",
+                    color: tempStart === w.start && tempEnd === w.end ? primaryColor : "#334155",
+                    fontSize: "10.5px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  {w.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Footer con resumen y botón de aplicar */}
+        <div
+          style={{
+            background: "#f8fafc",
+            padding: "12px 18px",
+            borderTop: "1px solid #e2e8f0",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: "10px",
+          }}
+        >
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            <span style={{ fontSize: "11px", fontWeight: 700, color: "#64748b" }}>
+              Rango seleccionado:
+            </span>
+            <span style={{ fontSize: "12.5px", fontWeight: 900, color: primaryColor }}>
+              {tempStart && tempEnd
+                ? `Del ${formatDateDisplayLocal(tempStart)} al ${formatDateDisplayLocal(tempEnd)}`
+                : tempStart
+                ? `Inicio: ${formatDateDisplayLocal(tempStart)} (elige día de fin)`
+                : "Haz clic en un día para iniciar"}
+            </span>
+          </div>
+
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button
+              type="button"
+              onClick={onClose}
+              style={{
+                padding: "7px 14px",
+                borderRadius: "6px",
+                border: "1px solid #cbd5e1",
+                background: "#ffffff",
+                color: "#64748b",
+                fontSize: "12px",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              disabled={!tempStart || !tempEnd}
+              onClick={() => {
+                if (tempStart && tempEnd) {
+                  onApply(tempStart, tempEnd);
+                  onClose();
+                }
+              }}
+              style={{
+                padding: "7px 16px",
+                borderRadius: "6px",
+                border: "none",
+                background: !tempStart || !tempEnd ? "#cbd5e1" : primaryColor,
+                color: "#ffffff",
+                fontSize: "12px",
+                fontWeight: 800,
+                cursor: !tempStart || !tempEnd ? "not-allowed" : "pointer",
+                boxShadow: tempStart && tempEnd ? "0 2px 6px rgba(0,0,0,0.15)" : "none",
+              }}
+            >
+              ✓ Aplicar a Microciclo ${target}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function GpsComparativeSection({
   mode,
   clubName,
@@ -97,9 +638,14 @@ export default function GpsComparativeSection({
     if (selectedDate && availableDates.includes(selectedDate)) return selectedDate;
     return availableDates.length > 0 ? availableDates[0] : "";
   });
-  const [weekA, setWeekA] = useState<string>(() => {
-    if (currentWeekStart && availableWeeks.some((w) => w.start === currentWeekStart)) return currentWeekStart;
-    return availableWeeks.length > 0 ? availableWeeks[0].start : "";
+  const [microRangeA, setMicroRangeA] = useState<{ start: string; end: string }>(() => {
+    if (currentWeekStart && availableWeeks.some((w) => w.start === currentWeekStart)) {
+      const w = availableWeeks.find((w) => w.start === currentWeekStart)!;
+      return { start: w.start, end: w.end };
+    }
+    if (availableWeeks.length > 0) return { start: availableWeeks[0].start, end: availableWeeks[0].end };
+    const today = new Date().toISOString().split("T")[0];
+    return { start: today, end: today };
   });
 
   // Elemento B
@@ -108,10 +654,15 @@ export default function GpsComparativeSection({
     if (availableDates.length > 1) return availableDates[1];
     return availableDates.length > 0 ? availableDates[0] : "";
   });
-  const [weekB, setWeekB] = useState<string>(() => {
-    if (availableWeeks.length > 1) return availableWeeks[1].start;
-    return availableWeeks.length > 0 ? availableWeeks[0].start : "";
+  const [microRangeB, setMicroRangeB] = useState<{ start: string; end: string }>(() => {
+    if (availableWeeks.length > 1) return { start: availableWeeks[1].start, end: availableWeeks[1].end };
+    if (availableWeeks.length > 0) return { start: availableWeeks[0].start, end: availableWeeks[0].end };
+    const today = new Date().toISOString().split("T")[0];
+    return { start: today, end: today };
   });
+
+  // Estado para la ventana emergente de Mini Calendario ("A" | "B" | null)
+  const [calendarModalTarget, setCalendarModalTarget] = useState<"A" | "B" | null>(null);
 
   // ── 2. SELECCIÓN DE MÉTRICAS A COMPARAR (EXCLUSIVAMENTE FAVORITAS) ──
   const favoriteVariables = useMemo(() => {
@@ -126,8 +677,8 @@ export default function GpsComparativeSection({
     return initial.length > 0 ? initial : DEFAULT_FAVORITE_GPS_VARIABLES;
   });
 
-  // Modalidad de visualización de gráficos ("cards" = tarjetas individuales con escala propia, "relative" = gráfico de barras % de variación, "radar" = perfil radial)
-  const [chartViewMode, setChartViewMode] = useState<"cards" | "relative" | "radar">("cards");
+  // Modalidad de visualización de gráficos ("radar" = perfil radial destacado por defecto, "cards" = tarjetas individuales, "relative" = % variación)
+  const [chartViewMode, setChartViewMode] = useState<"cards" | "relative" | "radar">("radar");
 
   // ── 3. DETECCIÓN DINÁMICA DE TAREAS Y SELECCIÓN MULTI-TAREA PARA CADA FECHA ──
   const getTasksForDate = (dateStr: string): string[] => {
@@ -184,17 +735,33 @@ export default function GpsComparativeSection({
   };
 
   // ── 4. RESOLUCIÓN DE MATCH DAY Y JUGADORES ──
-  const resolveMatchDay = (fecha: string): string => {
-    if (!fecha) return "MD";
+  const resolveDayInfo = (fecha: string): { md: string; isMatch: boolean; rival?: string } => {
+    if (!fecha) return { md: "", isMatch: false };
+    let md = "";
+    let isMatch = false;
+    let rival = "";
+
     try {
       if (planificacionDays && planificacionDays.length > 0) {
         const planItem = planificacionDays.find((d: any) => d && (d.fecha === fecha || d.id === fecha));
-        if (planItem?.md && typeof planItem.md === "string" && planItem.md.trim()) {
-          const clean = planItem.md.trim();
-          return /^[-+]?\d+\s*MD$/i.test(clean) ? `MD${clean.replace(/MD/i, "").trim()}` : clean;
+        if (planItem) {
+          if (planItem.md && typeof planItem.md === "string" && planItem.md.trim()) {
+            const clean = planItem.md.trim();
+            md = /^[-+]?\d+\s*MD$/i.test(clean) ? `MD${clean.replace(/MD/i, "").trim()}` : clean;
+          }
+          if (planItem.rival) rival = planItem.rival;
+          if (
+            planItem.evento === "PARTIDO" ||
+            planItem.tipo === "PARTIDO" ||
+            planItem.resultado_partido ||
+            rival ||
+            (planItem.md && planItem.md.trim().toUpperCase() === "MD")
+          ) {
+            isMatch = true;
+          }
         }
       }
-      if (typeof window !== "undefined") {
+      if (!md && typeof window !== "undefined") {
         const planKeys = ["planificacion_days_v5", "planificacion_days_v4", "planificacion_days_v2", "planificacion_days_v1"];
         for (const k of planKeys) {
           const raw = localStorage.getItem(k);
@@ -202,17 +769,45 @@ export default function GpsComparativeSection({
             const days = JSON.parse(raw);
             const list = Array.isArray(days) ? days : Object.values(days);
             const found = list.find((d: any) => d && (d.fecha === fecha || d.id === fecha));
-            if (found?.md && typeof found.md === "string" && found.md.trim()) {
-              const clean = found.md.trim();
-              return /^[-+]?\d+\s*MD$/i.test(clean) ? `MD${clean.replace(/MD/i, "").trim()}` : clean;
+            if (found) {
+              if (found.md && typeof found.md === "string" && found.md.trim()) {
+                const clean = found.md.trim();
+                md = /^[-+]?\d+\s*MD$/i.test(clean) ? `MD${clean.replace(/MD/i, "").trim()}` : clean;
+              }
+              if (found.rival) rival = found.rival;
+              if (
+                found.evento === "PARTIDO" ||
+                found.tipo === "PARTIDO" ||
+                found.resultado_partido ||
+                rival ||
+                (found.md && found.md.trim().toUpperCase() === "MD")
+              ) {
+                isMatch = true;
+              }
+              if (md) break;
             }
           }
         }
       }
     } catch {}
-    const rec = teamGpsRecords.find((r) => r.fecha === fecha && r.match_day && r.match_day.trim());
-    if (rec?.match_day) return rec.match_day.trim();
-    return "MD";
+
+    if (!md) {
+      const rec = teamGpsRecords.find((r) => r.fecha === fecha && r.match_day && r.match_day.trim());
+      if (rec?.match_day) md = rec.match_day.trim();
+    }
+
+    if (!isMatch && md) {
+      const upper = md.toUpperCase();
+      if (upper === "MD" || upper === "MD0" || upper === "MATCH DAY" || upper.startsWith("PARTIDO")) {
+        isMatch = true;
+      }
+    }
+
+    return { md, isMatch, rival };
+  };
+
+  const resolveMatchDay = (fecha: string): string => {
+    return resolveDayInfo(fecha).md || "MD";
   };
 
   const getPlayerInfo = (id: string): JugadorRef => {
@@ -257,13 +852,21 @@ export default function GpsComparativeSection({
     };
   };
 
-  const weekInfoA = useMemo(() => getWeekInfo(weekA), [weekA, availableWeeks]);
-  const weekInfoB = useMemo(() => getWeekInfo(weekB), [weekB, availableWeeks]);
+  // Fechas activas para A y B
+  const datesA = useMemo(() => {
+    if (mode === "sesion") return dateA ? [dateA] : [];
+    return getDatesInRange(microRangeA.start, microRangeA.end);
+  }, [mode, dateA, microRangeA]);
 
-  // ── 5. CÁLCULO DE MÉTRICAS (CON FILTRO DE TAREAS ACTIVADAS Y MICROCICLOS) ──
+  const datesB = useMemo(() => {
+    if (mode === "sesion") return dateB ? [dateB] : [];
+    return getDatesInRange(microRangeB.start, microRangeB.end);
+  }, [mode, dateB, microRangeB]);
+
+  // ── 5. CÁLCULO DE MÉTRICAS (CON FILTRO DE TAREAS ACTIVADAS Y MICROCICLOS DEL DÍA AL DÍA) ──
   const calculateEntityMetrics = (
     playerId: string,
-    targetKey: string,
+    targetDates: string[],
     activeTasks: string[],
     allTasksForDate: string[]
   ): Record<string, number> => {
@@ -271,7 +874,7 @@ export default function GpsComparativeSection({
     const result: Record<string, number> = {};
 
     if (mode === "sesion") {
-      const fecha = targetKey;
+      const fecha = targetDates[0];
       if (!fecha) return result;
 
       if (isTeam) {
@@ -309,12 +912,11 @@ export default function GpsComparativeSection({
         });
       }
     } else {
-      // MODO MICROCICLO
-      const weekDates = getWeekInfo(targetKey).dates;
-      if (weekDates.length === 0) return result;
+      // MODO MICROCICLO: Del día al día
+      if (!targetDates || targetDates.length === 0) return result;
 
       if (isTeam) {
-        const weekRecords = teamGpsRecords.filter((r) => weekDates.includes(r.fecha));
+        const weekRecords = teamGpsRecords.filter((r) => targetDates.includes(r.fecha));
         const uniquePlayers = Array.from(new Set(weekRecords.map((r) => r.jugador_id)));
         if (uniquePlayers.length === 0) return result;
 
@@ -333,7 +935,7 @@ export default function GpsComparativeSection({
           }
         });
       } else {
-        const playerRecs = teamGpsRecords.filter((r) => r.jugador_id === playerId && weekDates.includes(r.fecha));
+        const playerRecs = teamGpsRecords.filter((r) => r.jugador_id === playerId && targetDates.includes(r.fecha));
         allVariables.forEach((v) => {
           if (v.esPicoMaximo) {
             const vals = playerRecs.map((r) => calculateGpsMetricValue(r.metricas, v.key, derivedVariables));
@@ -350,13 +952,13 @@ export default function GpsComparativeSection({
   };
 
   const metricsA = useMemo(
-    () => calculateEntityMetrics(jugadorIdA, mode === "sesion" ? dateA : weekA, selectedTasksA, tasksAvailableA),
-    [jugadorIdA, dateA, weekA, selectedTasksA, tasksAvailableA, mode, teamGpsRecords, allVariables, derivedVariables]
+    () => calculateEntityMetrics(jugadorIdA, datesA, selectedTasksA, tasksAvailableA),
+    [jugadorIdA, datesA, selectedTasksA, tasksAvailableA, mode, teamGpsRecords, allVariables, derivedVariables]
   );
 
   const metricsB = useMemo(
-    () => calculateEntityMetrics(jugadorIdB, mode === "sesion" ? dateB : weekB, selectedTasksB, tasksAvailableB),
-    [jugadorIdB, dateB, weekB, selectedTasksB, tasksAvailableB, mode, teamGpsRecords, allVariables, derivedVariables]
+    () => calculateEntityMetrics(jugadorIdB, datesB, selectedTasksB, tasksAvailableB),
+    [jugadorIdB, datesB, selectedTasksB, tasksAvailableB, mode, teamGpsRecords, allVariables, derivedVariables]
   );
 
   // ── 6. LISTA DE MÉTRICAS FILTRADAS / SELECCIONADAS (SOLO FAVORITAS) ──
@@ -399,9 +1001,9 @@ export default function GpsComparativeSection({
       setSelectedTasksA(selectedTasksB);
       setSelectedTasksB(tempTasks);
     } else {
-      const tempW = weekA;
-      setWeekA(weekB);
-      setWeekB(tempW);
+      const tempR = microRangeA;
+      setMicroRangeA(microRangeB);
+      setMicroRangeB(tempR);
     }
   };
 
@@ -425,8 +1027,11 @@ export default function GpsComparativeSection({
       }
       return `${formatDateDisplay(dateA)} (${resolveMatchDay(dateA)})${taskStr}`;
     }
-    return weekInfoA.label;
-  }, [mode, dateA, selectedTasksA, tasksAvailableA]);
+    const mdStart = resolveMatchDay(microRangeA.start);
+    const mdEnd = resolveMatchDay(microRangeA.end);
+    const mdTag = mdStart || mdEnd ? ` (${mdStart} a ${mdEnd})` : "";
+    return `Del ${formatDateDisplay(microRangeA.start)} al ${formatDateDisplay(microRangeA.end)}${mdTag}`;
+  }, [mode, dateA, selectedTasksA, tasksAvailableA, microRangeA]);
 
   const subLabelB = useMemo(() => {
     if (mode === "sesion") {
@@ -444,8 +1049,11 @@ export default function GpsComparativeSection({
       }
       return `${formatDateDisplay(dateB)} (${resolveMatchDay(dateB)})${taskStr}`;
     }
-    return weekInfoB.label;
-  }, [mode, dateB, selectedTasksB, tasksAvailableB]);
+    const mdStart = resolveMatchDay(microRangeB.start);
+    const mdEnd = resolveMatchDay(microRangeB.end);
+    const mdTag = mdStart || mdEnd ? ` (${mdStart} a ${mdEnd})` : "";
+    return `Del ${formatDateDisplay(microRangeB.start)} al ${formatDateDisplay(microRangeB.end)}${mdTag}`;
+  }, [mode, dateB, selectedTasksB, tasksAvailableB, microRangeB]);
 
   // ── 8. DATASETS PARA LOS GRÁFICOS ──
   // Radar data (normalizado a escala 0-100 para comparar perfiles)
@@ -593,20 +1201,20 @@ export default function GpsComparativeSection({
               type="button"
               onClick={() => {
                 if (mode === "sesion") setDateB(dateA);
-                else setWeekB(weekA);
+                else setMicroRangeB({ ...microRangeA });
               }}
               style={{
                 padding: "3px 8px",
                 borderRadius: "5px",
-                border: (mode === "sesion" ? dateA === dateB : weekA === weekB) ? "1px solid #1e3a8a" : "1px solid #cbd5e1",
-                background: (mode === "sesion" ? dateA === dateB : weekA === weekB) ? "#eff6ff" : "#f8fafc",
-                color: (mode === "sesion" ? dateA === dateB : weekA === weekB) ? "#1e3a8a" : "#475569",
+                border: (mode === "sesion" ? dateA === dateB : (microRangeA.start === microRangeB.start && microRangeA.end === microRangeB.end)) ? "1px solid #1e3a8a" : "1px solid #cbd5e1",
+                background: (mode === "sesion" ? dateA === dateB : (microRangeA.start === microRangeB.start && microRangeA.end === microRangeB.end)) ? "#eff6ff" : "#f8fafc",
+                color: (mode === "sesion" ? dateA === dateB : (microRangeA.start === microRangeB.start && microRangeA.end === microRangeB.end)) ? "#1e3a8a" : "#475569",
                 fontSize: "11px",
                 fontWeight: 700,
                 cursor: "pointer",
               }}
             >
-              Misma Fecha/Semana
+              Misma Fecha/Rango
             </button>
             {mode === "sesion" && tasksAvailableA.length > 0 && tasksAvailableB.length > 0 && (
               <button
@@ -727,27 +1335,28 @@ export default function GpsComparativeSection({
                 ))}
               </select>
             ) : (
-              <select
-                value={weekA}
-                onChange={(e) => setWeekA(e.target.value)}
+              <button
+                type="button"
+                onClick={() => setCalendarModalTarget("A")}
                 style={{
-                  flex: "1 1 150px",
-                  padding: "6px 8px",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "6px 12px",
                   borderRadius: "6px",
-                  border: "1px solid #cbd5e1",
-                  background: "#ffffff",
+                  border: "1.5px solid #1e3a8a",
+                  background: "#eff6ff",
+                  color: "#1e3a8a",
                   fontSize: "12px",
-                  fontWeight: 700,
-                  color: "#0f172a",
-                  outline: "none",
+                  fontWeight: 800,
+                  cursor: "pointer",
                 }}
+                title="Abrir mini calendario para marcar del día al día el Microciclo A"
               >
-                {availableWeeks.map((w) => (
-                  <option key={w.start} value={w.start}>
-                    {w.label}
-                  </option>
-                ))}
-              </select>
+                <span>📅</span>
+                <span>Del {formatDateDisplay(microRangeA.start)} al {formatDateDisplay(microRangeA.end)}</span>
+                <span style={{ fontSize: "10.5px", color: "#64748b", fontWeight: 700 }}>✏️ Modificar</span>
+              </button>
             )}
 
 
@@ -842,27 +1451,28 @@ export default function GpsComparativeSection({
                 ))}
               </select>
             ) : (
-              <select
-                value={weekB}
-                onChange={(e) => setWeekB(e.target.value)}
+              <button
+                type="button"
+                onClick={() => setCalendarModalTarget("B")}
                 style={{
-                  flex: "1 1 150px",
-                  padding: "6px 8px",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "6px 12px",
                   borderRadius: "6px",
-                  border: "1px solid #cbd5e1",
-                  background: "#ffffff",
+                  border: "1.5px solid #ea580c",
+                  background: "#fff7ed",
+                  color: "#c2410c",
                   fontSize: "12px",
-                  fontWeight: 700,
-                  color: "#0f172a",
-                  outline: "none",
+                  fontWeight: 800,
+                  cursor: "pointer",
                 }}
+                title="Abrir mini calendario para marcar del día al día el Microciclo B"
               >
-                {availableWeeks.map((w) => (
-                  <option key={w.start} value={w.start}>
-                    {w.label}
-                  </option>
-                ))}
-              </select>
+                <span>📅</span>
+                <span>Del {formatDateDisplay(microRangeB.start)} al {formatDateDisplay(microRangeB.end)}</span>
+                <span style={{ fontSize: "10.5px", color: "#64748b", fontWeight: 700 }}>✏️ Modificar</span>
+              </button>
             )}
 
 
@@ -1798,7 +2408,7 @@ export default function GpsComparativeSection({
           </div>
         )}
 
-        {/* MODO 3: GRÁFICO RADAR */}
+        {/* MODO 3: GRÁFICO RADAR (DESTACADO CON EL DÍA DE CADA UNO) */}
         {chartViewMode === "radar" && (
           <div
             style={{
@@ -1812,37 +2422,111 @@ export default function GpsComparativeSection({
               alignItems: "center",
             }}
           >
-            <div style={{ textAlign: "center", marginBottom: "8px" }}>
-              <h4 style={{ margin: 0, fontSize: "13px", fontWeight: 900, color: "#0f172a", textTransform: "uppercase" }}>
-                🕸️ Perfil Físico Comparado (Escala Normalizada 0-100)
+            <div style={{ textAlign: "center", marginBottom: "14px", width: "100%" }}>
+              <h4 style={{ margin: 0, fontSize: "15px", fontWeight: 900, color: "#0f172a", textTransform: "uppercase" }}>
+                🕸️ Perfil Físico Comparado (Huella Radar)
               </h4>
-              <span style={{ fontSize: "11px", color: "#64748b" }}>
-                Huella física superpuesta: Azul ({shortNameA}) vs Naranja ({shortNameB})
-              </span>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "12px", marginTop: "8px", flexWrap: "wrap" }}>
+                <span style={{ fontSize: "12px", fontWeight: 800, color: "#1e3a8a", background: "#eff6ff", padding: "4px 12px", borderRadius: "6px", border: "1px solid #bfdbfe", display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                  <span style={{ width: "9px", height: "9px", borderRadius: "50%", background: "#1e3a8a" }} />
+                  <span>Sujeto A: <strong>{playerA.id === "TEAM" ? "Media Equipo" : (playerA.apodo || playerA.nombre)}</strong> — {subLabelA}</span>
+                </span>
+                <span style={{ fontSize: "12px", fontWeight: 800, color: "#ea580c", background: "#fff7ed", padding: "4px 12px", borderRadius: "6px", border: "1px solid #fed7aa", display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                  <span style={{ width: "9px", height: "9px", borderRadius: "50%", background: "#ea580c" }} />
+                  <span>Sujeto B: <strong>{playerB.id === "TEAM" ? "Media Equipo" : (playerB.apodo || playerB.nombre)}</strong> — {subLabelB}</span>
+                </span>
+              </div>
             </div>
 
-            <div style={{ width: "100%", height: 360, maxWidth: "560px" }}>
+            <div style={{ width: "100%", height: 420, maxWidth: "680px" }}>
               <ResponsiveContainer width="100%" height="100%">
                 <RadarChart data={radarData}>
                   <PolarGrid stroke="#cbd5e1" />
-                  <PolarAngleAxis dataKey="subject" tick={{ fontSize: 10, fontWeight: 800, fill: "#0f172a" }} />
+                  <PolarAngleAxis dataKey="subject" tick={{ fontSize: 11, fontWeight: 800, fill: "#0f172a" }} />
                   <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 9 }} />
-                  <Radar name={shortNameA} dataKey="A" stroke="#1e3a8a" fill="#1e3a8a" fillOpacity={0.4} strokeWidth={2} />
-                  <Radar name={shortNameB} dataKey="B" stroke="#ea580c" fill="#ea580c" fillOpacity={0.4} strokeWidth={2} />
-                  <Legend wrapperStyle={{ fontSize: "11px", fontWeight: 800 }} />
+                  <Radar
+                    name={`${shortNameA} (${subLabelA})`}
+                    dataKey="A"
+                    stroke="#1e3a8a"
+                    fill="#1e3a8a"
+                    fillOpacity={0.35}
+                    strokeWidth={2.5}
+                  />
+                  <Radar
+                    name={`${shortNameB} (${subLabelB})`}
+                    dataKey="B"
+                    stroke="#ea580c"
+                    fill="#ea580c"
+                    fillOpacity={0.35}
+                    strokeWidth={2.5}
+                  />
+                  <Legend wrapperStyle={{ fontSize: "11.5px", fontWeight: 800, paddingTop: "12px" }} />
                   <Tooltip
-                    contentStyle={{ borderRadius: "8px", fontSize: "11px" }}
-                    formatter={(val: any, name: any, item: any) => [
-                      `${item.payload[`raw${name === shortNameA ? "A" : "B"}`]} ${item.payload.unit} (${val}%)`,
-                      name,
-                    ]}
+                    content={({ active, payload }: any) => {
+                      if (!active || !payload || !payload.length) return null;
+                      const d = payload[0]?.payload;
+                      if (!d) return null;
+                      const diff = Math.round((d.rawB - d.rawA) * 100) / 100;
+                      const pct = d.rawA > 0 ? Math.round(((d.rawB - d.rawA) / d.rawA) * 1000) / 10 : (d.rawB > 0 ? 100 : 0);
+                      const isUp = diff > 0;
+                      const isDown = diff < 0;
+
+                      return (
+                        <div
+                          style={{
+                            background: "#ffffff",
+                            border: "1px solid #cbd5e1",
+                            borderRadius: "8px",
+                            padding: "10px 14px",
+                            boxShadow: "0 4px 14px rgba(0,0,0,0.12)",
+                            fontSize: "12px",
+                            minWidth: "240px",
+                          }}
+                        >
+                          <div style={{ fontWeight: 900, color: "#0f172a", marginBottom: "6px", borderBottom: "1px solid #e2e8f0", paddingBottom: "4px" }}>
+                            🎯 {d.subject} {d.unit ? `(${d.unit})` : ""}
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", color: "#1e3a8a", fontWeight: 800, marginBottom: "4px", gap: "10px" }}>
+                            <span>● {shortNameA} ({subLabelA}):</span>
+                            <span style={{ fontSize: "13px", fontWeight: 900 }}>{d.rawA.toLocaleString("es-ES")} {d.unit}</span>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", color: "#ea580c", fontWeight: 800, marginBottom: "6px", gap: "10px" }}>
+                            <span>● {shortNameB} ({subLabelB}):</span>
+                            <span style={{ fontSize: "13px", fontWeight: 900 }}>{d.rawB.toLocaleString("es-ES")} {d.unit}</span>
+                          </div>
+                          <div style={{ paddingTop: "5px", borderTop: "1px dashed #e2e8f0", display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: "11px", fontWeight: 900, color: isUp ? "#15803d" : isDown ? "#b91c1c" : "#64748b" }}>
+                            <span>Diferencia (B vs A):</span>
+                            <span>{diff > 0 ? `+${diff.toLocaleString("es-ES")}` : diff.toLocaleString("es-ES")} ({pct > 0 ? `+${pct}%` : `${pct}%`})</span>
+                          </div>
+                        </div>
+                      );
+                    }}
                   />
                 </RadarChart>
               </ResponsiveContainer>
             </div>
           </div>
-        )}
-      </div>
+        )}      </div>
+
+      {/* ── VENTANA MODAL DEL MINI CALENDARIO (DEL DÍA AL DÍA) ── */}
+      {calendarModalTarget !== null && (
+        <MiniCalendarModal
+          target={calendarModalTarget}
+          initialStart={calendarModalTarget === "A" ? microRangeA.start : microRangeB.start}
+          initialEnd={calendarModalTarget === "A" ? microRangeA.end : microRangeB.end}
+          onApply={(start, end) => {
+            if (calendarModalTarget === "A") {
+              setMicroRangeA({ start, end });
+            } else {
+              setMicroRangeB({ start, end });
+            }
+          }}
+          onClose={() => setCalendarModalTarget(null)}
+          resolveDayInfo={resolveDayInfo}
+          teamGpsRecords={teamGpsRecords}
+          availableWeeks={availableWeeks}
+        />
+      )}
 
       <style jsx>{`
         @media print {
