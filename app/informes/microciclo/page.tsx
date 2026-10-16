@@ -1,5 +1,7 @@
 "use client";
 
+import GpsComparativeSection from "../components/GpsComparativeSection";
+
 import { comparePlayersByTacticalPosition } from "@/app/lib/posiciones";
 import React, { useEffect, useState, useRef, useMemo, Suspense } from "react";
 import Link from "next/link";
@@ -1125,7 +1127,13 @@ function InformeGpsDiarioContent() {
     const availableWeeksOptions = Array.from(new Set(availableDates.map(d => getWeekRange(d, weekMode).start))).map(startStr => {
       const sampleDate = availableDates.find(d => getWeekRange(d, weekMode).start === startStr) || startStr;
       const wInfo = getWeekRange(sampleDate, weekMode);
-      return { start: startStr, label: `${wInfo.start.split('-')[2]}/${wInfo.start.split('-')[1]} al ${wInfo.end.split('-')[2]}/${wInfo.end.split('-')[1]}` };
+      const sNum = getSeasonWeek(wInfo.start);
+      return {
+        start: startStr,
+        end: wInfo.end,
+        label: `S${sNum}: ${wInfo.start.split('-')[2]}/${wInfo.start.split('-')[1]} al ${wInfo.end.split('-')[2]}/${wInfo.end.split('-')[1]}`,
+        dates: wInfo.dates,
+      };
     });
 
     const getMDForDateStr = (dateStr: string) => {
@@ -2953,128 +2961,21 @@ function InformeGpsDiarioContent() {
                 )}
 
                 {/* VISTA 2: COMPARATIVA */}
-                {subView === "comparativa" && jugador && (
-                  <>
-                    {/* CABECERA ESTÁNDAR: ESCUDO Y CLUB A LA IZQ / TÍTULO ENMEDIO / DÍA Y MD A LA DERECHA */}
-                    <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: "16px", alignItems: "center", marginBottom: "12px", borderBottom: "2px solid #0f172a", paddingBottom: "10px" }}>
-                      {/* Arriba a la izquierda: Escudo y nombre del club */}
-                      <div style={{ justifySelf: "start", display: "flex", flexDirection: "column", alignItems: "center", gap: "2px", minWidth: "75px" }}>
-                        <img
-                          src={clubShield}
-                          alt={activeTeam}
-                          style={{ width: "46px", height: "54px", objectFit: "contain", background: "#ffffff", borderRadius: "6px", padding: "2px" }}
-                        />
-                        <span style={{ fontSize: "11.5px", fontWeight: 800, color: "#0f172a", whiteSpace: "nowrap" }}>
-                          {activeTeam}
-                        </span>
-                      </div>
-
-                      {/* Centro: Título */}
-                      <div style={{ justifySelf: "center", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        <h2 style={{ fontSize: "16px", fontWeight: 900, color: "#0f172a", margin: 0, textTransform: "uppercase", whiteSpace: "normal", textAlign: "center" }}>
-                          INFORME COMPARATIVO GPS
-                        </h2>
-                      </div>
-
-                      {/* Arriba a la derecha: Rango de Días y Semana */}
-                      <div style={{ justifySelf: "end", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px" }}>
-                        <div style={{ display: "flex", gap: "8px", alignItems: "center", justifyContent: "flex-end", whiteSpace: "nowrap" }}>
-                          <div style={{ display: "inline-flex", alignItems: "center", gap: "3px" }}>
-                            <span style={{ fontSize: "11px", fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: "0.2px" }}>Microciclo:</span>
-                            <span className="print-only" style={{ fontSize: "11px", fontWeight: 800, color: "#0f172a" }}>
-                              {currentWeekInfo.label}
-                            </span>
-                            <input
-                              type="text"
-                              value={currentWeekInfo.label}
-                              readOnly
-                              key={selectedDate}
-                              className="clean-header-input no-print"
-                              style={{ fontSize: "11.5px", fontWeight: 800, padding: "2px 4px", borderRadius: "4px", border: "1px solid #cbd5e1", background: "#f8fafc", color: "#0f172a", outline: "none", width: "135px", textAlign: "center" }}
-                            />
-                          </div>
-                          <div style={{ display: "inline-flex", alignItems: "center", gap: "3px" }}>
-                            <span style={{ fontSize: "11px", fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: "0.2px" }}>Semana:</span>
-                            <span className="print-only" style={{ fontSize: "11px", fontWeight: 800, color: "#1e3a8a" }}>
-                              {(() => {
-                              return `S${getSeasonWeek(currentWeekInfo.start)}`;
-                              })()}
-                            </span>
-                            <input
-                              type="text"
-                              value={(() => {
-                              return `S${getSeasonWeek(currentWeekInfo.start)}`;
-                              })()}
-                              readOnly
-                              className="clean-header-input no-print"
-                              style={{ fontSize: "11.5px", fontWeight: 800, padding: "2px 4px", borderRadius: "4px", border: "1px solid #cbd5e1", background: "#f8fafc", color: "#0f172a", outline: "none", width: "44px", textAlign: "center" }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Header con indicador de comparación */}
-                    <div style={{ background: "#fff7ed", padding: "12px 16px", borderRadius: "10px", border: "1px solid #fed7aa", marginBottom: "14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <div>
-                        <span style={{ fontSize: "11px", fontWeight: 800, color: "#c2410c", textTransform: "uppercase" }}>VISTA COMPARATIVA</span>
-                        <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 800, color: "#9a3412" }}>
-                          Comparando a {getJugadorDisplayName(jugador)} vs. Medias de Grupo ({matchDay})
-                        </h3>
-                      </div>
-                      <span className="gps-badge-md" style={{ background: "#ea580c" }}>{matchDay}</span>
-                    </div>
-
-                    {/* Grid de Gráficos de Progresión Semanal para Comparativa */}
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "16px" }}>
-                      {playerChartVars.map((varKey, idx) => {
-                        const def = getVariableDef(varKey);
-                        const compMode = playerChartComps[idx] || "equipo";
-                        const lineName = compMode === "equipo" ? "Media Eq." : compMode === "jugador-historico" ? "Media Histórica MD" : `Sem. ${compMode.split('-')[2]}/${compMode.split('-')[1]}`;
-                        const barKey = `metric_${idx}`;
-                        const lineKey = `comp_${idx}`;
-                        return (
-                        <div key={idx} className="gps-chart-card" style={{ background: "#ffffff", padding: "16px", borderRadius: "12px", border: "1px solid #cbd5e1", boxShadow: "0 2px 8px rgba(0,0,0,0.04)", position: "relative" }}>
-                          <div className="no-print" style={{ position: "absolute", top: 12, right: 12, zIndex: 10 }}>
-                             <select style={{ fontSize: 10, padding: "2px 4px", borderRadius: 4, border: "1px solid #cbd5e1", color: "#64748b", background: "#f8fafc", cursor: "pointer", outline: "none" }} value={compMode} onChange={(e) => handlePlayerChartCompChange(idx, e.target.value)}>
-                                <option value="equipo">Comparar: Equipo</option>
-                                <option value="jugador-historico">Comparar: Histórico MD</option>
-                                {availableWeeksOptions.map(w => <option key={w.start} value={w.start}>Comparar: {w.label}</option>)}
-                             </select>
-                          </div>
-                          <h3 style={{ fontSize: "13px", fontWeight: 800, textTransform: "uppercase", color: "#0f172a", margin: "0 0 12px 0", textAlign: "center", paddingRight: 40, paddingLeft: 40 }}>
-                            {def.label} {def.unit ? `(${def.unit})` : ""}
-                          </h3>
-                          <div style={{ width: "100%", height: 210 }}>
-                            <ResponsiveContainer width="100%" height="90%">
-                              <ComposedChart data={weeklyPlayerData} margin={{ top: 22, right: 10, left: -15, bottom: 0 }}>
-                                <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                                <XAxis dataKey="name" stroke="#000000" tick={{ fontSize: 9, fontWeight: 700 }} />
-                                <YAxis stroke="#000000" tick={{ fontSize: 9, fontWeight: 700, fill: "#000000" }} unit={def.unit ? ` ${def.unit}` : ""} domain={[0, 'auto'] as any} />
-                                <Tooltip contentStyle={{ borderRadius: "8px", fontSize: "11px" }} />
-                                <Bar dataKey={barKey} name="Jugador" fill="#1e3a8a" radius={[4, 4, 0, 0]} barSize={32}>
-                                  <LabelList dataKey={barKey} position="insideBottom" fill="#ffffff" style={{ fontSize: "9px", fontWeight: 800 }} formatter={(val: any) => typeof val === "number" && val > 0 ? (val >= 100 ? Math.round(val).toLocaleString() : val.toLocaleString()) : ""} />
-                                </Bar>
-                                <Line type="monotone" dataKey={lineKey} name={lineName} stroke="#ea580c" strokeWidth={2.5} dot={{ r: 3, fill: "#ea580c" }}>
-                                  <LabelList dataKey={lineKey} position="top" fill="#ea580c" style={{ fontSize: "9px", fontWeight: 800 }} formatter={(val: any) => typeof val === "number" && val > 0 ? (val >= 100 ? Math.round(val).toLocaleString() : val.toLocaleString()) : ""} />
-                                </Line>
-                              </ComposedChart>
-                            </ResponsiveContainer>
-                          </div>
-                          <div className="gps-chart-legend" style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "16px", marginTop: "10px", fontSize: "11px", fontWeight: 800 }}>
-                            <div style={{ display: "inline-flex", alignItems: "center", gap: "5px" }}>
-                              <span style={{ display: "inline-block", width: "11px", height: "11px", borderRadius: "2px", background: "#1e3a8a", flexShrink: 0 }} />
-                              <span style={{ color: "#1e3a8a" }}>{firstName}</span>
-                            </div>
-                            <div style={{ display: "inline-flex", alignItems: "center", gap: "5px" }}>
-                              <span style={{ display: "inline-block", width: "11px", height: "11px", borderRadius: "2px", background: "#ea580c", flexShrink: 0 }} />
-                              <span style={{ color: "#ea580c" }}>{lineName}</span>
-                            </div>
-                          </div>
-                        </div>
-                      )})}
-                    </div>
-                  </>
+                {subView === "comparativa" && (
+                  <GpsComparativeSection
+                    mode="microciclo"
+                    clubName={activeTeam}
+                    clubShield={clubShield}
+                    jugadores={jugadores}
+                    initialJugadorId={selectedJugadorId}
+                    teamGpsRecords={teamGpsRecords}
+                    availableWeeks={availableWeeksOptions}
+                    currentWeekStart={currentWeekInfo.start}
+                    planificacionDays={planificacionDays}
+                    favoriteKeys={favoriteKeys}
+                    derivedVariables={derivedVariables}
+                    allVariables={allVariables}
+                  />
                 )}
 
                 {/* VISTA 3: EQUIPO */}

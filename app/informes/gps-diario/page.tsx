@@ -1,5 +1,7 @@
 "use client";
 
+import GpsComparativeSection from "../components/GpsComparativeSection";
+
 import { comparePlayersByTacticalPosition } from "@/app/lib/posiciones";
 import React, { useEffect, useState, useRef, useMemo, Suspense } from "react";
 import Link from "next/link";
@@ -3420,176 +3422,20 @@ function InformeGpsDiarioContent() {
                 )}
 
                 {/* VISTA 2: COMPARATIVA */}
-                {subView === "comparativa" && jugador && (
-                  <>
-                    {/* CABECERA ESTÁNDAR: ESCUDO Y CLUB A LA IZQ / TÍTULO ENMEDIO / DÍA Y MD A LA DERECHA */}
-                    <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: "16px", alignItems: "center", marginBottom: "12px", borderBottom: "2px solid #0f172a", paddingBottom: "10px" }}>
-                      {/* Arriba a la izquierda: Escudo y nombre del club */}
-                      <div style={{ justifySelf: "start", display: "flex", flexDirection: "column", alignItems: "center", gap: "2px", minWidth: "75px" }}>
-                        <img
-                        src="/ce-europa.png"
-                        alt="CE EUROPA"
-                        style={{ width: "46px", height: "54px", objectFit: "contain", background: "#ffffff", borderRadius: "6px", padding: "2px" }}
-                      />
-                      <span style={{ fontSize: "11.5px", fontWeight: 800, color: "#0f172a", whiteSpace: "nowrap" }}>
-                        CE EUROPA
-                      </span>
-                      </div>
-
-                      {/* Centro: Título */}
-                      <div style={{ justifySelf: "center", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        <h2 style={{ fontSize: "23px", fontWeight: 900, color: "#0f172a", margin: 0, textTransform: "uppercase", whiteSpace: "normal", textAlign: "center", letterSpacing: "0.02em" }}>
-                          INFORME COMPARATIVO GPS
-                        </h2>
-                      </div>
-
-                      {/* Arriba a la derecha: Día y MD pegados al margen derecho */}
-                      <div style={{ justifySelf: "end", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px" }}>
-                        <div style={{ display: "flex", gap: "8px", alignItems: "center", justifyContent: "flex-end", whiteSpace: "nowrap" }}>
-                          <div style={{ display: "inline-flex", alignItems: "center", gap: "3px" }}>
-                            <span style={{ fontSize: "11px", fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: "0.2px" }}>Día:</span>
-                            <span className="print-only" style={{ fontSize: "11px", fontWeight: 800, color: "#0f172a" }}>
-                              {getAutoDay(selectedDate)}
-                            </span>
-                            <input
-                              type="text"
-                              defaultValue={getAutoDay(selectedDate)}
-                              key={selectedDate}
-                              className="clean-header-input no-print"
-                              style={{ fontSize: "11.5px", fontWeight: 800, padding: "2px 4px", borderRadius: "4px", border: "1px solid #cbd5e1", background: "#f8fafc", color: "#0f172a", outline: "none", width: "95px", textAlign: "center" }}
-                            />
-                          </div>
-                          <div style={{ display: "inline-flex", alignItems: "center", gap: "3px" }}>
-                            <span style={{ fontSize: "11px", fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: "0.2px" }}>MD:</span>
-                            <span className="print-only" style={{ fontSize: "11px", fontWeight: 800, color: matchDay === "MD" ? "#dc2626" : "#0f172a" }}>
-                              {matchDay}
-                            </span>
-                            <input
-                              type="text"
-                              value={matchDay}
-                              readOnly
-                              className="clean-header-input no-print"
-                              style={{ fontSize: "11.5px", fontWeight: 800, padding: "2px 4px", borderRadius: "4px", border: "1px solid #cbd5e1", background: "#f8fafc", color: matchDay === "MD" ? "#dc2626" : "#0f172a", outline: "none", width: "44px", textAlign: "center" }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Header con indicador de comparación */}
-                    <div style={{ background: "#fff7ed", padding: "12px 16px", borderRadius: "10px", border: "1px solid #fed7aa", marginBottom: "14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <div>
-                        <span style={{ fontSize: "11px", fontWeight: 800, color: "#c2410c", textTransform: "uppercase" }}>VISTA COMPARATIVA</span>
-                        <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 800, color: "#9a3412" }}>
-                          Comparando a {getJugadorDisplayName(jugador)} vs. Medias de Grupo ({matchDay})
-                        </h3>
-                      </div>
-                      <span className="gps-badge-md" style={{ background: "#ea580c" }}>{matchDay}</span>
-                    </div>
-
-                    {/* Grid de Gráficos Dual-Axis para Comparativa */}
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "16px", marginBottom: "16px" }}>
-                      {/* Gráfico 1: Comparativa vs Media del Equipo */}
-                      <div className="gps-chart-card" style={{ textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center" }}>
-                        <h2 className="gps-chart-title" style={{ margin: "0 0 8px 0", fontSize: "13px", letterSpacing: "0.04em", textTransform: "uppercase", color: "#000000", textAlign: "center", justifyContent: "center", width: "100%" }}>
-                          COMPARATIVA VS. MEDIA DEL EQUIPO
-                        </h2>
-
-                        <div style={{ width: "100%", height: 250, maxWidth: "520px", margin: "0 auto" }}>
-                          <ResponsiveContainer width="100%" height="100%">
-                            <BarChart
-                              data={[
-                                {
-                                  metric: "Distancia (m)",
-                                  [firstName]: jugadorDistancia,
-                                  "Media Equipo": teamAvgDistancia,
-                                },
-                                {
-                                  metric: "HSR (m)",
-                                  [firstName]: jugadorHsr,
-                                  "Media Equipo": teamAvgHsr,
-                                },
-                              ]}
-                              margin={{ top: 25, right: 25, left: 10, bottom: 5 }}
-                            >
-                              <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                              <XAxis dataKey="metric" stroke="#000000" tick={{ fontSize: 11, fontWeight: 800, fill: "#000000" }} />
-                              <YAxis yAxisId="left" orientation="left" stroke="#1e3a8a" tick={{ fontSize: 9.5, fontWeight: 700, fill: "#1e3a8a" }} unit="m" />
-                              <YAxis yAxisId="right" orientation="right" stroke="#ea580c" tick={{ fontSize: 9.5, fontWeight: 700, fill: "#ea580c" }} unit="m" />
-                              <Tooltip contentStyle={{ borderRadius: "8px", borderColor: "#e2e6e3", fontSize: "11px" }} />
-                              <Bar yAxisId="left" dataKey={firstName} name={firstName} fill="#1e3a8a" radius={[4, 4, 0, 0]} barSize={26}>
-                                <LabelList dataKey={firstName} position="top" style={{ fontSize: "10px", fontWeight: 800, fill: "#1e3a8a" }} formatter={(val: any) => typeof val === "number" ? val.toLocaleString() : val} />
-                              </Bar>
-                              <Bar yAxisId="right" dataKey="Media Equipo" name="Media Equipo" fill="#ea580c" radius={[4, 4, 0, 0]} barSize={26}>
-                                <LabelList dataKey="Media Equipo" position="top" style={{ fontSize: "10px", fontWeight: 800, fill: "#ea580c" }} formatter={(val: any) => typeof val === "number" ? val.toLocaleString() : val} />
-                              </Bar>
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </div>
-
-                        <div className="gps-chart-legend" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "18px", marginTop: "10px", fontSize: "11px", fontWeight: 800, width: "100%" }}>
-                          <div style={{ display: "inline-flex", alignItems: "center", gap: "5px" }}>
-                            <span style={{ display: "inline-block", width: "11px", height: "11px", borderRadius: "2px", background: "#1e3a8a", flexShrink: 0 }} />
-                            <span style={{ color: "#1e3a8a" }}>{firstName} (Eje Izq/Der)</span>
-                          </div>
-                          <div style={{ display: "inline-flex", alignItems: "center", gap: "5px" }}>
-                            <span style={{ display: "inline-block", width: "11px", height: "11px", borderRadius: "2px", background: "#ea580c", flexShrink: 0 }} />
-                            <span style={{ color: "#ea580c" }}>Media equipo</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Gráfico 2: Comparativa vs Promedio del Jugador en ese Match Day (-4MD, -3MD...) */}
-                      <div className="gps-chart-card" style={{ textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center" }}>
-                        <h2 className="gps-chart-title" style={{ margin: "0 0 8px 0", fontSize: "13px", letterSpacing: "0.04em", textTransform: "uppercase", color: "#000000", textAlign: "center", justifyContent: "center", width: "100%" }}>
-                          PROMEDIO JUGADOR EN SESIÓN {matchDay}
-                        </h2>
-
-                        <div style={{ width: "100%", height: 250, maxWidth: "520px", margin: "0 auto" }}>
-                          <ResponsiveContainer width="100%" height="100%">
-                            <BarChart
-                              data={[
-                                {
-                                  metric: "Distancia (m)",
-                                  "Este día": jugadorDistancia,
-                                  [`Promedio ${matchDay}`]: playerMdAvgDistancia,
-                                },
-                                {
-                                  metric: "HSR (m)",
-                                  "Este día": jugadorHsr,
-                                  [`Promedio ${matchDay}`]: playerMdAvgHsr,
-                                },
-                              ]}
-                              margin={{ top: 25, right: 25, left: 10, bottom: 5 }}
-                            >
-                              <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                              <XAxis dataKey="metric" stroke="#000000" tick={{ fontSize: 11, fontWeight: 800, fill: "#000000" }} />
-                              <YAxis yAxisId="left" orientation="left" stroke="#1e3a8a" tick={{ fontSize: 9.5, fontWeight: 700, fill: "#1e3a8a" }} unit="m" />
-                              <YAxis yAxisId="right" orientation="right" stroke="#ea580c" tick={{ fontSize: 9.5, fontWeight: 700, fill: "#ea580c" }} unit="m" />
-                              <Tooltip contentStyle={{ borderRadius: "8px", borderColor: "#e2e6e3", fontSize: "11px" }} />
-                              <Bar yAxisId="left" dataKey="Este día" name={`${firstName} (${matchDay})`} fill="#1e3a8a" radius={[4, 4, 0, 0]} barSize={26}>
-                                <LabelList dataKey="Este día" position="top" style={{ fontSize: "10px", fontWeight: 800, fill: "#1e3a8a" }} formatter={(val: any) => typeof val === "number" ? val.toLocaleString() : val} />
-                              </Bar>
-                              <Bar yAxisId="right" dataKey={`Promedio ${matchDay}`} name={`Promedio ${matchDay}`} fill="#ea580c" radius={[4, 4, 0, 0]} barSize={26}>
-                                <LabelList dataKey={`Promedio ${matchDay}`} position="top" style={{ fontSize: "10px", fontWeight: 800, fill: "#ea580c" }} formatter={(val: any) => typeof val === "number" ? val.toLocaleString() : val} />
-                              </Bar>
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </div>
-
-                        <div className="gps-chart-legend" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "18px", marginTop: "10px", fontSize: "11px", fontWeight: 800, width: "100%" }}>
-                          <div style={{ display: "inline-flex", alignItems: "center", gap: "5px" }}>
-                            <span style={{ display: "inline-block", width: "11px", height: "11px", borderRadius: "2px", background: "#1e3a8a", flexShrink: 0 }} />
-                            <span style={{ color: "#1e3a8a" }}>Sesión actual</span>
-                          </div>
-                          <div style={{ display: "inline-flex", alignItems: "center", gap: "5px" }}>
-                            <span style={{ display: "inline-block", width: "11px", height: "11px", borderRadius: "2px", background: "#ea580c", flexShrink: 0 }} />
-                            <span style={{ color: "#ea580c" }}>Promedio histórico {matchDay}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </>
+                {subView === "comparativa" && (
+                  <GpsComparativeSection
+                    mode="sesion"
+                    clubName={activeTeam}
+                    clubShield={clubShield}
+                    jugadores={jugadores}
+                    initialJugadorId={selectedJugadorId}
+                    teamGpsRecords={teamGpsRecords}
+                    availableDates={availableDates}
+                    selectedDate={selectedDate}
+                    favoriteKeys={favoriteKeys}
+                    derivedVariables={derivedVariables}
+                    allVariables={allVariables}
+                  />
                 )}
 
                 {/* VISTA 3: EQUIPO */}
