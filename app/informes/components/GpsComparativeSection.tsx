@@ -114,10 +114,17 @@ export default function GpsComparativeSection({
   });
   const [taskB, setTaskB] = useState<string>("__TOTAL__");
 
-  // ── 2. SELECCIÓN DE MÉTRICAS A COMPARAR ──
+  // ── 2. SELECCIÓN DE MÉTRICAS A COMPARAR (EXCLUSIVAMENTE FAVORITAS) ──
+  const favoriteVariables = useMemo(() => {
+    const keys = favoriteKeys && favoriteKeys.length > 0 ? favoriteKeys : DEFAULT_FAVORITE_GPS_VARIABLES;
+    const list = allVariables.filter((v) => keys.includes(v.key));
+    return list.length > 0 ? list : allVariables.slice(0, 10);
+  }, [allVariables, favoriteKeys]);
+
   const [selectedMetricKeys, setSelectedMetricKeys] = useState<string[]>(() => {
-    const initial = favoriteKeys.filter((k) => allVariables.some((v) => v.key === k));
-    return initial.length > 0 ? initial : DEFAULT_FAVORITE_GPS_VARIABLES.slice(0, 8);
+    const keys = favoriteKeys && favoriteKeys.length > 0 ? favoriteKeys : DEFAULT_FAVORITE_GPS_VARIABLES;
+    const initial = keys.filter((k) => allVariables.some((v) => v.key === k));
+    return initial.length > 0 ? initial : DEFAULT_FAVORITE_GPS_VARIABLES;
   });
 
   // Modalidad de visualización de gráficos ("cards" = tarjetas individuales con escala propia, "relative" = gráfico de barras % de variación, "radar" = perfil radial)
@@ -342,10 +349,10 @@ export default function GpsComparativeSection({
     [jugadorIdB, dateB, weekB, taskB, mode, teamGpsRecords, allVariables, derivedVariables]
   );
 
-  // ── 6. LISTA DE MÉTRICAS FILTRADAS / SELECCIONADAS ──
+  // ── 6. LISTA DE MÉTRICAS FILTRADAS / SELECCIONADAS (SOLO FAVORITAS) ──
   const activeVariables = useMemo(() => {
-    return allVariables.filter((v) => selectedMetricKeys.includes(v.key));
-  }, [allVariables, selectedMetricKeys]);
+    return favoriteVariables.filter((v) => selectedMetricKeys.includes(v.key));
+  }, [favoriteVariables, selectedMetricKeys]);
 
   const toggleMetric = (key: string) => {
     setSelectedMetricKeys((prev) => {
@@ -357,22 +364,13 @@ export default function GpsComparativeSection({
     });
   };
 
-  // Presets de selección de métricas
-  const handleSelectPresetMetrics = (type: "favs" | "volumen" | "velocidad" | "aceleracion" | "all") => {
-    if (type === "favs") {
-      const favs = favoriteKeys.filter((k) => allVariables.some((v) => v.key === k));
-      setSelectedMetricKeys(favs.length > 0 ? favs : DEFAULT_FAVORITE_GPS_VARIABLES);
-    } else if (type === "volumen") {
-      const keys = allVariables.filter((v) => v.categoria === "Volumen y Distancia" || v.categoria === "Tiempo").map((v) => v.key);
-      setSelectedMetricKeys(keys.length > 0 ? keys : selectedMetricKeys);
-    } else if (type === "velocidad") {
-      const keys = allVariables.filter((v) => v.categoria === "Velocidad e Intensidad").map((v) => v.key);
-      setSelectedMetricKeys(keys.length > 0 ? keys : selectedMetricKeys);
-    } else if (type === "aceleracion") {
-      const keys = allVariables.filter((v) => v.categoria === "Aceleraciones y Desaceleraciones").map((v) => v.key);
-      setSelectedMetricKeys(keys.length > 0 ? keys : selectedMetricKeys);
-    } else if (type === "all") {
-      setSelectedMetricKeys(allVariables.map((v) => v.key));
+  const handleSelectAllFavorites = () => {
+    setSelectedMetricKeys(favoriteVariables.map((v) => v.key));
+  };
+
+  const handleSelectNone = () => {
+    if (favoriteVariables.length > 0) {
+      setSelectedMetricKeys([favoriteVariables[0].key]);
     }
   };
 
@@ -886,7 +884,7 @@ export default function GpsComparativeSection({
         </div>
       </div>
 
-      {/* ── SELECTOR DE MÉTRICAS GPS INTERACTIVO (CHIPS) (NO-PRINT) ── */}
+      {/* ── SELECTOR DE MÉTRICAS GPS INTERACTIVO (SOLO FAVORITAS) (NO-PRINT) ── */}
       <div
         className="no-print"
         style={{
@@ -897,70 +895,66 @@ export default function GpsComparativeSection({
           boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
           display: "flex",
           flexDirection: "column",
-          gap: "8px",
+          gap: "10px",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
             <span style={{ fontSize: "12px", fontWeight: 900, color: "#0f172a", textTransform: "uppercase" }}>
-              🎯 Métricas seleccionadas ({selectedMetricKeys.length}/{allVariables.length}):
+              ⭐ Métricas Favoritas ({activeVariables.length}/{favoriteVariables.length}):
             </span>
           </div>
 
-          {/* Botones de selección rápida por categorías */}
+          {/* Botones de selección rápida */}
           <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
             <button
               type="button"
-              onClick={() => handleSelectPresetMetrics("favs")}
-              style={{ padding: "3px 8px", borderRadius: "4px", border: "1px solid #cbd5e1", background: "#f8fafc", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}
+              onClick={handleSelectAllFavorites}
+              style={{
+                padding: "3px 10px",
+                borderRadius: "5px",
+                border: "1px solid #1e3a8a",
+                background: selectedMetricKeys.length === favoriteVariables.length ? "#1e3a8a" : "#eff6ff",
+                color: selectedMetricKeys.length === favoriteVariables.length ? "#ffffff" : "#1e3a8a",
+                fontSize: "11px",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
             >
-              ⭐ Favoritas ({favoriteKeys.length})
+              ✓ Seleccionar Todas
             </button>
             <button
               type="button"
-              onClick={() => handleSelectPresetMetrics("volumen")}
-              style={{ padding: "3px 8px", borderRadius: "4px", border: "1px solid #cbd5e1", background: "#f8fafc", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}
+              onClick={handleSelectNone}
+              style={{
+                padding: "3px 10px",
+                borderRadius: "5px",
+                border: "1px solid #cbd5e1",
+                background: "#f8fafc",
+                color: "#64748b",
+                fontSize: "11px",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
             >
-              🏃 Volumen
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSelectPresetMetrics("velocidad")}
-              style={{ padding: "3px 8px", borderRadius: "4px", border: "1px solid #cbd5e1", background: "#f8fafc", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}
-            >
-              ⚡ Velocidad
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSelectPresetMetrics("aceleracion")}
-              style={{ padding: "3px 8px", borderRadius: "4px", border: "1px solid #cbd5e1", background: "#f8fafc", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}
-            >
-              💥 Acc/Dec
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSelectPresetMetrics("all")}
-              style={{ padding: "3px 8px", borderRadius: "4px", border: "1px solid #cbd5e1", background: "#f8fafc", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}
-            >
-              ✅ Todas
+              Deseleccionar
             </button>
           </div>
         </div>
 
-        {/* Chips de variables */}
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", maxHeight: "120px", overflowY: "auto", padding: "2px" }}>
-          {allVariables.map((v) => {
+        {/* Chips de variables (únicamente favoritas) */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", padding: "2px" }}>
+          {favoriteVariables.map((v) => {
             const isSelected = selectedMetricKeys.includes(v.key);
-            const isFav = favoriteKeys.includes(v.key);
             return (
               <button
                 key={v.key}
                 type="button"
                 onClick={() => toggleMetric(v.key)}
                 style={{
-                  padding: "4px 10px",
+                  padding: "5px 12px",
                   borderRadius: "16px",
-                  fontSize: "11px",
+                  fontSize: "11.5px",
                   fontWeight: isSelected ? 800 : 600,
                   border: isSelected ? "1.5px solid #1e3a8a" : "1px solid #cbd5e1",
                   background: isSelected ? "#1e3a8a" : "#ffffff",
@@ -968,13 +962,13 @@ export default function GpsComparativeSection({
                   cursor: "pointer",
                   display: "inline-flex",
                   alignItems: "center",
-                  gap: "4px",
+                  gap: "5px",
                   transition: "all 0.15s ease",
                 }}
               >
-                {isFav && <span style={{ color: isSelected ? "#fef08a" : "#eab308" }}>⭐</span>}
+                <span style={{ color: isSelected ? "#fef08a" : "#eab308" }}>⭐</span>
                 <span>{v.label}</span>
-                <span style={{ opacity: 0.75, fontSize: "10px" }}>({v.unit})</span>
+                <span style={{ opacity: isSelected ? 0.85 : 0.65, fontSize: "10.5px" }}>({v.unit})</span>
               </button>
             );
           })}
