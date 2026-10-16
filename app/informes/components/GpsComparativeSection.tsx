@@ -613,6 +613,72 @@ function MiniCalendarModal({
   );
 }
 
+
+function getSingleTaskMetrics(
+  playerId: string,
+  fecha: string,
+  taskName: string,
+  teamGpsRecords: GpsRecordRef[],
+  activeVariables: GpsVariableDef[],
+  derivedVariables: GpsDerivedVariable[]
+): Record<string, number> {
+  const result: Record<string, number> = {};
+  if (!fecha || !taskName) return result;
+
+  const isTeam = playerId === "TEAM";
+
+  if (isTeam) {
+    const sessionRecs = teamGpsRecords.filter((r) => r.fecha === fecha);
+    if (sessionRecs.length === 0) return result;
+
+    activeVariables.forEach((v) => {
+      const values: number[] = [];
+      sessionRecs.forEach((r) => {
+        const t = (r.metricas?.tareas || []).find(
+          (x: any) =>
+            (x.nombre || x.task || x.tarea || x.name || "").trim().toLowerCase() ===
+            taskName.trim().toLowerCase()
+        );
+        if (t) {
+          const val = calculateGpsMetricValue(t, v.key, derivedVariables);
+          if (val > 0) values.push(val);
+        }
+      });
+
+      if (v.esPicoMaximo) {
+        result[v.key] = values.length > 0 ? Math.max(...values, 0) : 0;
+      } else {
+        const sum = values.reduce((a, b) => a + b, 0);
+        result[v.key] = values.length > 0 ? Math.round((sum / values.length) * 100) / 100 : 0;
+      }
+    });
+  } else {
+    const r = teamGpsRecords.find((rec) => rec.jugador_id === playerId && rec.fecha === fecha);
+    if (!r) return result;
+
+    const t = (r.metricas?.tareas || []).find(
+      (x: any) =>
+        (x.nombre || x.task || x.tarea || x.name || "").trim().toLowerCase() ===
+        taskName.trim().toLowerCase()
+    );
+
+    activeVariables.forEach((v) => {
+      result[v.key] = t ? calculateGpsMetricValue(t, v.key, derivedVariables) : 0;
+    });
+  }
+
+  return result;
+}
+
+interface TaskPairState {
+  id: string;
+  sourceA: "A" | "B";
+  taskA: string;
+  sourceB: "A" | "B";
+  taskB: string;
+  isExpanded: boolean;
+}
+
 export default function GpsComparativeSection({
   mode,
   clubName,
@@ -731,6 +797,108 @@ export default function GpsComparativeSection({
   const toggleTaskB = (taskName: string) => {
     setSelectedTasksB((prev) =>
       prev.includes(taskName) ? prev.filter((t) => t !== taskName) : [...prev, taskName]
+    );
+  };
+
+  // ── ESTADO DE COMPARATIVAS POR PARES DE TAREAS (HASTA 5 TAREAS) ──
+  const [taskPairs, setTaskPairs] = useState<TaskPairState[]>(() => {
+    const list: TaskPairState[] = [];
+    const count = Math.min(5, Math.max(tasksAvailableA.length, tasksAvailableB.length, 1));
+    for (let i = 0; i < count; i++) {
+      list.push({
+        id: `pair_${i + 1}`,
+        sourceA: "A",
+        taskA: tasksAvailableA[i] || tasksAvailableA[0] || "",
+        sourceB: "B",
+        taskB: tasksAvailableB[i] || tasksAvailableB[0] || tasksAvailableA[i] || "",
+        isExpanded: i === 0,
+      });
+    }
+    return list;
+  });
+
+  // Sincronizar pares si cambian las tareas disponibles de la fecha
+  useEffect(() => {
+    if (mode === "sesion") {
+      setTaskPairs((prev) => {
+        const count = Math.min(5, Math.max(tasksAvailableA.length, tasksAvailableB.length, prev.length || 1));
+        const next: TaskPairState[] = [];
+        for (let i = 0; i < count; i++) {
+          const existing = prev[i];
+          const taskA =
+            existing && tasksAvailableA.includes(existing.taskA)
+              ? existing.taskA
+              : tasksAvailableA[i] || tasksAvailableA[0] || "";
+          const taskB =
+            existing && tasksAvailableB.includes(existing.taskB)
+              ? existing.taskB
+              : tasksAvailableB[i] || tasksAvailableB[0] || tasksAvailableA[i] || "";
+          next.push({
+            id: existing ? existing.id : `pair_${i + 1}`,
+            sourceA: existing ? existing.sourceA : "A",
+            taskA,
+            sourceB: existing ? existing.sourceB : "B",
+            taskB,
+            isExpanded: existing ? existing.isExpanded : i === 0,
+          });
+        }
+        return next;
+      });
+    }
+  }, [dateA, dateB, tasksAvailableA, tasksAvailableB, mode]);
+
+  const handleTogglePairExpanded = (index: number) => {
+    setTaskPairs((prev) =>
+      prev.map((p, idx) => (idx === index ? { ...p, isExpanded: !p.isExpanded } : p))
+    );
+  };
+
+  const handleToggleAllPairs = () => {
+    const anyExpanded = taskPairs.some((p) => p.isExpanded);
+    setTaskPairs((prev) => prev.map((p) => ({ ...p, isExpanded: !anyExpanded })));
+  };
+
+  const handleAddPair = () => {
+    if (taskPairs.length >= 5) return;
+    const newIdx = taskPairs.length;
+    const taskA = tasksAvailableA[newIdx] || tasksAvailableA[0] || "";
+    const taskB = tasksAvailableB[newIdx] || tasksAvailableB[0] || "";
+    setTaskPairs((prev) => [
+      ...prev,
+      {
+        id: `pair_${Date.now()}_${newIdx}`,
+        sourceA: "A",
+        taskA,
+        sourceB: "B",
+        taskB,
+        isExpanded: true,
+      },
+    ]);
+  };
+
+  const handleRemovePair = (index: number) => {
+    if (taskPairs.length <= 1) return;
+    setTaskPairs((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleUpdatePair = (index: number, updates: Partial<TaskPairState>) => {
+    setTaskPairs((prev) =>
+      prev.map((p, idx) => (idx === index ? { ...p, ...updates } : p))
+    );
+  };
+
+  const handleSwapPair = (index: number) => {
+    setTaskPairs((prev) =>
+      prev.map((p, idx) => {
+        if (idx !== index) return p;
+        return {
+          ...p,
+          sourceA: p.sourceB,
+          taskA: p.taskB,
+          sourceB: p.sourceA,
+          taskB: p.taskA,
+        };
+      })
     );
   };
 
@@ -2507,6 +2675,481 @@ export default function GpsComparativeSection({
             </div>
           </div>
         )}      </div>
+
+      {/* ── APARTADO COMPARATIVA DETALLADA DE TAREAS (HASTA 5 TAREAS) ── */}
+      {mode === "sesion" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginTop: "8px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "10px" }}>
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ fontSize: "15px" }}>⚡</span>
+                <h3 style={{ margin: 0, fontSize: "14px", fontWeight: 900, color: "#0f172a", textTransform: "uppercase" }}>
+                  Comparativa de Tareas de Entrenamiento ({taskPairs.length}/5 Tareas)
+                </h3>
+              </div>
+              <span style={{ fontSize: "11.5px", color: "#64748b", fontWeight: 600 }}>
+                Compara tareas concretas par a par (Tarea 1 con Tarea 1 por defecto, o cruzada entre jugadores y sesiones)
+              </span>
+            </div>
+
+            <div className="no-print" style={{ display: "flex", gap: "6px" }}>
+              <button
+                type="button"
+                onClick={handleToggleAllPairs}
+                style={{
+                  padding: "5px 12px",
+                  borderRadius: "6px",
+                  border: "1px solid #cbd5e1",
+                  background: "#ffffff",
+                  color: "#334155",
+                  fontSize: "11px",
+                  fontWeight: 800,
+                  cursor: "pointer",
+                }}
+              >
+                {taskPairs.some((p) => p.isExpanded) ? "🔼 Plegar Todas" : "🔽 Desplegar Todas"}
+              </button>
+              {taskPairs.length < 5 && (
+                <button
+                  type="button"
+                  onClick={handleAddPair}
+                  style={{
+                    padding: "5px 12px",
+                    borderRadius: "6px",
+                    border: "none",
+                    background: "#1e3a8a",
+                    color: "#ffffff",
+                    fontSize: "11px",
+                    fontWeight: 800,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                >
+                  <span>➕</span> Añadir Tarea ({taskPairs.length}/5)
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Lista de tarjetas plegables de pares de tareas */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            {taskPairs.map((pair, idx) => {
+              const isSourceA_forA = pair.sourceA === "A";
+              const playerSideA = isSourceA_forA ? playerA : playerB;
+              const dateSideA = isSourceA_forA ? dateA : dateB;
+              const taskOptionsA = isSourceA_forA ? tasksAvailableA : tasksAvailableB;
+
+              const isSourceB_forB = pair.sourceB === "B";
+              const playerSideB = isSourceB_forB ? playerB : playerA;
+              const dateSideB = isSourceB_forB ? dateB : dateA;
+              const taskOptionsB = isSourceB_forB ? tasksAvailableB : tasksAvailableA;
+
+              const tMetricsA = getSingleTaskMetrics(
+                playerSideA.id,
+                dateSideA,
+                pair.taskA,
+                teamGpsRecords,
+                activeVariables,
+                derivedVariables
+              );
+
+              const tMetricsB = getSingleTaskMetrics(
+                playerSideB.id,
+                dateSideB,
+                pair.taskB,
+                teamGpsRecords,
+                activeVariables,
+                derivedVariables
+              );
+
+              const distA = Math.round(tMetricsA["Distance(m)"] || tMetricsA["Distancia Total (m)"] || 0);
+              const distB = Math.round(tMetricsB["Distance(m)"] || tMetricsB["Distancia Total (m)"] || 0);
+              const diffDist = distB - distA;
+              const durA = Math.round((tMetricsA["Duration(min)"] || tMetricsA["Tiempo"] || 0) * 10) / 10;
+              const durB = Math.round((tMetricsB["Duration(min)"] || tMetricsB["Tiempo"] || 0) * 10) / 10;
+
+              return (
+                <div
+                  key={pair.id}
+                  style={{
+                    background: "#ffffff",
+                    borderRadius: "10px",
+                    border: "1px solid #cbd5e1",
+                    boxShadow: "0 1px 4px rgba(0,0,0,0.03)",
+                    overflow: "hidden",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  {/* Encabezado clicable de la tarjeta de tarea (plegar/desplegar) */}
+                  <div
+                    onClick={() => handleTogglePairExpanded(idx)}
+                    style={{
+                      background: pair.isExpanded ? "#f8fafc" : "#ffffff",
+                      padding: "10px 16px",
+                      borderBottom: pair.isExpanded ? "1px solid #e2e8f0" : "none",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      cursor: "pointer",
+                      userSelect: "none",
+                      flexWrap: "wrap",
+                      gap: "8px",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                      <span
+                        style={{
+                          background: "#0f172a",
+                          color: "#ffffff",
+                          fontSize: "10px",
+                          fontWeight: 900,
+                          padding: "2px 7px",
+                          borderRadius: "4px",
+                          letterSpacing: "0.04em",
+                        }}
+                      >
+                        TAREA #{idx + 1}
+                      </span>
+
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        <span style={{ fontSize: "13px", fontWeight: 900, color: "#1e3a8a" }}>
+                          {pair.taskA || "Sin Tarea"}
+                        </span>
+                        <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 700 }}>
+                          ({playerSideA.apodo || playerSideA.nombre})
+                        </span>
+
+                        <span style={{ fontSize: "11px", fontWeight: 900, color: "#94a3b8", margin: "0 2px" }}>
+                          vs
+                        </span>
+
+                        <span style={{ fontSize: "13px", fontWeight: 900, color: "#ea580c" }}>
+                          {pair.taskB || "Sin Tarea"}
+                        </span>
+                        <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 700 }}>
+                          ({playerSideB.apodo || playerSideB.nombre})
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Resumen rápido a la derecha + botón plegar */}
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "11.5px" }}>
+                        <span style={{ color: "#334155", fontWeight: 700 }}>
+                          📏 Distancia: <strong>{distA}m</strong> vs <strong>{distB}m</strong>
+                          <span style={{ marginLeft: "4px", color: diffDist > 0 ? "#15803d" : diffDist < 0 ? "#b91c1c" : "#64748b", fontWeight: 900 }}>
+                            ({diffDist > 0 ? `+${diffDist}m` : `${diffDist}m`})
+                          </span>
+                        </span>
+
+                        <span style={{ color: "#64748b", fontWeight: 600 }}>
+                          ⏱️ {durA}m vs {durB}m
+                        </span>
+                      </div>
+
+                      <div className="no-print" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        {taskPairs.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemovePair(idx);
+                            }}
+                            title="Quitar esta comparativa de tarea"
+                            style={{
+                              background: "none",
+                              border: "none",
+                              color: "#94a3b8",
+                              fontSize: "13px",
+                              cursor: "pointer",
+                              padding: "2px 6px",
+                              borderRadius: "4px",
+                            }}
+                          >
+                            ✕
+                          </button>
+                        )}
+                        <span style={{ fontSize: "12px", color: "#64748b", fontWeight: 800 }}>
+                          {pair.isExpanded ? "▲ Plegar" : "▼ Desplegar"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Contenido desplegado: Selectores de tareas + Tabla comparativa */}
+                  {pair.isExpanded && (
+                    <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+                      {/* Fila de controles de configuración de este par */}
+                      <div
+                        className="no-print"
+                        style={{
+                          background: "#f8fafc",
+                          borderRadius: "8px",
+                          padding: "10px 14px",
+                          border: "1px solid #e2e8f0",
+                          display: "grid",
+                          gridTemplateColumns: "1fr auto 1fr",
+                          gap: "10px",
+                          alignItems: "center",
+                        }}
+                      >
+                        {/* Lado A */}
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                          <span style={{ background: "#1e3a8a", color: "#fff", fontSize: "10px", fontWeight: 900, padding: "2px 6px", borderRadius: "4px" }}>
+                            LADO A
+                          </span>
+
+                          <select
+                            value={pair.sourceA}
+                            onChange={(e) => {
+                              const newSource = e.target.value as "A" | "B";
+                              const newTasks = newSource === "A" ? tasksAvailableA : tasksAvailableB;
+                              handleUpdatePair(idx, {
+                                sourceA: newSource,
+                                taskA: newTasks[0] || "",
+                              });
+                            }}
+                            style={{
+                              padding: "4px 8px",
+                              borderRadius: "6px",
+                              border: "1px solid #cbd5e1",
+                              background: "#ffffff",
+                              fontSize: "11.5px",
+                              fontWeight: 700,
+                              color: "#1e3a8a",
+                            }}
+                          >
+                            <option value="A">Sujeto A ({playerA.apodo || playerA.nombre} · {formatDateDisplay(dateA)})</option>
+                            <option value="B">Sujeto B ({playerB.apodo || playerB.nombre} · {formatDateDisplay(dateB)})</option>
+                          </select>
+
+                          <select
+                            value={pair.taskA}
+                            onChange={(e) => handleUpdatePair(idx, { taskA: e.target.value })}
+                            style={{
+                              padding: "4px 8px",
+                              borderRadius: "6px",
+                              border: "1px solid #93c5fd",
+                              background: "#eff6ff",
+                              fontSize: "11.5px",
+                              fontWeight: 800,
+                              color: "#1e3a8a",
+                              flex: "1 1 120px",
+                            }}
+                          >
+                            {taskOptionsA.length === 0 && <option value="">Sin tareas en esta sesión</option>}
+                            {taskOptionsA.map((tName, tIdx) => (
+                              <option key={tName} value={tName}>
+                                Tarea #{tIdx + 1}: {tName}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Botón Swap ⇄ para este par */}
+                        <button
+                          type="button"
+                          onClick={() => handleSwapPair(idx)}
+                          title="Intercambiar Tarea A ⇄ Tarea B en esta comparativa"
+                          style={{
+                            width: "28px",
+                            height: "28px",
+                            borderRadius: "50%",
+                            background: "#ffffff",
+                            border: "1px solid #cbd5e1",
+                            fontSize: "13px",
+                            fontWeight: 900,
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          ⇄
+                        </button>
+
+                        {/* Lado B */}
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                          <span style={{ background: "#ea580c", color: "#fff", fontSize: "10px", fontWeight: 900, padding: "2px 6px", borderRadius: "4px" }}>
+                            LADO B
+                          </span>
+
+                          <select
+                            value={pair.sourceB}
+                            onChange={(e) => {
+                              const newSource = e.target.value as "A" | "B";
+                              const newTasks = newSource === "B" ? tasksAvailableB : tasksAvailableA;
+                              handleUpdatePair(idx, {
+                                sourceB: newSource,
+                                taskB: newTasks[0] || "",
+                              });
+                            }}
+                            style={{
+                              padding: "4px 8px",
+                              borderRadius: "6px",
+                              border: "1px solid #cbd5e1",
+                              background: "#ffffff",
+                              fontSize: "11.5px",
+                              fontWeight: 700,
+                              color: "#ea580c",
+                            }}
+                          >
+                            <option value="B">Sujeto B ({playerB.apodo || playerB.nombre} · {formatDateDisplay(dateB)})</option>
+                            <option value="A">Sujeto A ({playerA.apodo || playerA.nombre} · {formatDateDisplay(dateA)})</option>
+                          </select>
+
+                          <select
+                            value={pair.taskB}
+                            onChange={(e) => handleUpdatePair(idx, { taskB: e.target.value })}
+                            style={{
+                              padding: "4px 8px",
+                              borderRadius: "6px",
+                              border: "1px solid #fed7aa",
+                              background: "#fff7ed",
+                              fontSize: "11.5px",
+                              fontWeight: 800,
+                              color: "#c2410c",
+                              flex: "1 1 120px",
+                            }}
+                          >
+                            {taskOptionsB.length === 0 && <option value="">Sin tareas en esta sesión</option>}
+                            {taskOptionsB.map((tName, tIdx) => (
+                              <option key={tName} value={tName}>
+                                Tarea #{tIdx + 1}: {tName}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Tabla comparativa de la tarea */}
+                      <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: "8px" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11.5px", textAlign: "center" }}>
+                          <thead>
+                            <tr style={{ background: "#f1f5f9", color: "#0f172a", borderBottom: "1.5px solid #cbd5e1" }}>
+                              <th style={{ padding: "8px 12px", textAlign: "left", minWidth: "180px", fontWeight: 900 }}>
+                                Tarea / Sujeto
+                              </th>
+                              {activeVariables.map((v) => (
+                                <th key={v.key} style={{ padding: "6px 10px", minWidth: "90px", borderLeft: "1px solid #e2e8f0", fontWeight: 800 }}>
+                                  <div style={{ display: "flex", flexDirection: "column", gap: "1px" }}>
+                                    <span style={{ fontSize: "11px" }}>{v.shortLabel || v.label}</span>
+                                    <span style={{ fontSize: "9.5px", color: "#64748b" }}>({v.unit || "-"})</span>
+                                  </div>
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {/* Fila Tarea A */}
+                            <tr style={{ background: "#ffffff", borderBottom: "1px solid #e2e8f0" }}>
+                              <td style={{ padding: "8px 12px", textAlign: "left", fontWeight: 800, color: "#1e3a8a" }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                                  <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: "#1e3a8a" }} />
+                                  <span>{pair.taskA || "Sin Tarea"} ({playerSideA.apodo || playerSideA.nombre})</span>
+                                </div>
+                              </td>
+                              {activeVariables.map((v) => {
+                                const val = tMetricsA[v.key] ?? 0;
+                                return (
+                                  <td key={v.key} style={{ padding: "8px 10px", fontWeight: 900, color: "#1e3a8a", borderLeft: "1px solid #f1f5f9" }}>
+                                    {val.toLocaleString("es-ES")}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+
+                            {/* Fila Tarea B */}
+                            <tr style={{ background: "#fffaf5", borderBottom: "1.5px solid #cbd5e1" }}>
+                              <td style={{ padding: "8px 12px", textAlign: "left", fontWeight: 800, color: "#ea580c" }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                                  <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: "#ea580c" }} />
+                                  <span>{pair.taskB || "Sin Tarea"} ({playerSideB.apodo || playerSideB.nombre})</span>
+                                </div>
+                              </td>
+                              {activeVariables.map((v) => {
+                                const val = tMetricsB[v.key] ?? 0;
+                                return (
+                                  <td key={v.key} style={{ padding: "8px 10px", fontWeight: 900, color: "#ea580c", borderLeft: "1px solid #fed7aa" }}>
+                                    {val.toLocaleString("es-ES")}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+
+                            {/* Fila Diferencia (B - A) */}
+                            <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
+                              <td style={{ padding: "6px 12px", textAlign: "left", fontWeight: 900, color: "#334155", fontSize: "11px", textTransform: "uppercase" }}>
+                                Diferencia (B - A)
+                              </td>
+                              {activeVariables.map((v) => {
+                                const valA = tMetricsA[v.key] ?? 0;
+                                const valB = tMetricsB[v.key] ?? 0;
+                                const diff = Math.round((valB - valA) * 100) / 100;
+                                const isUp = diff > 0;
+                                const isDown = diff < 0;
+                                return (
+                                  <td
+                                    key={v.key}
+                                    style={{
+                                      padding: "6px 10px",
+                                      fontWeight: 800,
+                                      borderLeft: "1px solid #e2e8f0",
+                                      color: isUp ? "#15803d" : isDown ? "#b91c1c" : "#64748b",
+                                    }}
+                                  >
+                                    {diff > 0 ? `+${diff.toLocaleString("es-ES")}` : diff.toLocaleString("es-ES")}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+
+                            {/* Fila % de Cambio */}
+                            <tr style={{ background: "#f1f5f9" }}>
+                              <td style={{ padding: "6px 12px", textAlign: "left", fontWeight: 900, color: "#0f172a", fontSize: "11px", textTransform: "uppercase" }}>
+                                % Variación
+                              </td>
+                              {activeVariables.map((v) => {
+                                const valA = tMetricsA[v.key] ?? 0;
+                                const valB = tMetricsB[v.key] ?? 0;
+                                const diff = valB - valA;
+                                const pct = valA > 0 ? Math.round(((valB - valA) / valA) * 1000) / 10 : (valB > 0 ? 100 : 0);
+                                const isUp = diff > 0;
+                                const isDown = diff < 0;
+                                return (
+                                  <td key={v.key} style={{ padding: "6px 10px", borderLeft: "1px solid #e2e8f0" }}>
+                                    <span
+                                      style={{
+                                        display: "inline-block",
+                                        padding: "1px 5px",
+                                        borderRadius: "4px",
+                                        fontSize: "10.5px",
+                                        fontWeight: 900,
+                                        background: isUp ? "#dcfce7" : isDown ? "#fee2e2" : "#ffffff",
+                                        color: isUp ? "#15803d" : isDown ? "#b91c1c" : "#64748b",
+                                        border: isUp ? "1px solid #bbf7d0" : isDown ? "1px solid #fecaca" : "1px solid #cbd5e1",
+                                      }}
+                                    >
+                                      {isUp ? "▲ " : isDown ? "▼ " : "= "}
+                                      {isUp ? `+${pct}%` : `${pct}%`}
+                                    </span>
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ── VENTANA MODAL DEL MINI CALENDARIO (DEL DÍA AL DÍA) ── */}
       {calendarModalTarget !== null && (
