@@ -8,6 +8,7 @@ import { fetchLiveWellnessSheet, getActiveJugadores, getAllJugadoresIncludingArc
 import { getDisponibilidadInfo } from "@/app/lib/disponibilidad";
 import { useClubConfig } from "@/app/lib/useClubConfig";
 import { ExternalDatabaseLinks, DEFAULT_EXTERNAL_LINKS } from "@/app/lib/externalLinks";
+import CargaExternaSection from "./CargaExternaSection";
 import { findMatchingJugador, extractPlayerNameFromRow, extractDatesFromRow, isRowMatchingDate, normalizeDateStr } from "@/app/lib/playerMatching";
 
 const teamsBySeason: Record<string, string[]> = {
@@ -1235,221 +1236,145 @@ function CargasContent() {
         </div>
 
         {/* SUB-BARRAS MÁS BAJAS, SIN NÚMEROS, SIN PARENTESIS Y SIN EMOTICONOS */}
-        {tab === "interna" ? (
-          <div className="no-print" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px", marginBottom: "16px" }}>
-            <button
-              type="button"
-              onClick={() => setInternaSeccion("wellness")}
-              style={{
-                padding: "6px 12px",
-                borderRadius: "6px",
-                fontSize: "12.5px",
-                fontWeight: 700,
-                cursor: "pointer",
-                textAlign: "center",
-                background: internaSeccion === "wellness" ? "#e0f2fe" : "#ffffff",
-                color: internaSeccion === "wellness" ? "#0369a1" : "#64748b",
-                border: internaSeccion === "wellness" ? "1.5px solid #0284c7" : "1px solid #cbd5e1",
-                transition: "all 0.15s ease",
-              }}
-            >
-              Wellness
-            </button>
+        {tab === "interna" && (
+          <>
+            <div className="no-print" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px", marginBottom: "16px" }}>
+              <button
+                type="button"
+                onClick={() => setInternaSeccion("wellness")}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: "6px",
+                  fontSize: "12.5px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  textAlign: "center",
+                  background: internaSeccion === "wellness" ? "#e0f2fe" : "#ffffff",
+                  color: internaSeccion === "wellness" ? "#0369a1" : "#64748b",
+                  border: internaSeccion === "wellness" ? "1.5px solid #0284c7" : "1px solid #cbd5e1",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                Wellness
+              </button>
 
-            <button
-              type="button"
-              onClick={() => setInternaSeccion("rpe")}
-              style={{
-                padding: "6px 12px",
-                borderRadius: "6px",
-                fontSize: "12.5px",
-                fontWeight: 700,
-                cursor: "pointer",
-                textAlign: "center",
-                background: internaSeccion === "rpe" ? "#fef3c7" : "#ffffff",
-                color: internaSeccion === "rpe" ? "#b45309" : "#64748b",
-                border: internaSeccion === "rpe" ? "1.5px solid #f59e0b" : "1px solid #cbd5e1",
-                transition: "all 0.15s ease",
-              }}
-            >
-              RPE
-            </button>
+              <button
+                type="button"
+                onClick={() => setInternaSeccion("rpe")}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: "6px",
+                  fontSize: "12.5px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  textAlign: "center",
+                  background: internaSeccion === "rpe" ? "#fef3c7" : "#ffffff",
+                  color: internaSeccion === "rpe" ? "#b45309" : "#64748b",
+                  border: internaSeccion === "rpe" ? "1.5px solid #f59e0b" : "1px solid #cbd5e1",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                RPE
+              </button>
 
-            <button
-              type="button"
-              onClick={() => setInternaSeccion("fc")}
-              style={{
-                padding: "6px 12px",
-                borderRadius: "6px",
-                fontSize: "12.5px",
-                fontWeight: 700,
-                cursor: "pointer",
-                textAlign: "center",
-                background: internaSeccion === "fc" ? "#fee2e2" : "#ffffff",
-                color: internaSeccion === "fc" ? "#b91c1c" : "#64748b",
-                border: internaSeccion === "fc" ? "1.5px solid #ef4444" : "1px solid #cbd5e1",
-                transition: "all 0.15s ease",
-              }}
-            >
-              Frecuencia Cardíaca
-            </button>
-          </div>
-        ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "8px", marginBottom: "16px" }}>
-            <button
-              type="button"
-              onClick={() => setExternaSeccion("sesion")}
-              style={{
-                padding: "6px 12px",
-                borderRadius: "6px",
-                fontSize: "12.5px",
-                fontWeight: 700,
-                cursor: "pointer",
-                textAlign: "center",
-                background: externaSeccion === "sesion" ? "#eff6ff" : "#ffffff",
-                color: externaSeccion === "sesion" ? "#1d4ed8" : "#64748b",
-                border: externaSeccion === "sesion" ? "1.5px solid #3b82f6" : "1px solid #cbd5e1",
-                transition: "all 0.15s ease",
-              }}
-            >
-              📅 Sesión
-            </button>
+              <button
+                type="button"
+                onClick={() => setInternaSeccion("fc")}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: "6px",
+                  fontSize: "12.5px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  textAlign: "center",
+                  background: internaSeccion === "fc" ? "#fee2e2" : "#ffffff",
+                  color: internaSeccion === "fc" ? "#b91c1c" : "#64748b",
+                  border: internaSeccion === "fc" ? "1.5px solid #ef4444" : "1px solid #cbd5e1",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                Frecuencia Cardíaca
+              </button>
+            </div>
 
-            <button
-              type="button"
-              onClick={() => setExternaSeccion("microciclo")}
-              style={{
-                padding: "6px 12px",
-                borderRadius: "6px",
-                fontSize: "12.5px",
-                fontWeight: 700,
-                cursor: "pointer",
-                textAlign: "center",
-                background: externaSeccion === "microciclo" ? "#fff7ed" : "#ffffff",
-                color: externaSeccion === "microciclo" ? "#c2410c" : "#64748b",
-                border: externaSeccion === "microciclo" ? "1.5px solid #ea580c" : "1px solid #cbd5e1",
-                transition: "all 0.15s ease",
-              }}
-            >
-              📆 Microciclo
-            </button>
+            {/* TABS DE SUB-VISTAS: JUGADOR | COMPARATIVA | EQUIPO */}
+            <div className="no-print" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", marginBottom: "16px", background: "#f1f5f9", padding: "6px", borderRadius: "10px", border: "1px solid #cbd5e1" }}>
+              <button
+                type="button"
+                onClick={() => setSubView("jugador")}
+                style={{
+                  flex: 1,
+                  padding: "8px 16px",
+                  borderRadius: "8px",
+                  fontSize: "13px",
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "6px",
+                  background: subView === "jugador" ? "#1e3a8a" : "transparent",
+                  color: subView === "jugador" ? "#ffffff" : "#475569",
+                  border: "none",
+                  boxShadow: subView === "jugador" ? "0 2px 6px rgba(30, 58, 138, 0.25)" : "none",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                <span>👤</span> Jugador
+              </button>
 
-            <button
-              type="button"
-              onClick={() => setExternaSeccion("mesociclo")}
-              style={{
-                padding: "6px 12px",
-                borderRadius: "6px",
-                fontSize: "12.5px",
-                fontWeight: 700,
-                cursor: "pointer",
-                textAlign: "center",
-                background: externaSeccion === "mesociclo" ? "#f3e8ff" : "#ffffff",
-                color: externaSeccion === "mesociclo" ? "#6b21a8" : "#64748b",
-                border: externaSeccion === "mesociclo" ? "1.5px solid #9333ea" : "1px solid #cbd5e1",
-                transition: "all 0.15s ease",
-              }}
-            >
-              🗓️ Mesociclo
-            </button>
+              <button
+                type="button"
+                onClick={() => setSubView("comparativa")}
+                style={{
+                  flex: 1,
+                  padding: "8px 16px",
+                  borderRadius: "8px",
+                  fontSize: "13px",
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "6px",
+                  background: subView === "comparativa" ? "#ea580c" : "transparent",
+                  color: subView === "comparativa" ? "#ffffff" : "#475569",
+                  border: "none",
+                  boxShadow: subView === "comparativa" ? "0 2px 6px rgba(234, 88, 12, 0.25)" : "none",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                <span>📊</span> Comparativa
+              </button>
 
-            <button
-              type="button"
-              onClick={() => setExternaSeccion("temporada")}
-              style={{
-                padding: "6px 12px",
-                borderRadius: "6px",
-                fontSize: "12.5px",
-                fontWeight: 700,
-                cursor: "pointer",
-                textAlign: "center",
-                background: externaSeccion === "temporada" ? "#dcfce7" : "#ffffff",
-                color: externaSeccion === "temporada" ? "#15803d" : "#64748b",
-                border: externaSeccion === "temporada" ? "1.5px solid #16a34a" : "1px solid #cbd5e1",
-                transition: "all 0.15s ease",
-              }}
-            >
-              🏆 Temporada
-            </button>
-          </div>
+              <button
+                type="button"
+                onClick={() => setSubView("equipo")}
+                style={{
+                  flex: 1,
+                  padding: "8px 16px",
+                  borderRadius: "8px",
+                  fontSize: "13px",
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "6px",
+                  background: subView === "equipo" ? "#0284c7" : "transparent",
+                  color: subView === "equipo" ? "#ffffff" : "#475569",
+                  border: "none",
+                  boxShadow: subView === "equipo" ? "0 2px 6px rgba(2, 132, 199, 0.25)" : "none",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                <span>👥</span> Equipo
+              </button>
+            </div>
+          </>
         )}
 
-        {/* TABS DE SUB-VISTAS: JUGADOR | COMPARATIVA | EQUIPO */}
-        <div className="no-print" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", marginBottom: "16px", background: "#f1f5f9", padding: "6px", borderRadius: "10px", border: "1px solid #cbd5e1" }}>
-          <button
-            type="button"
-            onClick={() => setSubView("jugador")}
-            style={{
-              flex: 1,
-              padding: "8px 16px",
-              borderRadius: "8px",
-              fontSize: "13px",
-              fontWeight: 800,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "6px",
-              background: subView === "jugador" ? "#1e3a8a" : "transparent",
-              color: subView === "jugador" ? "#ffffff" : "#475569",
-              border: "none",
-              boxShadow: subView === "jugador" ? "0 2px 6px rgba(30, 58, 138, 0.25)" : "none",
-              transition: "all 0.15s ease",
-            }}
-          >
-            <span>👤</span> Jugador
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setSubView("comparativa")}
-            style={{
-              flex: 1,
-              padding: "8px 16px",
-              borderRadius: "8px",
-              fontSize: "13px",
-              fontWeight: 800,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "6px",
-              background: subView === "comparativa" ? "#ea580c" : "transparent",
-              color: subView === "comparativa" ? "#ffffff" : "#475569",
-              border: "none",
-              boxShadow: subView === "comparativa" ? "0 2px 6px rgba(234, 88, 12, 0.25)" : "none",
-              transition: "all 0.15s ease",
-            }}
-          >
-            <span>📊</span> Comparativa
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setSubView("equipo")}
-            style={{
-              flex: 1,
-              padding: "8px 16px",
-              borderRadius: "8px",
-              fontSize: "13px",
-              fontWeight: 800,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "6px",
-              background: subView === "equipo" ? "#0284c7" : "transparent",
-              color: subView === "equipo" ? "#ffffff" : "#475569",
-              border: "none",
-              boxShadow: subView === "equipo" ? "0 2px 6px rgba(2, 132, 199, 0.25)" : "none",
-              transition: "all 0.15s ease",
-            }}
-          >
-            <span>👥</span> Equipo
-          </button>
-        </div>
-
-        {/* BARRA DE NAVEGACIÓN DE FECHA + 3 BOTONES EN HORIZONTAL ALINEADOS */}
+                {/* BARRA DE NAVEGACIÓN DE FECHA + 3 BOTONES EN HORIZONTAL ALINEADOS */}
         <div className="no-print" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#ffffff", padding: "10px 16px", borderRadius: "10px", border: "1px solid #cbd5e1", marginBottom: "16px", flexWrap: "wrap", gap: "10px", position: "relative" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <span style={{ fontSize: "12px", fontWeight: 800, color: "#334155" }}>FECHA DE CONSULTA:</span>
@@ -2292,356 +2217,20 @@ function CargasContent() {
           </section>
         )}
 
-        {/* CONTENIDOS CARGA EXTERNA (DASHBOARDS GPS & ADJUNTAR ARCHIVO CSV A BBDD GPS) */}
+        {/* CONTENIDOS CARGA EXTERNA (REPLANTEADA ORDENADA Y PRECISA) */}
         {tab === "externa" && (
-          <section style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            {/* ZONA DE SUBIDA / ADJUNTAR ARCHIVO CSV DE DATOS GPS A BBDD GPS */}
-            <div style={{ background: "#ffffff", padding: "16px 20px", borderRadius: "12px", border: "1px solid #cbd5e1", boxShadow: "0 2px 8px rgba(0,0,0,0.03)" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "12px", marginBottom: "10px" }}>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 900, color: "#0f172a", display: "flex", alignItems: "center", gap: "8px" }}>
-                    <span>📥</span> Adjuntar Archivo CSV a Base de Datos GPS (Supabase datos_gps)
-                  </h3>
-                  <p style={{ margin: "3px 0 0 0", fontSize: "11.5px", color: "#64748b" }}>
-                    Sube los datos de GPS (Catapult, Wimu, OLIVER, Statsports, etc.) para registrarlos automáticamente en la BBDD y alimentar los Dashboards.
-                  </p>
-                </div>
-
-                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                  {extLinks.gps?.url ? (
-                    <a
-                      href={extLinks.gps.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      title={extLinks.gps.nombre || "Abrir Base de Datos / Plataforma GPS"}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "6px",
-                        background: "#eff6ff",
-                        color: "#1e40af",
-                        border: "1px solid #bfdbfe",
-                        padding: "8px 14px",
-                        borderRadius: "8px",
-                        fontSize: "12px",
-                        fontWeight: 800,
-                        textDecoration: "none",
-                        boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-                      }}
-                    >
-                      <span>🛰️</span>
-                      <span>Abrir BBDD GPS ({extLinks.gps.proveedor || "Externa"}) ↗</span>
-                    </a>
-                  ) : null}
-
-                  <label
-                    style={{
-                      background: isGpsUploading ? "#94a3b8" : "#0284c7",
-                      color: "#ffffff",
-                      padding: "8px 16px",
-                      borderRadius: "8px",
-                      fontSize: "12px",
-                      fontWeight: 800,
-                      cursor: isGpsUploading ? "wait" : "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "6px",
-                      boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-                    }}
-                  >
-                    <span>{isGpsUploading ? "⏳" : "📁"}</span>
-                    <span>{isGpsUploading ? "Subiendo..." : "Seleccionar Archivo CSV"}</span>
-                    <input
-                      type="file"
-                      multiple
-                      accept=".csv, .tsv, .xlsx, .xls"
-                      onChange={handleGpsCsvUpload}
-                      disabled={isGpsUploading}
-                      style={{ display: "none" }}
-                    />
-                  </label>
-                </div>
-              </div>
-
-              {/* Mensaje de estado de subida CSV */}
-              {gpsUploadStatus && (
-                <div style={{ padding: "6px 12px", borderRadius: "6px", background: gpsUploadStatus.isError ? "#fee2e2" : "#dcfce7", color: gpsUploadStatus.isError ? "#b91c1c" : "#15803d", fontSize: "11.5px", fontWeight: 700 }}>
-                  {gpsUploadStatus.message}
-                </div>
-              )}
-            </div>
-
-            {/* BARRA DE TARJETAS DASHBOARD DE RESUMEN GPS */}
-            {(() => {
-              // Filtrar datos GPS para la fecha seleccionada o globales si no hay en esa fecha
-              const dateGps = gpsRecords.filter((r) => r.fecha === selectedDate);
-              const activeSet = dateGps.length > 0 ? dateGps : gpsRecords;
-
-              const totalDistAvg = activeSet.length > 0 ? Math.round(activeSet.reduce((acc, r) => acc + (Number(r.distancia_total) || 0), 0) / activeSet.length) : 0;
-              const hsrAvg = activeSet.length > 0 ? Math.round(activeSet.reduce((acc, r) => acc + (Number(r.distancia_z4) || 0), 0) / activeSet.length) : 0;
-              const topSpeedMax = activeSet.length > 0 ? Math.max(...activeSet.map((r) => Number(r.max_speed) || 0)).toFixed(1) : "0.0";
-              const loadAvg = activeSet.length > 0 ? Math.round(activeSet.reduce((acc, r) => acc + (Number(r.player_load) || 0), 0) / activeSet.length) : 0;
-
-              return (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px" }}>
-                  <div style={{ background: "#ffffff", padding: "14px 16px", borderRadius: "10px", border: "1px solid #cbd5e1", display: "flex", flexDirection: "column", gap: "4px" }}>
-                    <span style={{ fontSize: "11px", fontWeight: 800, color: "#64748b", textTransform: "uppercase" }}>🏃 Distancia Total Promedio</span>
-                    <strong style={{ fontSize: "20px", fontWeight: 900, color: "#0f172a" }}>
-                      {totalDistAvg.toLocaleString("es-ES")} <small style={{ fontSize: "12px", color: "#64748b" }}>m</small>
-                    </strong>
-                    <span style={{ fontSize: "10.5px", color: "#16a34a", fontWeight: 700 }}>{activeSet.length} registros cargados</span>
-                  </div>
-
-                  <div style={{ background: "#ffffff", padding: "14px 16px", borderRadius: "10px", border: "1px solid #cbd5e1", display: "flex", flexDirection: "column", gap: "4px" }}>
-                    <span style={{ fontSize: "11px", fontWeight: 800, color: "#64748b", textTransform: "uppercase" }}>⚡ HSR (&gt;18 km/h) Promedio</span>
-                    <strong style={{ fontSize: "20px", fontWeight: 900, color: "#ea580c" }}>
-                      {hsrAvg.toLocaleString("es-ES")} <small style={{ fontSize: "12px", color: "#64748b" }}>m</small>
-                    </strong>
-                    <span style={{ fontSize: "10.5px", color: "#ea580c", fontWeight: 700 }}>Alta Intensidad Z4</span>
-                  </div>
-
-                  <div style={{ background: "#ffffff", padding: "14px 16px", borderRadius: "10px", border: "1px solid #cbd5e1", display: "flex", flexDirection: "column", gap: "4px" }}>
-                    <span style={{ fontSize: "11px", fontWeight: 800, color: "#64748b", textTransform: "uppercase" }}>🚀 Top Speed Máxima Equipo</span>
-                    <strong style={{ fontSize: "20px", fontWeight: 900, color: "#9333ea" }}>
-                      {topSpeedMax} <small style={{ fontSize: "12px", color: "#64748b" }}>km/h</small>
-                    </strong>
-                    <span style={{ fontSize: "10.5px", color: "#9333ea", fontWeight: 700 }}>Pico de Velocidad Sprints</span>
-                  </div>
-
-                  <div style={{ background: "#ffffff", padding: "14px 16px", borderRadius: "10px", border: "1px solid #cbd5e1", display: "flex", flexDirection: "column", gap: "4px" }}>
-                    <span style={{ fontSize: "11px", fontWeight: 800, color: "#64748b", textTransform: "uppercase" }}>🔋 Player Load Promedio</span>
-                    <strong style={{ fontSize: "20px", fontWeight: 900, color: "#0284c7" }}>
-                      {loadAvg} <small style={{ fontSize: "12px", color: "#64748b" }}>AU</small>
-                    </strong>
-                    <span style={{ fontSize: "10.5px", color: "#0284c7", fontWeight: 700 }}>Carga Mecánica Acumulada</span>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* SUB-SECCIÓN 1: SESIÓN */}
-            {externaSeccion === "sesion" && (
-              <div>
-                <div style={{ background: "#ffffff", padding: "16px", borderRadius: "12px", border: "1px solid #e2e6e3", boxShadow: "0 2px 8px rgba(0,0,0,0.03)" }}>
-                  <h3 style={{ marginBottom: "12px", fontSize: "14.5px", fontWeight: 800, color: "var(--navy)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <span>📅 Carga Externa — Vista Sesión</span>
-                    <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>Fecha: {selectedDate}</span>
-                  </h3>
-                  <table style={{ width: "100%", borderCollapse: "collapse", color: "#0f172a", fontSize: "12.5px" }}>
-                    <thead>
-                      <tr style={{ background: "#eff6ff", borderBottom: "2px solid #bfdbfe", textAlign: "left", color: "#1d4ed8" }}>
-                        <th style={{ padding: "8px 10px" }}>Jugador</th>
-                        <th style={{ padding: "8px 10px", textAlign: "right" }}>Distancia (m)</th>
-                        <th style={{ padding: "8px 10px", textAlign: "right" }}>HSR (m)</th>
-                        <th style={{ padding: "8px 10px", textAlign: "right" }}>Top Speed (km/h)</th>
-                        <th style={{ padding: "8px 10px", textAlign: "right" }}>Player Load (AU)</th>
-                        <th style={{ padding: "8px 10px", textAlign: "center" }}>Sprints</th>
-                        <th style={{ padding: "8px 10px", textAlign: "center" }}>Tipo Sesión</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredJugadores.map((j, idx) => {
-                        const rec = gpsRecords.find((r) => r.jugador_id === j.id && r.fecha === selectedDate);
-                        const dist = rec ? Math.round(Number(rec.distancia_total) || 0) : 0;
-                        const hsr = rec ? Math.round(Number(rec.distancia_z4) || 0) : 0;
-                        const topSpd = rec ? (Number(rec.max_speed) || 0) : 0;
-                        const load = rec ? Math.round(Number(rec.player_load) || 0) : 0;
-                        const sprints = rec ? Math.round(Number(rec.num_sprints) || 0) : 0;
-                        const tipoSesion = rec ? (rec.tipo_sesion || "Entrenamiento") : "-";
-                        return (
-                          <tr key={j.id || idx} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                            <td style={{ padding: "8px 10px", fontWeight: 700 }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                                {renderDisponibilidadBadge(j)}
-                                <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: rec ? "#3b82f6" : "#94a3b8" }} />
-                                <span>{(j.apodo || j.nombre || "").toUpperCase()}</span>
-                              </div>
-                            </td>
-                            <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 800 }}>{dist.toLocaleString("es-ES")}</td>
-                            <td style={{ padding: "8px 10px", textAlign: "right", color: "#ea580c", fontWeight: 700 }}>{hsr.toLocaleString("es-ES")}</td>
-                            <td style={{ padding: "8px 10px", textAlign: "right", color: "#9333ea", fontWeight: 800 }}>{topSpd.toFixed(1)}</td>
-                            <td style={{ padding: "8px 10px", textAlign: "right", color: "#0284c7", fontWeight: 700 }}>{load}</td>
-                            <td style={{ padding: "8px 10px", textAlign: "center", fontWeight: 800 }}>{sprints}</td>
-                            <td style={{ padding: "8px 10px", textAlign: "center" }}>
-                              <span style={{ fontSize: "10.5px", fontWeight: 800, padding: "2px 8px", borderRadius: "12px", background: "#eff6ff", color: "#1d4ed8" }}>{tipoSesion}</span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* SUB-SECCIÓN 2: MICROCICLO */}
-            {externaSeccion === "microciclo" && (
-              <div>
-                <div style={{ background: "#ffffff", padding: "16px", borderRadius: "12px", border: "1px solid #e2e6e3", boxShadow: "0 2px 8px rgba(0,0,0,0.03)" }}>
-                  <h3 style={{ marginBottom: "12px", fontSize: "14.5px", fontWeight: 800, color: "var(--navy)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <span>📆 Carga Externa — Vista Microciclo (Semana Actual)</span>
-                    <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>Suma 7 días</span>
-                  </h3>
-                  <table style={{ width: "100%", borderCollapse: "collapse", color: "#0f172a", fontSize: "12.5px" }}>
-                    <thead>
-                      <tr style={{ background: "#fff7ed", borderBottom: "2px solid #fed7aa", textAlign: "left", color: "#c2410c" }}>
-                        <th style={{ padding: "8px 10px" }}>Jugador</th>
-                        <th style={{ padding: "8px 10px", textAlign: "right" }}>Dist. Total (m)</th>
-                        <th style={{ padding: "8px 10px", textAlign: "right" }}>HSR Total (m)</th>
-                        <th style={{ padding: "8px 10px", textAlign: "right" }}>Top Speed Máx (km/h)</th>
-                        <th style={{ padding: "8px 10px", textAlign: "right" }}>Load Total (AU)</th>
-                        <th style={{ padding: "8px 10px", textAlign: "center" }}>Sesiones</th>
-                        <th style={{ padding: "8px 10px", textAlign: "center" }}>Tendencia</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredJugadores.map((j, idx) => {
-                        const playerRecs = gpsRecords.filter((r) => r.jugador_id === j.id);
-                        const distTotal = playerRecs.reduce((s, r) => s + (Number(r.distancia_total) || 0), 0);
-                        const hsrTotal = playerRecs.reduce((s, r) => s + (Number(r.distancia_z4) || 0), 0);
-                        const topSpdMax = playerRecs.length > 0 ? Math.max(...playerRecs.map((r) => Number(r.max_speed) || 0)) : 0;
-                        const loadTotal = playerRecs.reduce((s, r) => s + (Number(r.player_load) || 0), 0);
-                        const numSes = playerRecs.length;
-                        const tendencia = numSes === 0 ? "-" : distTotal > 42000 ? "📈 Alta" : distTotal > 36000 ? "➡️ Normal" : "📉 Baja";
-                        return (
-                          <tr key={j.id || idx} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                            <td style={{ padding: "8px 10px", fontWeight: 700 }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                                {renderDisponibilidadBadge(j)}
-                                <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: playerRecs.length > 0 ? "#ea580c" : "#94a3b8" }} />
-                                <span>{(j.apodo || j.nombre || "").toUpperCase()}</span>
-                              </div>
-                            </td>
-                            <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 800 }}>{distTotal.toLocaleString("es-ES")}</td>
-                            <td style={{ padding: "8px 10px", textAlign: "right", color: "#ea580c", fontWeight: 700 }}>{hsrTotal.toLocaleString("es-ES")}</td>
-                            <td style={{ padding: "8px 10px", textAlign: "right", color: "#9333ea", fontWeight: 800 }}>{topSpdMax.toFixed ? topSpdMax.toFixed(1) : topSpdMax}</td>
-                            <td style={{ padding: "8px 10px", textAlign: "right", color: "#0284c7", fontWeight: 700 }}>{loadTotal.toLocaleString("es-ES")}</td>
-                            <td style={{ padding: "8px 10px", textAlign: "center", fontWeight: 800 }}>{numSes}</td>
-                            <td style={{ padding: "8px 10px", textAlign: "center", fontSize: "12px", fontWeight: 700 }}>{tendencia}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* SUB-SECCIÓN 3: MESOCICLO */}
-            {externaSeccion === "mesociclo" && (
-              <div>
-                <div style={{ background: "#ffffff", padding: "16px", borderRadius: "12px", border: "1px solid #e2e6e3", boxShadow: "0 2px 8px rgba(0,0,0,0.03)" }}>
-                  <h3 style={{ marginBottom: "12px", fontSize: "14.5px", fontWeight: 800, color: "var(--navy)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <span>🗓️ Carga Externa — Vista Mesociclo (Último Mes)</span>
-                    <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>Acumulado ~4 semanas</span>
-                  </h3>
-                  <table style={{ width: "100%", borderCollapse: "collapse", color: "#0f172a", fontSize: "12.5px" }}>
-                    <thead>
-                      <tr style={{ background: "#f3e8ff", borderBottom: "2px solid #d8b4fe", textAlign: "left", color: "#6b21a8" }}>
-                        <th style={{ padding: "8px 10px" }}>Jugador</th>
-                        <th style={{ padding: "8px 10px", textAlign: "right" }}>Dist. Total (m)</th>
-                        <th style={{ padding: "8px 10px", textAlign: "right" }}>HSR Total (m)</th>
-                        <th style={{ padding: "8px 10px", textAlign: "right" }}>Top Speed Máx (km/h)</th>
-                        <th style={{ padding: "8px 10px", textAlign: "right" }}>Load Total (AU)</th>
-                        <th style={{ padding: "8px 10px", textAlign: "center" }}>Sesiones</th>
-                        <th style={{ padding: "8px 10px", textAlign: "center" }}>Carga Mes</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredJugadores.map((j, idx) => {
-                        const playerRecs = gpsRecords.filter((r) => r.jugador_id === j.id);
-                        const distTotal = playerRecs.reduce((s, r) => s + (Number(r.distancia_total) || 0), 0);
-                        const hsrTotal = playerRecs.reduce((s, r) => s + (Number(r.distancia_z4) || 0), 0);
-                        const topSpdMax = playerRecs.length > 0 ? Math.max(...playerRecs.map((r) => Number(r.max_speed) || 0)) : 0;
-                        const loadTotal = playerRecs.reduce((s, r) => s + (Number(r.player_load) || 0), 0);
-                        const numSes = playerRecs.length;
-                        const nivel = numSes === 0 ? "-" : loadTotal > 18000 ? "🔥 Muy Alta" : loadTotal > 13000 ? "⚖️ Óptima" : "🟢 Moderada";
-                        return (
-                          <tr key={j.id || idx} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                            <td style={{ padding: "8px 10px", fontWeight: 700 }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                                {renderDisponibilidadBadge(j)}
-                                <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: playerRecs.length > 0 ? "#9333ea" : "#94a3b8" }} />
-                                <span>{(j.apodo || j.nombre || "").toUpperCase()}</span>
-                              </div>
-                            </td>
-                            <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 800 }}>{distTotal.toLocaleString("es-ES")}</td>
-                            <td style={{ padding: "8px 10px", textAlign: "right", color: "#ea580c", fontWeight: 700 }}>{hsrTotal.toLocaleString("es-ES")}</td>
-                            <td style={{ padding: "8px 10px", textAlign: "right", color: "#9333ea", fontWeight: 800 }}>{topSpdMax.toFixed ? topSpdMax.toFixed(1) : topSpdMax}</td>
-                            <td style={{ padding: "8px 10px", textAlign: "right", color: "#0284c7", fontWeight: 700 }}>{loadTotal.toLocaleString("es-ES")}</td>
-                            <td style={{ padding: "8px 10px", textAlign: "center", fontWeight: 800 }}>{numSes}</td>
-                            <td style={{ padding: "8px 10px", textAlign: "center" }}>
-                              <span style={{ fontSize: "10.5px", fontWeight: 800, padding: "2px 8px", borderRadius: "12px", background: loadTotal > 18000 ? "#fee2e2" : loadTotal > 13000 ? "#fef3c7" : "#dcfce7", color: loadTotal > 18000 ? "#b91c1c" : loadTotal > 13000 ? "#b45309" : "#15803d" }}>{nivel}</span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* SUB-SECCIÓN 4: TEMPORADA */}
-            {externaSeccion === "temporada" && (
-              <div>
-                <div style={{ background: "#ffffff", padding: "16px", borderRadius: "12px", border: "1px solid #e2e6e3", boxShadow: "0 2px 8px rgba(0,0,0,0.03)" }}>
-                  <h3 style={{ marginBottom: "12px", fontSize: "14.5px", fontWeight: 800, color: "var(--navy)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <span>🏆 Carga Externa — Vista Temporada (Acumulado Total)</span>
-                    <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>Todos los registros</span>
-                  </h3>
-                  <table style={{ width: "100%", borderCollapse: "collapse", color: "#0f172a", fontSize: "12.5px" }}>
-                    <thead>
-                      <tr style={{ background: "#dcfce7", borderBottom: "2px solid #86efac", textAlign: "left", color: "#15803d" }}>
-                        <th style={{ padding: "8px 10px" }}>Jugador</th>
-                        <th style={{ padding: "8px 10px", textAlign: "right" }}>Dist. Temporada (m)</th>
-                        <th style={{ padding: "8px 10px", textAlign: "right" }}>HSR Temporada (m)</th>
-                        <th style={{ padding: "8px 10px", textAlign: "right" }}>Top Speed Histórico (km/h)</th>
-                        <th style={{ padding: "8px 10px", textAlign: "right" }}>Load Temporada (AU)</th>
-                        <th style={{ padding: "8px 10px", textAlign: "center" }}>Total Sesiones</th>
-                        <th style={{ padding: "8px 10px", textAlign: "center" }}>Estado</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredJugadores.map((j, idx) => {
-                        const playerRecs = gpsRecords.filter((r) => r.jugador_id === j.id);
-                        const distTotal = playerRecs.reduce((s, r) => s + (Number(r.distancia_total) || 0), 0);
-                        const hsrTotal = playerRecs.reduce((s, r) => s + (Number(r.distancia_z4) || 0), 0);
-                        const topSpdMax = playerRecs.length > 0 ? Math.max(...playerRecs.map((r) => Number(r.max_speed) || 0)) : 0;
-                        const loadTotal = playerRecs.reduce((s, r) => s + (Number(r.player_load) || 0), 0);
-                        const numSes = playerRecs.length;
-                        const pctDisp = numSes > 0 ? Math.min(100, Math.round((numSes / 130) * 100)) : 0;
-                        return (
-                          <tr key={j.id || idx} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                            <td style={{ padding: "8px 10px", fontWeight: 700 }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                                {renderDisponibilidadBadge(j)}
-                                <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: playerRecs.length > 0 ? "#16a34a" : "#94a3b8" }} />
-                                <span>{(j.apodo || j.nombre || "").toUpperCase()}</span>
-                              </div>
-                            </td>
-                            <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 800 }}>{distTotal.toLocaleString("es-ES")}</td>
-                            <td style={{ padding: "8px 10px", textAlign: "right", color: "#ea580c", fontWeight: 700 }}>{hsrTotal.toLocaleString("es-ES")}</td>
-                            <td style={{ padding: "8px 10px", textAlign: "right", color: "#9333ea", fontWeight: 800 }}>{topSpdMax.toFixed ? topSpdMax.toFixed(1) : topSpdMax}</td>
-                            <td style={{ padding: "8px 10px", textAlign: "right", color: "#0284c7", fontWeight: 700 }}>{loadTotal.toLocaleString("es-ES")}</td>
-                            <td style={{ padding: "8px 10px", textAlign: "center", fontWeight: 800 }}>{numSes}</td>
-                            <td style={{ padding: "8px 10px", textAlign: "center" }}>
-                              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
-                                <div style={{ width: "80px", height: "6px", background: "#e2e8f0", borderRadius: "3px", overflow: "hidden" }}>
-                                  <div style={{ width: `${pctDisp}%`, height: "100%", background: pctDisp >= 80 ? "#16a34a" : pctDisp >= 60 ? "#f59e0b" : "#ef4444" }} />
-                                </div>
-                                <span style={{ fontSize: "10px", color: "#64748b", fontWeight: 700 }}>{pctDisp}% disp.</span>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </section>
+          <CargaExternaSection
+            gpsRecords={gpsRecords}
+            jugadores={filteredJugadores}
+            selectedDate={selectedDate}
+            setSelectedDate={setSelectedDate}
+            isGpsUploading={isGpsUploading}
+            handleGpsCsvUpload={handleGpsCsvUpload}
+            handleSyncDownloadsGps={handleSyncDownloadsGps}
+            gpsUploadStatus={gpsUploadStatus}
+            loadDbGpsRecords={loadDbGpsRecords}
+            renderDisponibilidadBadge={renderDisponibilidadBadge}
+          />
         )}
       </section>
     </main>
