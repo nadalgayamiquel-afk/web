@@ -1,17 +1,21 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   BarChart,
   Bar,
-  Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
   LabelList,
-  ComposedChart,
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  Radar,
+  Legend,
 } from "recharts";
 import {
   ALL_GPS_VARIABLES,
@@ -83,7 +87,7 @@ export default function GpsComparativeSection({
   derivedVariables = [],
   allVariables = ALL_GPS_VARIABLES,
 }: GpsComparativeSectionProps) {
-  // ── 1. ESTADOS DE SELECCIÓN A Y B ──
+  // ── 1. ESTADOS DE SUJETOS Y SESIONES/MICROCICLOS ──
   const initialPlayerId = initialJugadorId || (jugadores.length > 0 ? jugadores[0].id : "");
 
   // Elemento A
@@ -96,15 +100,11 @@ export default function GpsComparativeSection({
     if (currentWeekStart && availableWeeks.some((w) => w.start === currentWeekStart)) return currentWeekStart;
     return availableWeeks.length > 0 ? availableWeeks[0].start : "";
   });
+  const [taskA, setTaskA] = useState<string>("__TOTAL__");
 
   // Elemento B
-  const [jugadorIdB, setJugadorIdB] = useState<string>(() => {
-    // Por defecto el mismo jugador para comparar sesiones/microciclos distintos,
-    // o el segundo jugador si hay varios disponibles
-    return initialPlayerId;
-  });
+  const [jugadorIdB, setJugadorIdB] = useState<string>(() => initialPlayerId);
   const [dateB, setDateB] = useState<string>(() => {
-    // Si hay más de una fecha disponible, seleccionar la segunda para comparar directamente
     if (availableDates.length > 1) return availableDates[1];
     return availableDates.length > 0 ? availableDates[0] : "";
   });
@@ -112,19 +112,76 @@ export default function GpsComparativeSection({
     if (availableWeeks.length > 1) return availableWeeks[1].start;
     return availableWeeks.length > 0 ? availableWeeks[0].start : "";
   });
+  const [taskB, setTaskB] = useState<string>("__TOTAL__");
 
-  // Filtros de visualización
-  const [filterOnlyFavs, setFilterOnlyFavs] = useState<boolean>(true);
-  const [selectedDayMetric, setSelectedDayMetric] = useState<string>("Distance(m)");
+  // ── 2. SELECCIÓN DE MÉTRICAS A COMPARAR ──
+  const [selectedMetricKeys, setSelectedMetricKeys] = useState<string[]>(() => {
+    const initial = favoriteKeys.filter((k) => allVariables.some((v) => v.key === k));
+    return initial.length > 0 ? initial : DEFAULT_FAVORITE_GPS_VARIABLES.slice(0, 8);
+  });
 
-  // ── 2. HELPERS DE RESOLUCIÓN DE MATCH DAY Y JUGADOR ──
+  // Modalidad de visualización de gráficos ("cards" = tarjetas individuales con escala propia, "relative" = gráfico de barras % de variación, "radar" = perfil radial)
+  const [chartViewMode, setChartViewMode] = useState<"cards" | "relative" | "radar">("cards");
+
+  // ── 3. DETECCIÓN DINÁMICA DE TAREAS PARA CADA FECHA ──
+  const getTasksForDate = (dateStr: string): string[] => {
+    if (!dateStr || mode !== "sesion") return [];
+    const recs = teamGpsRecords.filter((r) => r.fecha === dateStr);
+    const taskSet = new Set<string>();
+    recs.forEach((r) => {
+      if (r.metricas && Array.isArray(r.metricas.tareas)) {
+        r.metricas.tareas.forEach((t: any) => {
+          const name = (t.nombre || t.task || t.tarea || t.name || "").trim();
+          if (name && name.toLowerCase() !== "total") {
+            taskSet.add(name);
+          }
+        });
+      }
+    });
+    return Array.from(taskSet);
+  };
+
+  const tasksAvailableA = useMemo(() => getTasksForDate(dateA), [dateA, teamGpsRecords, mode]);
+  const tasksAvailableB = useMemo(() => getTasksForDate(dateB), [dateB, teamGpsRecords, mode]);
+
+  // Si cambia la fecha y la tarea seleccionada ya no existe, reajustar a "__TOTAL__"
+  useEffect(() => {
+    if (taskA !== "__TOTAL__" && !tasksAvailableA.includes(taskA)) {
+      setTaskA("__TOTAL__");
+    }
+  }, [dateA, tasksAvailableA]);
+
+  useEffect(() => {
+    if (taskB !== "__TOTAL__" && !tasksAvailableB.includes(taskB)) {
+      setTaskB("__TOTAL__");
+    }
+  }, [dateB, tasksAvailableB]);
+
+  // ── 4. RESOLUCIÓN DE MATCH DAY Y JUGADORES ──
   const resolveMatchDay = (fecha: string): string => {
     if (!fecha) return "MD";
     try {
-      const planItem = planificacionDays.find((d: any) => d && (d.fecha === fecha || d.id === fecha));
-      if (planItem?.md && typeof planItem.md === "string" && planItem.md.trim()) {
-        const clean = planItem.md.trim();
-        return /^[-+]?\d+\s*MD$/i.test(clean) ? `MD${clean.replace(/MD/i, "").trim()}` : clean;
+      if (planificacionDays && planificacionDays.length > 0) {
+        const planItem = planificacionDays.find((d: any) => d && (d.fecha === fecha || d.id === fecha));
+        if (planItem?.md && typeof planItem.md === "string" && planItem.md.trim()) {
+          const clean = planItem.md.trim();
+          return /^[-+]?\d+\s*MD$/i.test(clean) ? `MD${clean.replace(/MD/i, "").trim()}` : clean;
+        }
+      }
+      if (typeof window !== "undefined") {
+        const planKeys = ["planificacion_days_v5", "planificacion_days_v4", "planificacion_days_v2", "planificacion_days_v1"];
+        for (const k of planKeys) {
+          const raw = localStorage.getItem(k);
+          if (raw) {
+            const days = JSON.parse(raw);
+            const list = Array.isArray(days) ? days : Object.values(days);
+            const found = list.find((d: any) => d && (d.fecha === fecha || d.id === fecha));
+            if (found?.md && typeof found.md === "string" && found.md.trim()) {
+              const clean = found.md.trim();
+              return /^[-+]?\d+\s*MD$/i.test(clean) ? `MD${clean.replace(/MD/i, "").trim()}` : clean;
+            }
+          }
+        }
       }
     } catch {}
     const rec = teamGpsRecords.find((r) => r.fecha === fecha && r.match_day && r.match_day.trim());
@@ -159,9 +216,7 @@ export default function GpsComparativeSection({
   const formatDateDisplay = (dateStr: string): string => {
     if (!dateStr) return "-";
     const parts = dateStr.split("-");
-    if (parts.length === 3) {
-      return `${parts[2]}/${parts[1]}/${parts[0]}`;
-    }
+    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
     return dateStr;
   };
 
@@ -179,8 +234,12 @@ export default function GpsComparativeSection({
   const weekInfoA = useMemo(() => getWeekInfo(weekA), [weekA, availableWeeks]);
   const weekInfoB = useMemo(() => getWeekInfo(weekB), [weekB, availableWeeks]);
 
-  // ── 3. CÁLCULO DE MÉTRICAS (SESIÓN O MICROCICLO) ──
-  const calculateEntityMetrics = (playerId: string, targetKey: string): Record<string, number> => {
+  // ── 5. CÁLCULO DE MÉTRICAS (CON SOPORTE DE TAREAS Y MICROCICLOS) ──
+  const calculateEntityMetrics = (
+    playerId: string,
+    targetKey: string,
+    targetTask: string
+  ): Record<string, number> => {
     const isTeam = playerId === "TEAM";
     const result: Record<string, number> = {};
 
@@ -189,41 +248,55 @@ export default function GpsComparativeSection({
       if (!fecha) return result;
 
       if (isTeam) {
-        // Promedio de todos los jugadores presentes en la sesión
-        const sessionRecords = teamGpsRecords.filter((r) => r.fecha === fecha);
-        if (sessionRecords.length === 0) return result;
+        const sessionRecs = teamGpsRecords.filter((r) => r.fecha === fecha);
+        if (sessionRecs.length === 0) return result;
 
         allVariables.forEach((v) => {
-          if (v.esPicoMaximo) {
-            const vals = sessionRecords.map((r) => calculateGpsMetricValue(r.metricas, v.key, derivedVariables));
-            result[v.key] = vals.length > 0 ? Math.max(...vals, 0) : 0;
-          } else {
-            let sum = 0;
-            let count = 0;
-            sessionRecords.forEach((r) => {
-              const val = calculateGpsMetricValue(r.metricas, v.key, derivedVariables);
-              if (val > 0) {
-                sum += val;
-                count++;
+          const values: number[] = [];
+          sessionRecs.forEach((r) => {
+            if (targetTask && targetTask !== "__TOTAL__") {
+              const t = (r.metricas?.tareas || []).find(
+                (x: any) => (x.nombre || x.task || x.tarea || "").trim() === targetTask
+              );
+              if (t) {
+                const val = calculateGpsMetricValue(t, v.key, derivedVariables);
+                if (val > 0) values.push(val);
               }
-            });
-            result[v.key] = count > 0 ? Math.round((sum / count) * 100) / 100 : 0;
+            } else {
+              const val = calculateGpsMetricValue(r.metricas, v.key, derivedVariables);
+              if (val > 0) values.push(val);
+            }
+          });
+
+          if (v.esPicoMaximo) {
+            result[v.key] = values.length > 0 ? Math.max(...values, 0) : 0;
+          } else {
+            const sum = values.reduce((a, b) => a + b, 0);
+            result[v.key] = values.length > 0 ? Math.round((sum / values.length) * 100) / 100 : 0;
           }
         });
       } else {
-        // Registro del jugador en esa fecha
-        const rec = teamGpsRecords.find((r) => r.jugador_id === playerId && r.fecha === fecha);
+        const r = teamGpsRecords.find((rec) => rec.jugador_id === playerId && rec.fecha === fecha);
+        if (!r) return result;
+
+        let targetObj: any = r.metricas;
+        if (targetTask && targetTask !== "__TOTAL__") {
+          const t = (r.metricas?.tareas || []).find(
+            (x: any) => (x.nombre || x.task || x.tarea || "").trim() === targetTask
+          );
+          targetObj = t || null;
+        }
+
         allVariables.forEach((v) => {
-          result[v.key] = rec ? calculateGpsMetricValue(rec.metricas, v.key, derivedVariables) : 0;
+          result[v.key] = targetObj ? calculateGpsMetricValue(targetObj, v.key, derivedVariables) : 0;
         });
       }
     } else {
-      // MODO MICROCICLO (Acumulado semanal)
+      // MODO MICROCICLO
       const weekDates = getWeekInfo(targetKey).dates;
       if (weekDates.length === 0) return result;
 
       if (isTeam) {
-        // Promedio semanal del equipo por jugador
         const weekRecords = teamGpsRecords.filter((r) => weekDates.includes(r.fecha));
         const uniquePlayers = Array.from(new Set(weekRecords.map((r) => r.jugador_id)));
         if (uniquePlayers.length === 0) return result;
@@ -233,7 +306,6 @@ export default function GpsComparativeSection({
             const vals = weekRecords.map((r) => calculateGpsMetricValue(r.metricas, v.key, derivedVariables));
             result[v.key] = vals.length > 0 ? Math.max(...vals, 0) : 0;
           } else {
-            // Acumular por cada jugador individual y promediar
             let totalPlayerSums = 0;
             uniquePlayers.forEach((pId) => {
               const pRecs = weekRecords.filter((r) => r.jugador_id === pId);
@@ -244,7 +316,6 @@ export default function GpsComparativeSection({
           }
         });
       } else {
-        // Acumulado del jugador en la semana
         const playerRecs = teamGpsRecords.filter((r) => r.jugador_id === playerId && weekDates.includes(r.fecha));
         allVariables.forEach((v) => {
           if (v.esPicoMaximo) {
@@ -262,28 +333,50 @@ export default function GpsComparativeSection({
   };
 
   const metricsA = useMemo(
-    () => calculateEntityMetrics(jugadorIdA, mode === "sesion" ? dateA : weekA),
-    [jugadorIdA, dateA, weekA, mode, teamGpsRecords, allVariables, derivedVariables]
+    () => calculateEntityMetrics(jugadorIdA, mode === "sesion" ? dateA : weekA, taskA),
+    [jugadorIdA, dateA, weekA, taskA, mode, teamGpsRecords, allVariables, derivedVariables]
   );
 
   const metricsB = useMemo(
-    () => calculateEntityMetrics(jugadorIdB, mode === "sesion" ? dateB : weekB),
-    [jugadorIdB, dateB, weekB, mode, teamGpsRecords, allVariables, derivedVariables]
+    () => calculateEntityMetrics(jugadorIdB, mode === "sesion" ? dateB : weekB, taskB),
+    [jugadorIdB, dateB, weekB, taskB, mode, teamGpsRecords, allVariables, derivedVariables]
   );
 
-  // ── 4. VARIABLES A MOSTRAR (FAVORITAS O TODAS) ──
-  const displayVariables = useMemo(() => {
-    let list = allVariables;
-    if (filterOnlyFavs) {
-      list = allVariables.filter((v) => favoriteKeys.includes(v.key) || v.esDerivada);
-      if (list.length === 0) {
-        list = allVariables.filter((v) => DEFAULT_FAVORITE_GPS_VARIABLES.includes(v.key));
-      }
-    }
-    return list;
-  }, [allVariables, filterOnlyFavs, favoriteKeys]);
+  // ── 6. LISTA DE MÉTRICAS FILTRADAS / SELECCIONADAS ──
+  const activeVariables = useMemo(() => {
+    return allVariables.filter((v) => selectedMetricKeys.includes(v.key));
+  }, [allVariables, selectedMetricKeys]);
 
-  // ── 5. INTERCAMBIAR A Y B ──
+  const toggleMetric = (key: string) => {
+    setSelectedMetricKeys((prev) => {
+      if (prev.includes(key)) {
+        if (prev.length <= 1) return prev; // Mantener al menos 1
+        return prev.filter((k) => k !== key);
+      }
+      return [...prev, key];
+    });
+  };
+
+  // Presets de selección de métricas
+  const handleSelectPresetMetrics = (type: "favs" | "volumen" | "velocidad" | "aceleracion" | "all") => {
+    if (type === "favs") {
+      const favs = favoriteKeys.filter((k) => allVariables.some((v) => v.key === k));
+      setSelectedMetricKeys(favs.length > 0 ? favs : DEFAULT_FAVORITE_GPS_VARIABLES);
+    } else if (type === "volumen") {
+      const keys = allVariables.filter((v) => v.categoria === "Volumen y Distancia" || v.categoria === "Tiempo").map((v) => v.key);
+      setSelectedMetricKeys(keys.length > 0 ? keys : selectedMetricKeys);
+    } else if (type === "velocidad") {
+      const keys = allVariables.filter((v) => v.categoria === "Velocidad e Intensidad").map((v) => v.key);
+      setSelectedMetricKeys(keys.length > 0 ? keys : selectedMetricKeys);
+    } else if (type === "aceleracion") {
+      const keys = allVariables.filter((v) => v.categoria === "Aceleraciones y Desaceleraciones").map((v) => v.key);
+      setSelectedMetricKeys(keys.length > 0 ? keys : selectedMetricKeys);
+    } else if (type === "all") {
+      setSelectedMetricKeys(allVariables.map((v) => v.key));
+    }
+  };
+
+  // ── 7. INTERCAMBIO RÁPIDO ⇄ ──
   const handleSwap = () => {
     const tempP = jugadorIdA;
     setJugadorIdA(jugadorIdB);
@@ -293,6 +386,10 @@ export default function GpsComparativeSection({
       const tempD = dateA;
       setDateA(dateB);
       setDateB(tempD);
+
+      const tempT = taskA;
+      setTaskA(taskB);
+      setTaskB(tempT);
     } else {
       const tempW = weekA;
       setWeekA(weekB);
@@ -300,98 +397,64 @@ export default function GpsComparativeSection({
     }
   };
 
-  // Nombres y etiquetas cortas para encabezados y leyendas
-  const labelA = useMemo(() => {
-    const pName = playerA.apodo || playerA.nombre.split(" ")[0] || "A";
-    const sub = mode === "sesion" ? `${formatDateDisplay(dateA)} (${resolveMatchDay(dateA)})` : weekInfoA.label;
-    return `${pName} [${sub}]`;
-  }, [playerA, dateA, weekA, mode, weekInfoA]);
-
-  const labelB = useMemo(() => {
-    const pName = playerB.apodo || playerB.nombre.split(" ")[0] || "B";
-    const sub = mode === "sesion" ? `${formatDateDisplay(dateB)} (${resolveMatchDay(dateB)})` : weekInfoB.label;
-    return `${pName} [${sub}]`;
-  }, [playerB, dateB, weekB, mode, weekInfoB]);
-
+  // Nombres cortos para etiquetas y leyendas
   const shortNameA = playerA.apodo || playerA.nombre.split(" ")[0] || "A";
   const shortNameB = playerB.apodo || playerB.nombre.split(" ")[0] || "B";
 
-  // ── 6. DATASET PARA EL GRÁFICO COMPARATIVO PRINCIPAL ──
-  const chartData = useMemo(() => {
-    return displayVariables.map((v) => {
+  const subLabelA = useMemo(() => {
+    if (mode === "sesion") {
+      const taskStr = taskA && taskA !== "__TOTAL__" ? ` · [${taskA}]` : "";
+      return `${formatDateDisplay(dateA)} (${resolveMatchDay(dateA)})${taskStr}`;
+    }
+    return weekInfoA.label;
+  }, [mode, dateA, taskA, weekInfoA]);
+
+  const subLabelB = useMemo(() => {
+    if (mode === "sesion") {
+      const taskStr = taskB && taskB !== "__TOTAL__" ? ` · [${taskB}]` : "";
+      return `${formatDateDisplay(dateB)} (${resolveMatchDay(dateB)})${taskStr}`;
+    }
+    return weekInfoB.label;
+  }, [mode, dateB, taskB, weekInfoB]);
+
+  // ── 8. DATASETS PARA LOS GRÁFICOS ──
+  // Radar data (normalizado a escala 0-100 para comparar perfiles)
+  const radarData = useMemo(() => {
+    return activeVariables.slice(0, 10).map((v) => {
       const valA = metricsA[v.key] ?? 0;
       const valB = metricsB[v.key] ?? 0;
+      const maxVal = Math.max(valA, valB, 0.001);
       return {
-        key: v.key,
-        name: v.shortLabel || v.label,
+        subject: v.shortLabel || v.label,
+        A: Math.round((valA / maxVal) * 100),
+        B: Math.round((valB / maxVal) * 100),
+        fullMark: 100,
+        rawA: valA,
+        rawB: valB,
         unit: v.unit,
-        [shortNameA]: valA,
-        [shortNameB]: valB,
       };
     });
-  }, [displayVariables, metricsA, metricsB, shortNameA, shortNameB]);
+  }, [activeVariables, metricsA, metricsB]);
 
-  // ── 7. DATASET PARA EVOLUCIÓN DÍA A DÍA EN MICROCICLO ──
-  const dayProgressionData = useMemo(() => {
-    if (mode !== "microciclo") return [];
-    const dayNames = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
-    const datesA = weekInfoA.dates;
-    const datesB = weekInfoB.dates;
-
-    return dayNames.map((dayName, idx) => {
-      const dayDateA = datesA[idx] || "";
-      const dayDateB = datesB[idx] || "";
-
-      let valA = 0;
-      let valB = 0;
-
-      if (dayDateA) {
-        if (jugadorIdA === "TEAM") {
-          const recs = teamGpsRecords.filter((r) => r.fecha === dayDateA);
-          if (recs.length > 0) {
-            valA = Math.round(recs.reduce((acc, r) => acc + calculateGpsMetricValue(r.metricas, selectedDayMetric, derivedVariables), 0) / recs.length);
-          }
-        } else {
-          const rec = teamGpsRecords.find((r) => r.jugador_id === jugadorIdA && r.fecha === dayDateA);
-          if (rec) valA = calculateGpsMetricValue(rec.metricas, selectedDayMetric, derivedVariables);
-        }
-      }
-
-      if (dayDateB) {
-        if (jugadorIdB === "TEAM") {
-          const recs = teamGpsRecords.filter((r) => r.fecha === dayDateB);
-          if (recs.length > 0) {
-            valB = Math.round(recs.reduce((acc, r) => acc + calculateGpsMetricValue(r.metricas, selectedDayMetric, derivedVariables), 0) / recs.length);
-          }
-        } else {
-          const rec = teamGpsRecords.find((r) => r.jugador_id === jugadorIdB && r.fecha === dayDateB);
-          if (rec) valB = calculateGpsMetricValue(rec.metricas, selectedDayMetric, derivedVariables);
-        }
-      }
-
+  // Relative difference chart data (% variación de B respecto a A)
+  const relativeChartData = useMemo(() => {
+    return activeVariables.map((v) => {
+      const valA = metricsA[v.key] ?? 0;
+      const valB = metricsB[v.key] ?? 0;
+      const pct = valA > 0 ? Math.round(((valB - valA) / valA) * 1000) / 10 : (valB > 0 ? 100 : 0);
       return {
-        day: dayName,
-        dateA: dayDateA ? formatDateDisplay(dayDateA) : "",
-        dateB: dayDateB ? formatDateDisplay(dayDateB) : "",
-        [shortNameA]: valA,
-        [shortNameB]: valB,
+        name: v.shortLabel || v.label,
+        variacion: pct,
+        valA,
+        valB,
+        unit: v.unit,
       };
     });
-  }, [mode, weekInfoA, weekInfoB, jugadorIdA, jugadorIdB, teamGpsRecords, selectedDayMetric, derivedVariables, shortNameA, shortNameB]);
-
-  // ── 8. KPIs PRINCIPALES ──
-  const TOP_KPIS = [
-    { key: "Distance(m)", label: "Distancia Total", unit: "m" },
-    { key: "Distance +21 (m)", label: "Distancia +21 km/h", unit: "m" },
-    { key: "MAX Speed(km/h)", label: "Velocidad Máx.", unit: "km/h" },
-    { key: "Sprints Count", label: "Sprints (+24 km/h)", unit: "nº" },
-    { key: "Player Load", label: "Player Load", unit: "" },
-    { key: "Acc+Dec", label: "Acc + Dec (+3 m/s²)", unit: "nº" },
-  ];
+  }, [activeVariables, metricsA, metricsB]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "16px", width: "100%" }}>
-      {/* ── CABECERA ESTÁNDAR DEL INFORME (IMPRIMIBLE) ── */}
+      {/* ── CABECERA OFICIAL DEL INFORME (IMPRIMIBLE) ── */}
       <div
         style={{
           display: "grid",
@@ -418,18 +481,20 @@ export default function GpsComparativeSection({
         <div style={{ justifySelf: "center", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
           <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
             <span style={{ fontSize: "11px", fontWeight: 900, background: "#ea580c", color: "#ffffff", padding: "2px 8px", borderRadius: "12px", letterSpacing: "0.05em", textTransform: "uppercase" }}>
-              MODO COMPARATIVO
+              ANÁLISIS COMPARATIVO
             </span>
           </div>
-          <h2 style={{ fontSize: "21px", fontWeight: 900, color: "#0f172a", margin: "4px 0 0 0", textTransform: "uppercase", letterSpacing: "0.02em" }}>
-            {mode === "sesion" ? "INFORME COMPARATIVO GPS - SESIÓN" : "INFORME COMPARATIVO GPS - MICROCICLO"}
+          <h2 style={{ fontSize: "20px", fontWeight: 900, color: "#0f172a", margin: "4px 0 0 0", textTransform: "uppercase", letterSpacing: "0.02em" }}>
+            {mode === "sesion" ? "COMPARATIVA GPS DE SESIÓN Y TAREAS" : "COMPARATIVA GPS DE MICROCICLOS"}
           </h2>
-          <span style={{ fontSize: "12.5px", fontWeight: 700, color: "#475569" }}>
-            {mode === "sesion" ? "Análisis cruzado entre 2 sesiones de entrenamiento / partidos" : "Análisis cruzado entre 2 microciclos semanales"}
+          <span style={{ fontSize: "12px", fontWeight: 700, color: "#475569" }}>
+            {mode === "sesion"
+              ? "Comparación cruzada entre sesiones completas o tareas específicas de entrenamiento"
+              : "Comparación semanal entre microciclos de temporada"}
           </span>
         </div>
 
-        {/* Derecha: Botón de Exportar a PDF (no-print) y Fechas */}
+        {/* Derecha: Botón Exportar PDF */}
         <div style={{ justifySelf: "end", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "6px" }}>
           <button
             type="button"
@@ -453,46 +518,46 @@ export default function GpsComparativeSection({
             <span>🖨️</span> Exportar a PDF / Imprimir
           </button>
           <span className="print-only" style={{ fontSize: "10.5px", color: "#64748b", fontWeight: 700 }}>
-            Fecha de impresión: {new Date().toLocaleDateString("es-ES")}
+            {new Date().toLocaleDateString("es-ES")}
           </span>
         </div>
       </div>
 
-      {/* ── PANEL DE CONTROL INTERACTIVO DE SELECTORES (NO-PRINT) ── */}
+      {/* ── BARRA DE CONTROL HORIZONTAL INTEGRADA (SIN CAJONES) (NO-PRINT) ── */}
       <div
         className="no-print"
         style={{
           background: "#ffffff",
-          borderRadius: "12px",
-          padding: "16px 20px",
+          borderRadius: "10px",
+          padding: "14px 18px",
           border: "1px solid #cbd5e1",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+          boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
           display: "flex",
           flexDirection: "column",
-          gap: "14px",
+          gap: "12px",
         }}
       >
-        {/* Presets rápidos */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "10px", borderBottom: "1px solid #f1f5f9", paddingBottom: "10px" }}>
-          <span style={{ fontSize: "12px", fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: "0.03em" }}>
-            ⚡ Accesos Rápidos de Comparación:
-          </span>
-          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+        {/* Barra superior de Presets rápidos */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <span style={{ fontSize: "11px", fontWeight: 800, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+              ⚡ Atajos Rápidos:
+            </span>
             <button
               type="button"
               onClick={() => setJugadorIdB(jugadorIdA)}
               style={{
-                padding: "4px 10px",
-                borderRadius: "6px",
-                border: "1px solid #cbd5e1",
+                padding: "3px 8px",
+                borderRadius: "5px",
+                border: jugadorIdA === jugadorIdB ? "1px solid #1e3a8a" : "1px solid #cbd5e1",
                 background: jugadorIdA === jugadorIdB ? "#eff6ff" : "#f8fafc",
-                color: jugadorIdA === jugadorIdB ? "#1e40af" : "#475569",
+                color: jugadorIdA === jugadorIdB ? "#1e3a8a" : "#475569",
                 fontSize: "11px",
                 fontWeight: 700,
                 cursor: "pointer",
               }}
             >
-              🔄 Mismo Jugador
+              Mismo Jugador
             </button>
             <button
               type="button"
@@ -501,636 +566,512 @@ export default function GpsComparativeSection({
                 else setWeekB(weekA);
               }}
               style={{
-                padding: "4px 10px",
-                borderRadius: "6px",
-                border: "1px solid #cbd5e1",
+                padding: "3px 8px",
+                borderRadius: "5px",
+                border: (mode === "sesion" ? dateA === dateB : weekA === weekB) ? "1px solid #1e3a8a" : "1px solid #cbd5e1",
                 background: (mode === "sesion" ? dateA === dateB : weekA === weekB) ? "#eff6ff" : "#f8fafc",
-                color: (mode === "sesion" ? dateA === dateB : weekA === weekB) ? "#1e40af" : "#475569",
+                color: (mode === "sesion" ? dateA === dateB : weekA === weekB) ? "#1e3a8a" : "#475569",
                 fontSize: "11px",
                 fontWeight: 700,
                 cursor: "pointer",
               }}
             >
-              📅 Misma {mode === "sesion" ? "Sesión" : "Semana"}
+              Misma Fecha/Semana
             </button>
+            {mode === "sesion" && (
+              <button
+                type="button"
+                onClick={() => setTaskB(taskA)}
+                style={{
+                  padding: "3px 8px",
+                  borderRadius: "5px",
+                  border: taskA === taskB ? "1px solid #1e3a8a" : "1px solid #cbd5e1",
+                  background: taskA === taskB ? "#eff6ff" : "#f8fafc",
+                  color: taskA === taskB ? "#1e3a8a" : "#475569",
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                Misma Tarea
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setJugadorIdB("TEAM")}
               style={{
-                padding: "4px 10px",
-                borderRadius: "6px",
-                border: "1px solid #cbd5e1",
+                padding: "3px 8px",
+                borderRadius: "5px",
+                border: jugadorIdB === "TEAM" ? "1px solid #1e3a8a" : "1px solid #cbd5e1",
                 background: jugadorIdB === "TEAM" ? "#eff6ff" : "#f8fafc",
-                color: jugadorIdB === "TEAM" ? "#1e40af" : "#475569",
+                color: jugadorIdB === "TEAM" ? "#1e3a8a" : "#475569",
                 fontSize: "11px",
                 fontWeight: 700,
                 cursor: "pointer",
               }}
             >
-              👥 vs Media del Equipo
+              vs Media Equipo
             </button>
           </div>
         </div>
 
-        {/* Bloque Selectores A vs B */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: "16px", alignItems: "center" }}>
-          {/* LADO A (AZUL) */}
-          <div
-            style={{
-              background: "#f0fdf4",
-              borderRadius: "10px",
-              padding: "12px 14px",
-              border: "2px solid #1e3a8a",
-              display: "flex",
-              flexDirection: "column",
-              gap: "8px",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <span style={{ fontSize: "11px", fontWeight: 900, color: "#1e3a8a", textTransform: "uppercase" }}>
-                🟦 ELEMENTO A (Referencia)
-              </span>
-              <span style={{ fontSize: "11px", fontWeight: 800, color: "#1e3a8a", background: "#dbeafe", padding: "1px 6px", borderRadius: "4px" }}>
-                Color Azul
-              </span>
-            </div>
+        {/* Fila compacta de selección A vs B */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr auto 1fr",
+            gap: "12px",
+            alignItems: "center",
+            background: "#f8fafc",
+            padding: "10px 14px",
+            borderRadius: "8px",
+            border: "1px solid #e2e8f0",
+          }}
+        >
+          {/* LADO A */}
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+            <span
+              style={{
+                background: "#1e3a8a",
+                color: "#ffffff",
+                padding: "4px 8px",
+                borderRadius: "6px",
+                fontSize: "11px",
+                fontWeight: 900,
+                letterSpacing: "0.03em",
+                whiteSpace: "nowrap",
+              }}
+            >
+              ● SUJETO A
+            </span>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
-              {/* Selector Jugador A */}
-              <div>
-                <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#334155", marginBottom: "3px" }}>
-                  Jugador A:
-                </label>
-                <select
-                  value={jugadorIdA}
-                  onChange={(e) => setJugadorIdA(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "6px 8px",
-                    borderRadius: "6px",
-                    border: "1px solid #94a3b8",
-                    fontSize: "12px",
-                    fontWeight: 700,
-                    background: "#ffffff",
-                    color: "#0f172a",
-                    outline: "none",
-                  }}
-                >
-                  <option value="TEAM">👥 Media del Equipo</option>
-                  {jugadores.map((j) => (
-                    <option key={j.id} value={j.id}>
-                      {j.dorsal ? `#${j.dorsal} ` : ""}{j.apodo || j.nombre}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            {/* Jugador A */}
+            <select
+              value={jugadorIdA}
+              onChange={(e) => setJugadorIdA(e.target.value)}
+              style={{
+                flex: "1 1 140px",
+                padding: "6px 8px",
+                borderRadius: "6px",
+                border: "1px solid #cbd5e1",
+                background: "#ffffff",
+                fontSize: "12px",
+                fontWeight: 700,
+                color: "#0f172a",
+                outline: "none",
+              }}
+            >
+              <option value="TEAM">👥 Media del Equipo</option>
+              {jugadores.map((j) => (
+                <option key={j.id} value={j.id}>
+                  {j.dorsal ? `#${j.dorsal} ` : ""}{j.apodo || j.nombre}
+                </option>
+              ))}
+            </select>
 
-              {/* Selector Fecha/Semana A */}
-              <div>
-                <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#334155", marginBottom: "3px" }}>
-                  {mode === "sesion" ? "Sesión / Fecha A:" : "Microciclo / Semana A:"}
-                </label>
-                {mode === "sesion" ? (
-                  <select
-                    value={dateA}
-                    onChange={(e) => setDateA(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: "6px 8px",
-                      borderRadius: "6px",
-                      border: "1px solid #94a3b8",
-                      fontSize: "12px",
-                      fontWeight: 700,
-                      background: "#ffffff",
-                      color: "#0f172a",
-                      outline: "none",
-                    }}
-                  >
-                    {availableDates.map((f) => (
-                      <option key={f} value={f}>
-                        {formatDateDisplay(f)} ({resolveMatchDay(f)})
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <select
-                    value={weekA}
-                    onChange={(e) => setWeekA(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: "6px 8px",
-                      borderRadius: "6px",
-                      border: "1px solid #94a3b8",
-                      fontSize: "12px",
-                      fontWeight: 700,
-                      background: "#ffffff",
-                      color: "#0f172a",
-                      outline: "none",
-                    }}
-                  >
-                    {availableWeeks.map((w) => (
-                      <option key={w.start} value={w.start}>
-                        {w.label}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-            </div>
+            {/* Fecha o Semana A */}
+            {mode === "sesion" ? (
+              <select
+                value={dateA}
+                onChange={(e) => setDateA(e.target.value)}
+                style={{
+                  flex: "1 1 130px",
+                  padding: "6px 8px",
+                  borderRadius: "6px",
+                  border: "1px solid #cbd5e1",
+                  background: "#ffffff",
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  color: "#0f172a",
+                  outline: "none",
+                }}
+              >
+                {availableDates.map((f) => (
+                  <option key={f} value={f}>
+                    {formatDateDisplay(f)} ({resolveMatchDay(f)})
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <select
+                value={weekA}
+                onChange={(e) => setWeekA(e.target.value)}
+                style={{
+                  flex: "1 1 150px",
+                  padding: "6px 8px",
+                  borderRadius: "6px",
+                  border: "1px solid #cbd5e1",
+                  background: "#ffffff",
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  color: "#0f172a",
+                  outline: "none",
+                }}
+              >
+                {availableWeeks.map((w) => (
+                  <option key={w.start} value={w.start}>
+                    {w.label}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {/* Tarea A (solo sesión) */}
+            {mode === "sesion" && (
+              <select
+                value={taskA}
+                onChange={(e) => setTaskA(e.target.value)}
+                style={{
+                  flex: "1 1 140px",
+                  padding: "6px 8px",
+                  borderRadius: "6px",
+                  border: "1px solid #93c5fd",
+                  background: "#eff6ff",
+                  fontSize: "11.5px",
+                  fontWeight: 800,
+                  color: "#1e3a8a",
+                  outline: "none",
+                }}
+                title="Tarea de entrenamiento A"
+              >
+                <option value="__TOTAL__">🎯 Toda la Sesión (Total)</option>
+                {tasksAvailableA.map((tName) => (
+                  <option key={tName} value={tName}>
+                    ⚡ Tarea: {tName}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
-          {/* BOTÓN INTERCAMBIAR ⇄ */}
+          {/* BOTÓN SWAP ⇄ */}
           <button
             type="button"
             onClick={handleSwap}
-            title="Intercambiar A ⇄ B"
+            title="Intercambiar Sujeto A ⇄ Sujeto B"
             style={{
-              width: "38px",
-              height: "38px",
+              width: "34px",
+              height: "34px",
               borderRadius: "50%",
               background: "#ffffff",
-              border: "2px solid #cbd5e1",
-              boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
+              border: "1.5px solid #cbd5e1",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: "16px",
+              fontSize: "15px",
               fontWeight: 900,
               color: "#334155",
               cursor: "pointer",
-              transition: "transform 0.15s ease",
             }}
           >
             ⇄
           </button>
 
-          {/* LADO B (NARANJA) */}
-          <div
-            style={{
-              background: "#fff7ed",
-              borderRadius: "10px",
-              padding: "12px 14px",
-              border: "2px solid #ea580c",
-              display: "flex",
-              flexDirection: "column",
-              gap: "8px",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <span style={{ fontSize: "11px", fontWeight: 900, color: "#ea580c", textTransform: "uppercase" }}>
-                🟧 ELEMENTO B (Comparación)
-              </span>
-              <span style={{ fontSize: "11px", fontWeight: 800, color: "#ea580c", background: "#ffedd5", padding: "1px 6px", borderRadius: "4px" }}>
-                Color Naranja
-              </span>
-            </div>
+          {/* LADO B */}
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+            <span
+              style={{
+                background: "#ea580c",
+                color: "#ffffff",
+                padding: "4px 8px",
+                borderRadius: "6px",
+                fontSize: "11px",
+                fontWeight: 900,
+                letterSpacing: "0.03em",
+                whiteSpace: "nowrap",
+              }}
+            >
+              ● SUJETO B
+            </span>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
-              {/* Selector Jugador B */}
-              <div>
-                <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#334155", marginBottom: "3px" }}>
-                  Jugador B:
-                </label>
-                <select
-                  value={jugadorIdB}
-                  onChange={(e) => setJugadorIdB(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "6px 8px",
-                    borderRadius: "6px",
-                    border: "1px solid #fdba74",
-                    fontSize: "12px",
-                    fontWeight: 700,
-                    background: "#ffffff",
-                    color: "#0f172a",
-                    outline: "none",
-                  }}
-                >
-                  <option value="TEAM">👥 Media del Equipo</option>
-                  {jugadores.map((j) => (
-                    <option key={j.id} value={j.id}>
-                      {j.dorsal ? `#${j.dorsal} ` : ""}{j.apodo || j.nombre}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            {/* Jugador B */}
+            <select
+              value={jugadorIdB}
+              onChange={(e) => setJugadorIdB(e.target.value)}
+              style={{
+                flex: "1 1 140px",
+                padding: "6px 8px",
+                borderRadius: "6px",
+                border: "1px solid #cbd5e1",
+                background: "#ffffff",
+                fontSize: "12px",
+                fontWeight: 700,
+                color: "#0f172a",
+                outline: "none",
+              }}
+            >
+              <option value="TEAM">👥 Media del Equipo</option>
+              {jugadores.map((j) => (
+                <option key={j.id} value={j.id}>
+                  {j.dorsal ? `#${j.dorsal} ` : ""}{j.apodo || j.nombre}
+                </option>
+              ))}
+            </select>
 
-              {/* Selector Fecha/Semana B */}
-              <div>
-                <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#334155", marginBottom: "3px" }}>
-                  {mode === "sesion" ? "Sesión / Fecha B:" : "Microciclo / Semana B:"}
-                </label>
-                {mode === "sesion" ? (
-                  <select
-                    value={dateB}
-                    onChange={(e) => setDateB(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: "6px 8px",
-                      borderRadius: "6px",
-                      border: "1px solid #fdba74",
-                      fontSize: "12px",
-                      fontWeight: 700,
-                      background: "#ffffff",
-                      color: "#0f172a",
-                      outline: "none",
-                    }}
-                  >
-                    {availableDates.map((f) => (
-                      <option key={f} value={f}>
-                        {formatDateDisplay(f)} ({resolveMatchDay(f)})
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <select
-                    value={weekB}
-                    onChange={(e) => setWeekB(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: "6px 8px",
-                      borderRadius: "6px",
-                      border: "1px solid #fdba74",
-                      fontSize: "12px",
-                      fontWeight: 700,
-                      background: "#ffffff",
-                      color: "#0f172a",
-                      outline: "none",
-                    }}
-                  >
-                    {availableWeeks.map((w) => (
-                      <option key={w.start} value={w.start}>
-                        {w.label}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-            </div>
+            {/* Fecha o Semana B */}
+            {mode === "sesion" ? (
+              <select
+                value={dateB}
+                onChange={(e) => setDateB(e.target.value)}
+                style={{
+                  flex: "1 1 130px",
+                  padding: "6px 8px",
+                  borderRadius: "6px",
+                  border: "1px solid #cbd5e1",
+                  background: "#ffffff",
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  color: "#0f172a",
+                  outline: "none",
+                }}
+              >
+                {availableDates.map((f) => (
+                  <option key={f} value={f}>
+                    {formatDateDisplay(f)} ({resolveMatchDay(f)})
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <select
+                value={weekB}
+                onChange={(e) => setWeekB(e.target.value)}
+                style={{
+                  flex: "1 1 150px",
+                  padding: "6px 8px",
+                  borderRadius: "6px",
+                  border: "1px solid #cbd5e1",
+                  background: "#ffffff",
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  color: "#0f172a",
+                  outline: "none",
+                }}
+              >
+                {availableWeeks.map((w) => (
+                  <option key={w.start} value={w.start}>
+                    {w.label}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {/* Tarea B (solo sesión) */}
+            {mode === "sesion" && (
+              <select
+                value={taskB}
+                onChange={(e) => setTaskB(e.target.value)}
+                style={{
+                  flex: "1 1 140px",
+                  padding: "6px 8px",
+                  borderRadius: "6px",
+                  border: "1px solid #fdba74",
+                  background: "#fff7ed",
+                  fontSize: "11.5px",
+                  fontWeight: 800,
+                  color: "#c2410c",
+                  outline: "none",
+                }}
+                title="Tarea de entrenamiento B"
+              >
+                <option value="__TOTAL__">🎯 Toda la Sesión (Total)</option>
+                {tasksAvailableB.map((tName) => (
+                  <option key={tName} value={tName}>
+                    ⚡ Tarea: {tName}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
         </div>
       </div>
 
-      {/* ── BANNER VISUAL DE COMPARACIÓN (APARECE EN PANTALLA Y EN PDF) ── */}
+      {/* ── SELECTOR DE MÉTRICAS GPS INTERACTIVO (CHIPS) (NO-PRINT) ── */}
+      <div
+        className="no-print"
+        style={{
+          background: "#ffffff",
+          borderRadius: "10px",
+          padding: "12px 16px",
+          border: "1px solid #cbd5e1",
+          boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+          display: "flex",
+          flexDirection: "column",
+          gap: "8px",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <span style={{ fontSize: "12px", fontWeight: 900, color: "#0f172a", textTransform: "uppercase" }}>
+              🎯 Métricas seleccionadas ({selectedMetricKeys.length}/{allVariables.length}):
+            </span>
+          </div>
+
+          {/* Botones de selección rápida por categorías */}
+          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={() => handleSelectPresetMetrics("favs")}
+              style={{ padding: "3px 8px", borderRadius: "4px", border: "1px solid #cbd5e1", background: "#f8fafc", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}
+            >
+              ⭐ Favoritas ({favoriteKeys.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSelectPresetMetrics("volumen")}
+              style={{ padding: "3px 8px", borderRadius: "4px", border: "1px solid #cbd5e1", background: "#f8fafc", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}
+            >
+              🏃 Volumen
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSelectPresetMetrics("velocidad")}
+              style={{ padding: "3px 8px", borderRadius: "4px", border: "1px solid #cbd5e1", background: "#f8fafc", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}
+            >
+              ⚡ Velocidad
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSelectPresetMetrics("aceleracion")}
+              style={{ padding: "3px 8px", borderRadius: "4px", border: "1px solid #cbd5e1", background: "#f8fafc", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}
+            >
+              💥 Acc/Dec
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSelectPresetMetrics("all")}
+              style={{ padding: "3px 8px", borderRadius: "4px", border: "1px solid #cbd5e1", background: "#f8fafc", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}
+            >
+              ✅ Todas
+            </button>
+          </div>
+        </div>
+
+        {/* Chips de variables */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", maxHeight: "120px", overflowY: "auto", padding: "2px" }}>
+          {allVariables.map((v) => {
+            const isSelected = selectedMetricKeys.includes(v.key);
+            const isFav = favoriteKeys.includes(v.key);
+            return (
+              <button
+                key={v.key}
+                type="button"
+                onClick={() => toggleMetric(v.key)}
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: "16px",
+                  fontSize: "11px",
+                  fontWeight: isSelected ? 800 : 600,
+                  border: isSelected ? "1.5px solid #1e3a8a" : "1px solid #cbd5e1",
+                  background: isSelected ? "#1e3a8a" : "#ffffff",
+                  color: isSelected ? "#ffffff" : "#475569",
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                {isFav && <span style={{ color: isSelected ? "#fef08a" : "#eab308" }}>⭐</span>}
+                <span>{v.label}</span>
+                <span style={{ opacity: 0.75, fontSize: "10px" }}>({v.unit})</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── BANNER VISUAL COMPACTO DE COMPARACIÓN (PRINT & WEB) ── */}
       <div
         style={{
-          background: "linear-gradient(90deg, #eff6ff 0%, #ffffff 50%, #fff7ed 100%)",
-          borderRadius: "10px",
-          padding: "14px 20px",
+          background: "linear-gradient(90deg, rgba(30,58,138,0.06) 0%, rgba(248,250,252,1) 50%, rgba(234,88,12,0.06) 100%)",
+          borderRadius: "8px",
+          padding: "10px 16px",
           border: "1px solid #cbd5e1",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
           flexWrap: "wrap",
-          gap: "14px",
+          gap: "10px",
         }}
       >
-        {/* Lado A Info */}
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          {playerA.foto_url ? (
-            <img
-              src={playerA.foto_url}
-              alt={playerA.nombre}
-              style={{ width: "44px", height: "44px", borderRadius: "50%", objectFit: "cover", border: "2px solid #1e3a8a" }}
-            />
-          ) : (
-            <div
-              style={{
-                width: "44px",
-                height: "44px",
-                borderRadius: "50%",
-                background: "#1e3a8a",
-                color: "#ffffff",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontWeight: 900,
-                fontSize: "16px",
-              }}
-            >
-              {playerA.id === "TEAM" ? "👥" : (playerA.dorsal || (playerA.apodo || playerA.nombre)[0])}
-            </div>
-          )}
+        {/* Sujeto A */}
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <div
+            style={{
+              width: "36px",
+              height: "36px",
+              borderRadius: "50%",
+              background: "#1e3a8a",
+              color: "#ffffff",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontWeight: 900,
+              fontSize: "14px",
+              boxShadow: "0 1px 3px rgba(30,58,138,0.3)",
+            }}
+          >
+            {playerA.id === "TEAM" ? "👥" : (playerA.dorsal || (playerA.apodo || playerA.nombre)[0])}
+          </div>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              <span style={{ fontSize: "14px", fontWeight: 900, color: "#1e3a8a" }}>
+              <span style={{ fontSize: "13.5px", fontWeight: 900, color: "#1e3a8a" }}>
                 {playerA.id === "TEAM" ? "Media del Equipo" : (playerA.apodo || playerA.nombre)}
               </span>
-              {playerA.posicion && playerA.id !== "TEAM" && (
-                <span style={{ fontSize: "10px", background: "#dbeafe", color: "#1e40af", padding: "1px 6px", borderRadius: "4px", fontWeight: 800 }}>
-                  {playerA.posicion}
-                </span>
-              )}
+              <span style={{ fontSize: "10px", fontWeight: 800, background: "#dbeafe", color: "#1e40af", padding: "1px 5px", borderRadius: "4px" }}>
+                SUJETO A
+              </span>
             </div>
-            <div style={{ fontSize: "12px", color: "#475569", fontWeight: 700 }}>
-              {mode === "sesion" ? (
-                <>
-                  <span>{formatDateDisplay(dateA)}</span> · <strong style={{ color: "#1e3a8a" }}>{resolveMatchDay(dateA)}</strong>
-                </>
-              ) : (
-                <>
-                  <span>{weekInfoA.label}</span>
-                </>
-              )}
-            </div>
+            <span style={{ fontSize: "11.5px", color: "#475569", fontWeight: 700 }}>
+              {subLabelA}
+            </span>
           </div>
         </div>
 
         {/* VS Badge */}
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
-          <span
-            style={{
-              padding: "4px 14px",
-              borderRadius: "20px",
-              background: "#0f172a",
-              color: "#ffffff",
-              fontSize: "12px",
-              fontWeight: 900,
-              letterSpacing: "0.08em",
-            }}
-          >
-            V S
-          </span>
-          <span style={{ fontSize: "10.5px", color: "#64748b", fontWeight: 700 }}>
-            {jugadorIdA === jugadorIdB ? "Mismo jugador" : "Diferentes jugadores"}
+        <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+          <span style={{ padding: "3px 10px", borderRadius: "12px", background: "#0f172a", color: "#ffffff", fontSize: "11px", fontWeight: 900, letterSpacing: "0.08em" }}>
+            VS
           </span>
         </div>
 
-        {/* Lado B Info */}
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", flexDirection: "row-reverse", textAlign: "right" }}>
-          {playerB.foto_url ? (
-            <img
-              src={playerB.foto_url}
-              alt={playerB.nombre}
-              style={{ width: "44px", height: "44px", borderRadius: "50%", objectFit: "cover", border: "2px solid #ea580c" }}
-            />
-          ) : (
-            <div
-              style={{
-                width: "44px",
-                height: "44px",
-                borderRadius: "50%",
-                background: "#ea580c",
-                color: "#ffffff",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontWeight: 900,
-                fontSize: "16px",
-              }}
-            >
-              {playerB.id === "TEAM" ? "👥" : (playerB.dorsal || (playerB.apodo || playerB.nombre)[0])}
-            </div>
-          )}
+        {/* Sujeto B */}
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexDirection: "row-reverse", textAlign: "right" }}>
+          <div
+            style={{
+              width: "36px",
+              height: "36px",
+              borderRadius: "50%",
+              background: "#ea580c",
+              color: "#ffffff",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontWeight: 900,
+              fontSize: "14px",
+              boxShadow: "0 1px 3px rgba(234,88,12,0.3)",
+            }}
+          >
+            {playerB.id === "TEAM" ? "👥" : (playerB.dorsal || (playerB.apodo || playerB.nombre)[0])}
+          </div>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "6px", justifyContent: "flex-end" }}>
-              {playerB.posicion && playerB.id !== "TEAM" && (
-                <span style={{ fontSize: "10px", background: "#ffedd5", color: "#c2410c", padding: "1px 6px", borderRadius: "4px", fontWeight: 800 }}>
-                  {playerB.posicion}
-                </span>
-              )}
-              <span style={{ fontSize: "14px", fontWeight: 900, color: "#ea580c" }}>
+              <span style={{ fontSize: "10px", fontWeight: 800, background: "#ffedd5", color: "#c2410c", padding: "1px 5px", borderRadius: "4px" }}>
+                SUJETO B
+              </span>
+              <span style={{ fontSize: "13.5px", fontWeight: 900, color: "#ea580c" }}>
                 {playerB.id === "TEAM" ? "Media del Equipo" : (playerB.apodo || playerB.nombre)}
               </span>
             </div>
-            <div style={{ fontSize: "12px", color: "#475569", fontWeight: 700 }}>
-              {mode === "sesion" ? (
-                <>
-                  <span>{formatDateDisplay(dateB)}</span> · <strong style={{ color: "#ea580c" }}>{resolveMatchDay(dateB)}</strong>
-                </>
-              ) : (
-                <>
-                  <span>{weekInfoB.label}</span>
-                </>
-              )}
-            </div>
+            <span style={{ fontSize: "11.5px", color: "#475569", fontWeight: 700 }}>
+              {subLabelB}
+            </span>
           </div>
         </div>
       </div>
 
-      {/* ── TOP KPI CARDS RESUMEN ── */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-          gap: "10px",
-        }}
-      >
-        {TOP_KPIS.map((kpi) => {
-          const valA = metricsA[kpi.key] ?? 0;
-          const valB = metricsB[kpi.key] ?? 0;
-          const diff = Math.round((valB - valA) * 100) / 100;
-          const pct = valA > 0 ? Math.round(((valB - valA) / valA) * 1000) / 10 : (valB > 0 ? 100 : 0);
-          const isUp = diff > 0;
-          const isDown = diff < 0;
-
-          return (
-            <div
-              key={kpi.key}
-              style={{
-                background: "#ffffff",
-                borderRadius: "8px",
-                padding: "10px 12px",
-                border: "1px solid #e2e8f0",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
-                display: "flex",
-                flexDirection: "column",
-                gap: "4px",
-              }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: "11px", fontWeight: 800, color: "#475569" }}>
-                  {kpi.label}
-                </span>
-                <span style={{ fontSize: "10px", color: "#94a3b8", fontWeight: 700 }}>
-                  {kpi.unit}
-                </span>
-              </div>
-
-              {/* Valores A vs B */}
-              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginTop: "2px" }}>
-                <div style={{ display: "flex", flexDirection: "column" }}>
-                  <span style={{ fontSize: "9px", color: "#1e3a8a", fontWeight: 800 }}>{shortNameA}</span>
-                  <span style={{ fontSize: "15px", fontWeight: 900, color: "#1e3a8a" }}>
-                    {valA.toLocaleString("es-ES")}
-                  </span>
-                </div>
-
-                <span style={{ fontSize: "11px", color: "#cbd5e1", fontWeight: 800 }}>vs</span>
-
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
-                  <span style={{ fontSize: "9px", color: "#ea580c", fontWeight: 800 }}>{shortNameB}</span>
-                  <span style={{ fontSize: "15px", fontWeight: 900, color: "#ea580c" }}>
-                    {valB.toLocaleString("es-ES")}
-                  </span>
-                </div>
-              </div>
-
-              {/* Badge de variación */}
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  paddingTop: "4px",
-                  borderTop: "1px dashed #f1f5f9",
-                  marginTop: "2px",
-                }}
-              >
-                <span style={{ fontSize: "10px", color: "#64748b", fontWeight: 700 }}>
-                  Dif: {diff > 0 ? `+${diff.toLocaleString("es-ES")}` : diff.toLocaleString("es-ES")}
-                </span>
-                <span
-                  style={{
-                    fontSize: "10px",
-                    fontWeight: 900,
-                    padding: "1px 6px",
-                    borderRadius: "4px",
-                    background: isUp ? "#dcfce7" : isDown ? "#fee2e2" : "#f1f5f9",
-                    color: isUp ? "#15803d" : isDown ? "#b91c1c" : "#64748b",
-                  }}
-                >
-                  {isUp ? "▲ " : isDown ? "▼ " : "= "}
-                  {isUp ? `+${pct}%` : `${pct}%`}
-                </span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* ── COMPARATIVA DE GRÁFICOS ── */}
-      <div style={{ display: "grid", gridTemplateColumns: mode === "microciclo" ? "1.2fr 0.8fr" : "1fr", gap: "14px" }}>
-        {/* GRÁFICO 1: BARRAS AGRUPADAS DE VARIABLES */}
-        <div
-          style={{
-            background: "#ffffff",
-            padding: "16px 18px",
-            borderRadius: "10px",
-            border: "1px solid #cbd5e1",
-            boxShadow: "0 2px 6px rgba(0,0,0,0.03)",
-            display: "flex",
-            flexDirection: "column",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px", flexWrap: "wrap", gap: "8px" }}>
-            <h3 style={{ margin: 0, fontSize: "13px", fontWeight: 900, color: "#0f172a", textTransform: "uppercase" }}>
-              📊 Comparativa de Métricas GPS ({chartData.length} Variables)
-            </h3>
-
-            {/* Leyenda en cabecera */}
-            <div style={{ display: "flex", alignItems: "center", gap: "14px", fontSize: "11px", fontWeight: 800 }}>
-              <div style={{ display: "inline-flex", alignItems: "center", gap: "5px" }}>
-                <span style={{ width: "10px", height: "10px", borderRadius: "2px", background: "#1e3a8a", display: "inline-block" }} />
-                <span style={{ color: "#1e3a8a" }}>{labelA}</span>
-              </div>
-              <div style={{ display: "inline-flex", alignItems: "center", gap: "5px" }}>
-                <span style={{ width: "10px", height: "10px", borderRadius: "2px", background: "#ea580c", display: "inline-block" }} />
-                <span style={{ color: "#ea580c" }}>{labelB}</span>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ width: "100%", height: 320 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 22, right: 15, left: -10, bottom: 45 }}>
-                <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                <XAxis
-                  dataKey="name"
-                  stroke="#000000"
-                  interval={0}
-                  angle={-25}
-                  textAnchor="end"
-                  tick={{ fontSize: 10, fontWeight: 800, fill: "#0f172a" }}
-                />
-                <YAxis stroke="#000000" tick={{ fontSize: 9.5, fontWeight: 700 }} />
-                <Tooltip
-                  contentStyle={{ borderRadius: "8px", border: "1px solid #cbd5e1", fontSize: "11px" }}
-                  formatter={(value: any, name: any, item: any) => [
-                    `${typeof value === "number" ? value.toLocaleString("es-ES") : value} ${item.payload.unit || ""}`,
-                    name,
-                  ]}
-                />
-                <Bar dataKey={shortNameA} name={labelA} fill="#1e3a8a" radius={[4, 4, 0, 0]} barSize={22}>
-                  <LabelList
-                    dataKey={shortNameA}
-                    position="top"
-                    style={{ fontSize: "9px", fontWeight: 800, fill: "#1e3a8a" }}
-                    formatter={(val: any) => (typeof val === "number" && val > 0 ? (val >= 100 ? Math.round(val).toLocaleString("es-ES") : val.toLocaleString("es-ES")) : "")}
-                  />
-                </Bar>
-                <Bar dataKey={shortNameB} name={labelB} fill="#ea580c" radius={[4, 4, 0, 0]} barSize={22}>
-                  <LabelList
-                    dataKey={shortNameB}
-                    position="top"
-                    style={{ fontSize: "9px", fontWeight: 800, fill: "#ea580c" }}
-                    formatter={(val: any) => (typeof val === "number" && val > 0 ? (val >= 100 ? Math.round(val).toLocaleString("es-ES") : val.toLocaleString("es-ES")) : "")}
-                  />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* GRÁFICO 2: EVOLUCIÓN DÍA A DÍA (SOLO MICROCICLO) */}
-        {mode === "microciclo" && (
-          <div
-            style={{
-              background: "#ffffff",
-              padding: "16px 18px",
-              borderRadius: "10px",
-              border: "1px solid #cbd5e1",
-              boxShadow: "0 2px 6px rgba(0,0,0,0.03)",
-              display: "flex",
-              flexDirection: "column",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
-              <h3 style={{ margin: 0, fontSize: "12.5px", fontWeight: 900, color: "#0f172a", textTransform: "uppercase" }}>
-                📈 Evolución Día a Día
-              </h3>
-              <select
-                value={selectedDayMetric}
-                onChange={(e) => setSelectedDayMetric(e.target.value)}
-                style={{
-                  fontSize: "11px",
-                  padding: "3px 6px",
-                  borderRadius: "6px",
-                  border: "1px solid #cbd5e1",
-                  background: "#f8fafc",
-                  fontWeight: 700,
-                  outline: "none",
-                }}
-              >
-                {displayVariables.map((v) => (
-                  <option key={v.key} value={v.key}>
-                    {v.label} {v.unit ? `(${v.unit})` : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div style={{ width: "100%", height: 320 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={dayProgressionData} margin={{ top: 22, right: 10, left: -15, bottom: 10 }}>
-                  <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                  <XAxis dataKey="day" stroke="#000000" tick={{ fontSize: 10, fontWeight: 800 }} />
-                  <YAxis stroke="#000000" tick={{ fontSize: 9.5, fontWeight: 700 }} />
-                  <Tooltip contentStyle={{ borderRadius: "8px", fontSize: "11px" }} />
-                  <Bar dataKey={shortNameA} name={labelA} fill="#1e3a8a" radius={[3, 3, 0, 0]} barSize={16}>
-                    <LabelList dataKey={shortNameA} position="top" style={{ fontSize: "8.5px", fontWeight: 800, fill: "#1e3a8a" }} formatter={(val: any) => typeof val === "number" && val > 0 ? (val >= 100 ? Math.round(val) : val) : ""} />
-                  </Bar>
-                  <Bar dataKey={shortNameB} name={labelB} fill="#ea580c" radius={[3, 3, 0, 0]} barSize={16}>
-                    <LabelList dataKey={shortNameB} position="top" style={{ fontSize: "8.5px", fontWeight: 800, fill: "#ea580c" }} formatter={(val: any) => typeof val === "number" && val > 0 ? (val >= 100 ? Math.round(val) : val) : ""} />
-                  </Bar>
-                </ComposedChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* ── TABLA COMPARATIVA DETALLADA ── */}
+      {/* ── TABLA COMPARATIVA PRINCIPAL (VARIABLES EN X, JUGADORES EN Y, FILA DIFERENCIA Y FILA % DE CAMBIO) ── */}
       <div
         style={{
           background: "#ffffff",
@@ -1140,176 +1081,554 @@ export default function GpsComparativeSection({
           overflow: "hidden",
         }}
       >
-        {/* Cabecera de la tabla con filtro */}
         <div
           style={{
-            padding: "12px 18px",
-            background: "#f8fafc",
-            borderBottom: "1px solid #e2e8f0",
+            padding: "10px 16px",
+            background: "#0f172a",
+            color: "#ffffff",
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            flexWrap: "wrap",
-            gap: "10px",
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <span style={{ fontSize: "15px" }}>📋</span>
-            <h3 style={{ margin: 0, fontSize: "13.5px", fontWeight: 900, color: "#0f172a", textTransform: "uppercase" }}>
-              Tabla Comparativa Detallada de Métricas GPS
+            <span style={{ fontSize: "14px" }}>📊</span>
+            <h3 style={{ margin: 0, fontSize: "13px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.03em" }}>
+              Tabla Comparativa de Variables ({activeVariables.length} en Eje X)
             </h3>
-            <span style={{ fontSize: "11px", fontWeight: 800, background: "#e2e8f0", color: "#334155", padding: "1px 8px", borderRadius: "10px" }}>
-              {displayVariables.length} métricas
-            </span>
           </div>
-
-          {/* Botones de filtro de variables */}
-          <div className="no-print" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <span style={{ fontSize: "11.5px", fontWeight: 700, color: "#64748b" }}>Mostrar:</span>
-            <button
-              type="button"
-              onClick={() => setFilterOnlyFavs(true)}
-              style={{
-                padding: "4px 10px",
-                borderRadius: "6px",
-                border: filterOnlyFavs ? "1px solid #1e3a8a" : "1px solid #cbd5e1",
-                background: filterOnlyFavs ? "#1e3a8a" : "#ffffff",
-                color: filterOnlyFavs ? "#ffffff" : "#475569",
-                fontSize: "11px",
-                fontWeight: 800,
-                cursor: "pointer",
-              }}
-            >
-              ⭐ Solo Favoritas ({favoriteKeys.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterOnlyFavs(false)}
-              style={{
-                padding: "4px 10px",
-                borderRadius: "6px",
-                border: !filterOnlyFavs ? "1px solid #1e3a8a" : "1px solid #cbd5e1",
-                background: !filterOnlyFavs ? "#1e3a8a" : "#ffffff",
-                color: !filterOnlyFavs ? "#ffffff" : "#475569",
-                fontSize: "11px",
-                fontWeight: 800,
-                cursor: "pointer",
-              }}
-            >
-              📋 Todas ({allVariables.length})
-            </button>
-          </div>
+          <span style={{ fontSize: "11px", color: "#94a3b8", fontWeight: 700 }}>
+            Variables en columnas · Sujetos, Diferencia y % de cambio en filas
+          </span>
         </div>
 
-        {/* Tabla */}
         <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", textAlign: "left" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", textAlign: "center" }}>
             <thead>
-              <tr style={{ background: "#0f172a", color: "#ffffff", borderBottom: "1px solid #334155" }}>
-                <th style={{ padding: "10px 14px", fontWeight: 800, width: "28%" }}>Métrica GPS</th>
-                <th style={{ padding: "10px 14px", fontWeight: 800, width: "10%", textAlign: "center" }}>Unidad</th>
-                <th style={{ padding: "10px 14px", fontWeight: 900, width: "16%", textAlign: "right", background: "#1e3a8a" }}>
-                  {labelA}
+              <tr style={{ background: "#f1f5f9", color: "#0f172a", borderBottom: "2px solid #cbd5e1" }}>
+                {/* Columna fija: Sujeto / Configuración */}
+                <th
+                  style={{
+                    padding: "10px 14px",
+                    fontWeight: 900,
+                    textAlign: "left",
+                    minWidth: "210px",
+                    position: "sticky",
+                    left: 0,
+                    background: "#f1f5f9",
+                    zIndex: 2,
+                    boxShadow: "2px 0 4px rgba(0,0,0,0.04)",
+                  }}
+                >
+                  Sujeto / Configuración
                 </th>
-                <th style={{ padding: "10px 14px", fontWeight: 900, width: "16%", textAlign: "right", background: "#ea580c" }}>
-                  {labelB}
-                </th>
-                <th style={{ padding: "10px 14px", fontWeight: 800, width: "14%", textAlign: "right" }}>Dif. (B - A)</th>
-                <th style={{ padding: "10px 14px", fontWeight: 800, width: "16%", textAlign: "center" }}>Variación / Ratio</th>
+
+                {/* Columnas X: Cada variable seleccionada */}
+                {activeVariables.map((v) => (
+                  <th
+                    key={v.key}
+                    style={{
+                      padding: "8px 12px",
+                      fontWeight: 800,
+                      minWidth: "110px",
+                      borderLeft: "1px solid #e2e8f0",
+                    }}
+                  >
+                    <div style={{ display: "flex", flexDirection: "column", gap: "2px", alignItems: "center" }}>
+                      <span style={{ fontSize: "11.5px", color: "#0f172a", lineHeight: 1.2 }}>
+                        {v.shortLabel || v.label}
+                      </span>
+                      <span style={{ fontSize: "10px", color: "#64748b", fontWeight: 700 }}>
+                        {v.unit ? `(${v.unit})` : "-"}
+                      </span>
+                    </div>
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {displayVariables.map((v, idx) => {
-                const valA = metricsA[v.key] ?? 0;
-                const valB = metricsB[v.key] ?? 0;
-                const diff = Math.round((valB - valA) * 100) / 100;
-                const pct = valA > 0 ? Math.round(((valB - valA) / valA) * 1000) / 10 : (valB > 0 ? 100 : 0);
-                const isFav = favoriteKeys.includes(v.key);
-                const isUp = diff > 0;
-                const isDown = diff < 0;
-
-                // Barra proporcional horizontal A vs B
-                const maxVal = Math.max(valA, valB, 0.0001);
-                const widthPctA = Math.round((valA / maxVal) * 100);
-                const widthPctB = Math.round((valB / maxVal) * 100);
-
-                return (
-                  <tr
-                    key={v.key}
-                    style={{
-                      background: idx % 2 === 0 ? "#ffffff" : "#f8fafc",
-                      borderBottom: "1px solid #e2e8f0",
-                    }}
-                  >
-                    {/* Nombre métrica */}
-                    <td style={{ padding: "9px 14px", fontWeight: 700, color: "#0f172a" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                        {isFav && <span title="Variable Favorita" style={{ color: "#eab308", fontSize: "11px" }}>⭐</span>}
-                        {v.esDerivada && <span title="Variable Derivada Calculada" style={{ color: "#059669", fontSize: "11px" }}>➕</span>}
-                        <span>{v.label}</span>
-                      </div>
-                    </td>
-
-                    {/* Unidad */}
-                    <td style={{ padding: "9px 14px", textAlign: "center", color: "#64748b", fontWeight: 600 }}>
-                      <span style={{ background: "#f1f5f9", padding: "1px 6px", borderRadius: "4px", fontSize: "11px" }}>
-                        {v.unit || "-"}
+              {/* FILA 1: SUJETO A */}
+              <tr style={{ background: "#ffffff", borderBottom: "1px solid #e2e8f0" }}>
+                <td
+                  style={{
+                    padding: "10px 14px",
+                    textAlign: "left",
+                    fontWeight: 800,
+                    position: "sticky",
+                    left: 0,
+                    background: "#ffffff",
+                    zIndex: 2,
+                    boxShadow: "2px 0 4px rgba(0,0,0,0.04)",
+                  }}
+                >
+                  <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#1e3a8a", flexShrink: 0 }} />
+                      <span style={{ color: "#1e3a8a", fontSize: "13px", fontWeight: 900 }}>
+                        {playerA.id === "TEAM" ? "Media Equipo" : (playerA.apodo || playerA.nombre)}
                       </span>
-                    </td>
+                    </div>
+                    <span style={{ fontSize: "10.5px", color: "#64748b", paddingLeft: "14px" }}>
+                      {subLabelA}
+                    </span>
+                  </div>
+                </td>
 
-                    {/* Valor A */}
-                    <td style={{ padding: "9px 14px", textAlign: "right", fontWeight: 900, color: "#1e3a8a", background: idx % 2 === 0 ? "rgba(30, 58, 138, 0.04)" : "rgba(30, 58, 138, 0.07)" }}>
-                      {valA.toLocaleString("es-ES")}
-                    </td>
-
-                    {/* Valor B */}
-                    <td style={{ padding: "9px 14px", textAlign: "right", fontWeight: 900, color: "#ea580c", background: idx % 2 === 0 ? "rgba(234, 88, 12, 0.04)" : "rgba(234, 88, 12, 0.07)" }}>
-                      {valB.toLocaleString("es-ES")}
-                    </td>
-
-                    {/* Diferencia B - A */}
+                {activeVariables.map((v) => {
+                  const val = metricsA[v.key] ?? 0;
+                  return (
                     <td
+                      key={v.key}
                       style={{
-                        padding: "9px 14px",
-                        textAlign: "right",
+                        padding: "10px 12px",
+                        fontWeight: 900,
+                        color: "#1e3a8a",
+                        borderLeft: "1px solid #f1f5f9",
+                        fontSize: "13px",
+                      }}
+                    >
+                      {val.toLocaleString("es-ES")}
+                    </td>
+                  );
+                })}
+              </tr>
+
+              {/* FILA 2: SUJETO B */}
+              <tr style={{ background: "#fffaf5", borderBottom: "2px solid #cbd5e1" }}>
+                <td
+                  style={{
+                    padding: "10px 14px",
+                    textAlign: "left",
+                    fontWeight: 800,
+                    position: "sticky",
+                    left: 0,
+                    background: "#fffaf5",
+                    zIndex: 2,
+                    boxShadow: "2px 0 4px rgba(0,0,0,0.04)",
+                  }}
+                >
+                  <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#ea580c", flexShrink: 0 }} />
+                      <span style={{ color: "#ea580c", fontSize: "13px", fontWeight: 900 }}>
+                        {playerB.id === "TEAM" ? "Media Equipo" : (playerB.apodo || playerB.nombre)}
+                      </span>
+                    </div>
+                    <span style={{ fontSize: "10.5px", color: "#64748b", paddingLeft: "14px" }}>
+                      {subLabelB}
+                    </span>
+                  </div>
+                </td>
+
+                {activeVariables.map((v) => {
+                  const val = metricsB[v.key] ?? 0;
+                  return (
+                    <td
+                      key={v.key}
+                      style={{
+                        padding: "10px 12px",
+                        fontWeight: 900,
+                        color: "#ea580c",
+                        borderLeft: "1px solid #fed7aa",
+                        fontSize: "13px",
+                      }}
+                    >
+                      {val.toLocaleString("es-ES")}
+                    </td>
+                  );
+                })}
+              </tr>
+
+              {/* FILA 3: DIFERENCIA ABSOLUTA (B - A) */}
+              <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
+                <td
+                  style={{
+                    padding: "8px 14px",
+                    textAlign: "left",
+                    fontWeight: 900,
+                    color: "#334155",
+                    position: "sticky",
+                    left: 0,
+                    background: "#f8fafc",
+                    zIndex: 2,
+                    boxShadow: "2px 0 4px rgba(0,0,0,0.04)",
+                    fontSize: "11.5px",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Diferencia (B - A)
+                </td>
+
+                {activeVariables.map((v) => {
+                  const valA = metricsA[v.key] ?? 0;
+                  const valB = metricsB[v.key] ?? 0;
+                  const diff = Math.round((valB - valA) * 100) / 100;
+                  const isUp = diff > 0;
+                  const isDown = diff < 0;
+
+                  return (
+                    <td
+                      key={v.key}
+                      style={{
+                        padding: "8px 12px",
                         fontWeight: 800,
+                        borderLeft: "1px solid #e2e8f0",
+                        fontSize: "12px",
                         color: isUp ? "#15803d" : isDown ? "#b91c1c" : "#64748b",
                       }}
                     >
                       {diff > 0 ? `+${diff.toLocaleString("es-ES")}` : diff.toLocaleString("es-ES")}
                     </td>
+                  );
+                })}
+              </tr>
 
-                    {/* Variación % y Barra visual */}
-                    <td style={{ padding: "9px 14px", textAlign: "center" }}>
-                      <div style={{ display: "flex", flexDirection: "column", gap: "3px", alignItems: "center" }}>
-                        <span
-                          style={{
-                            fontSize: "11px",
-                            fontWeight: 900,
-                            padding: "1px 8px",
-                            borderRadius: "10px",
-                            background: isUp ? "#dcfce7" : isDown ? "#fee2e2" : "#f1f5f9",
-                            color: isUp ? "#15803d" : isDown ? "#b91c1c" : "#64748b",
-                          }}
-                        >
-                          {isUp ? "▲ " : isDown ? "▼ " : "= "}
-                          {isUp ? `+${pct}%` : `${pct}%`}
-                        </span>
+              {/* FILA 4: PORCENTAJE DE CAMBIO % (B vs A) */}
+              <tr style={{ background: "#f1f5f9" }}>
+                <td
+                  style={{
+                    padding: "8px 14px",
+                    textAlign: "left",
+                    fontWeight: 900,
+                    color: "#0f172a",
+                    position: "sticky",
+                    left: 0,
+                    background: "#f1f5f9",
+                    zIndex: 2,
+                    boxShadow: "2px 0 4px rgba(0,0,0,0.04)",
+                    fontSize: "11.5px",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  % Porcentaje de Cambio
+                </td>
 
-                        {/* Barra dual proporcional */}
-                        <div style={{ display: "flex", width: "90px", height: "5px", background: "#f1f5f9", borderRadius: "3px", overflow: "hidden", gap: "1px" }}>
-                          <div style={{ width: `${widthPctA}%`, background: "#1e3a8a", transition: "width 0.3s ease" }} title={`${shortNameA}: ${valA}`} />
-                          <div style={{ width: `${widthPctB}%`, background: "#ea580c", transition: "width 0.3s ease" }} title={`${shortNameB}: ${valB}`} />
-                        </div>
-                      </div>
+                {activeVariables.map((v) => {
+                  const valA = metricsA[v.key] ?? 0;
+                  const valB = metricsB[v.key] ?? 0;
+                  const diff = valB - valA;
+                  const pct = valA > 0 ? Math.round(((valB - valA) / valA) * 1000) / 10 : (valB > 0 ? 100 : 0);
+                  const isUp = diff > 0;
+                  const isDown = diff < 0;
+
+                  return (
+                    <td
+                      key={v.key}
+                      style={{
+                        padding: "8px 12px",
+                        borderLeft: "1px solid #e2e8f0",
+                      }}
+                    >
+                      <span
+                        style={{
+                          display: "inline-block",
+                          padding: "2px 6px",
+                          borderRadius: "4px",
+                          fontSize: "11px",
+                          fontWeight: 900,
+                          background: isUp ? "#dcfce7" : isDown ? "#fee2e2" : "#ffffff",
+                          color: isUp ? "#15803d" : isDown ? "#b91c1c" : "#64748b",
+                          border: isUp ? "1px solid #bbf7d0" : isDown ? "1px solid #fecaca" : "1px solid #cbd5e1",
+                        }}
+                      >
+                        {isUp ? "▲ " : isDown ? "▼ " : "= "}
+                        {isUp ? `+${pct}%` : `${pct}%`}
+                      </span>
                     </td>
-                  </tr>
-                );
-              })}
+                  );
+                })}
+              </tr>
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* ── REPLANTEAMIENTO DE GRÁFICOS: VISUALIZACIÓN CLARA CON ESCALA ADECUADA ── */}
+      <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+        {/* Cabecera con selector de modo de gráfico */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "10px" }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: "14px", fontWeight: 900, color: "#0f172a", textTransform: "uppercase" }}>
+              📈 Gráficos Comparativos ({activeVariables.length} Variables)
+            </h3>
+            <span style={{ fontSize: "11.5px", color: "#64748b", fontWeight: 600 }}>
+              {chartViewMode === "cards"
+                ? "Cada variable cuenta con su propia escala adaptada para no distorsionar métricas de diferente magnitud"
+                : chartViewMode === "relative"
+                ? "Diferencia relativa porcentual (+% ganancia / -% descenso) de B respecto a A"
+                : "Perfil radial de huella física comparada"}
+            </span>
+          </div>
+
+          {/* Toggle de modo de visualización */}
+          <div className="no-print" style={{ display: "flex", gap: "6px" }}>
+            <button
+              type="button"
+              onClick={() => setChartViewMode("cards")}
+              style={{
+                padding: "5px 12px",
+                borderRadius: "6px",
+                border: chartViewMode === "cards" ? "1.5px solid #1e3a8a" : "1px solid #cbd5e1",
+                background: chartViewMode === "cards" ? "#1e3a8a" : "#ffffff",
+                color: chartViewMode === "cards" ? "#ffffff" : "#475569",
+                fontSize: "11px",
+                fontWeight: 800,
+                cursor: "pointer",
+              }}
+            >
+              📊 Gráficos por Métrica (Escala Propia)
+            </button>
+            <button
+              type="button"
+              onClick={() => setChartViewMode("relative")}
+              style={{
+                padding: "5px 12px",
+                borderRadius: "6px",
+                border: chartViewMode === "relative" ? "1.5px solid #1e3a8a" : "1px solid #cbd5e1",
+                background: chartViewMode === "relative" ? "#1e3a8a" : "#ffffff",
+                color: chartViewMode === "relative" ? "#ffffff" : "#475569",
+                fontSize: "11px",
+                fontWeight: 800,
+                cursor: "pointer",
+              }}
+            >
+              📈 % Variación Relativa
+            </button>
+            <button
+              type="button"
+              onClick={() => setChartViewMode("radar")}
+              style={{
+                padding: "5px 12px",
+                borderRadius: "6px",
+                border: chartViewMode === "radar" ? "1.5px solid #1e3a8a" : "1px solid #cbd5e1",
+                background: chartViewMode === "radar" ? "#1e3a8a" : "#ffffff",
+                color: chartViewMode === "radar" ? "#ffffff" : "#475569",
+                fontSize: "11px",
+                fontWeight: 800,
+                cursor: "pointer",
+              }}
+            >
+              🕸️ Gráfico Radar
+            </button>
+          </div>
+        </div>
+
+        {/* MODO 1: GRID DE TARJETAS GRÁFICAS INDIVIDUALES POR VARIABLE (CADA UNA CON ESCALA PROPIA) */}
+        {chartViewMode === "cards" && (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+              gap: "12px",
+            }}
+          >
+            {activeVariables.map((v) => {
+              const valA = metricsA[v.key] ?? 0;
+              const valB = metricsB[v.key] ?? 0;
+              const diff = Math.round((valB - valA) * 100) / 100;
+              const pct = valA > 0 ? Math.round(((valB - valA) / valA) * 1000) / 10 : (valB > 0 ? 100 : 0);
+              const isUp = diff > 0;
+              const isDown = diff < 0;
+
+              const singleBarData = [
+                {
+                  name: shortNameA,
+                  value: valA,
+                  fill: "#1e3a8a",
+                },
+                {
+                  name: shortNameB,
+                  value: valB,
+                  fill: "#ea580c",
+                },
+              ];
+
+              return (
+                <div
+                  key={v.key}
+                  style={{
+                    background: "#ffffff",
+                    borderRadius: "10px",
+                    padding: "14px 16px",
+                    border: "1px solid #cbd5e1",
+                    boxShadow: "0 1px 4px rgba(0,0,0,0.03)",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "8px",
+                  }}
+                >
+                  {/* Título de la tarjeta */}
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "6px" }}>
+                    <div style={{ display: "flex", flexDirection: "column" }}>
+                      <span style={{ fontSize: "12.5px", fontWeight: 900, color: "#0f172a" }}>
+                        {v.label}
+                      </span>
+                      <span style={{ fontSize: "10.5px", color: "#64748b", fontWeight: 700 }}>
+                        Unidad: {v.unit || "-"}
+                      </span>
+                    </div>
+
+                    <span
+                      style={{
+                        padding: "2px 6px",
+                        borderRadius: "4px",
+                        fontSize: "11px",
+                        fontWeight: 900,
+                        background: isUp ? "#dcfce7" : isDown ? "#fee2e2" : "#f1f5f9",
+                        color: isUp ? "#15803d" : isDown ? "#b91c1c" : "#64748b",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {isUp ? "▲ " : isDown ? "▼ " : "= "}
+                      {isUp ? `+${pct}%` : `${pct}%`}
+                    </span>
+                  </div>
+
+                  {/* Valores destacados */}
+                  <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", background: "#f8fafc", padding: "6px 10px", borderRadius: "6px" }}>
+                    <div>
+                      <span style={{ fontSize: "10px", color: "#1e3a8a", fontWeight: 800 }}>A: </span>
+                      <span style={{ fontSize: "14px", fontWeight: 900, color: "#1e3a8a" }}>
+                        {valA.toLocaleString("es-ES")}
+                      </span>
+                    </div>
+                    <span style={{ fontSize: "11px", color: "#94a3b8", fontWeight: 700 }}>vs</span>
+                    <div>
+                      <span style={{ fontSize: "10px", color: "#ea580c", fontWeight: 800 }}>B: </span>
+                      <span style={{ fontSize: "14px", fontWeight: 900, color: "#ea580c" }}>
+                        {valB.toLocaleString("es-ES")}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Mini Gráfico de barras dedicado con auto-scale */}
+                  <div style={{ width: "100%", height: 130 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={singleBarData} margin={{ top: 16, right: 10, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
+                        <XAxis dataKey="name" stroke="#000000" tick={{ fontSize: 10, fontWeight: 800 }} />
+                        <YAxis stroke="#000000" tick={{ fontSize: 9, fontWeight: 700 }} domain={[0, 'auto']} />
+                        <Tooltip
+                          contentStyle={{ borderRadius: "6px", fontSize: "11px" }}
+                          formatter={(value: any) => [`${value.toLocaleString("es-ES")} ${v.unit || ""}`, "Valor"]}
+                        />
+                        <Bar dataKey="value" radius={[4, 4, 0, 0]} barSize={26}>
+                          <LabelList
+                            dataKey="value"
+                            position="top"
+                            style={{ fontSize: "9.5px", fontWeight: 800 }}
+                            formatter={(val: any) => (typeof val === "number" && val > 0 ? val.toLocaleString("es-ES") : "")}
+                          />
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* MODO 2: GRÁFICO DE BARRAS DE % DE VARIACIÓN */}
+        {chartViewMode === "relative" && (
+          <div
+            style={{
+              background: "#ffffff",
+              borderRadius: "10px",
+              padding: "16px 20px",
+              border: "1px solid #cbd5e1",
+              boxShadow: "0 1px 4px rgba(0,0,0,0.03)",
+            }}
+          >
+            <div style={{ marginBottom: "12px" }}>
+              <h4 style={{ margin: 0, fontSize: "13px", fontWeight: 900, color: "#0f172a", textTransform: "uppercase" }}>
+                Ganancia o Descenso Porcentual de Sujeto B respecto a Sujeto A (% Relativo)
+              </h4>
+              <span style={{ fontSize: "11px", color: "#64748b" }}>
+                Barras hacia la derecha indican mayor rendimiento/volumen en B; barras hacia la izquierda indican menor volumen en B
+              </span>
+            </div>
+
+            <div style={{ width: "100%", height: 360 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={relativeChartData} layout="vertical" margin={{ top: 10, right: 30, left: 100, bottom: 10 }}>
+                  <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+                  <XAxis type="number" unit="%" domain={['dataMin - 10', 'dataMax + 10']} tick={{ fontSize: 10, fontWeight: 700 }} />
+                  <YAxis type="category" dataKey="name" stroke="#000000" tick={{ fontSize: 11, fontWeight: 800 }} />
+                  <Tooltip
+                    contentStyle={{ borderRadius: "8px", fontSize: "11px" }}
+                    formatter={(val: any, name: any, item: any) => [
+                      `${val > 0 ? `+${val}%` : `${val}%`} (A: ${item.payload.valA} vs B: ${item.payload.valB} ${item.payload.unit})`,
+                      "% Variación",
+                    ]}
+                  />
+                  <Bar dataKey="variacion" radius={[4, 4, 4, 4]}>
+                    <LabelList
+                      dataKey="variacion"
+                      position="right"
+                      style={{ fontSize: "10px", fontWeight: 900 }}
+                      formatter={(v: any) => `${v > 0 ? `+${v}%` : `${v}%`}`}
+                    />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
+
+        {/* MODO 3: GRÁFICO RADAR */}
+        {chartViewMode === "radar" && (
+          <div
+            style={{
+              background: "#ffffff",
+              borderRadius: "10px",
+              padding: "16px 20px",
+              border: "1px solid #cbd5e1",
+              boxShadow: "0 1px 4px rgba(0,0,0,0.03)",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+            }}
+          >
+            <div style={{ textAlign: "center", marginBottom: "8px" }}>
+              <h4 style={{ margin: 0, fontSize: "13px", fontWeight: 900, color: "#0f172a", textTransform: "uppercase" }}>
+                🕸️ Perfil Físico Comparado (Escala Normalizada 0-100)
+              </h4>
+              <span style={{ fontSize: "11px", color: "#64748b" }}>
+                Huella física superpuesta: Azul ({shortNameA}) vs Naranja ({shortNameB})
+              </span>
+            </div>
+
+            <div style={{ width: "100%", height: 360, maxWidth: "560px" }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <RadarChart data={radarData}>
+                  <PolarGrid stroke="#cbd5e1" />
+                  <PolarAngleAxis dataKey="subject" tick={{ fontSize: 10, fontWeight: 800, fill: "#0f172a" }} />
+                  <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 9 }} />
+                  <Radar name={shortNameA} dataKey="A" stroke="#1e3a8a" fill="#1e3a8a" fillOpacity={0.4} strokeWidth={2} />
+                  <Radar name={shortNameB} dataKey="B" stroke="#ea580c" fill="#ea580c" fillOpacity={0.4} strokeWidth={2} />
+                  <Legend wrapperStyle={{ fontSize: "11px", fontWeight: 800 }} />
+                  <Tooltip
+                    contentStyle={{ borderRadius: "8px", fontSize: "11px" }}
+                    formatter={(val: any, name: any, item: any) => [
+                      `${item.payload[`raw${name === shortNameA ? "A" : "B"}`]} ${item.payload.unit} (${val}%)`,
+                      name,
+                    ]}
+                  />
+                </RadarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <style jsx>{`
+        @media print {
+          .no-print {
+            display: none !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }
