@@ -17,6 +17,7 @@ import {
   Radar,
   Legend,
 } from "recharts";
+import { getEffectiveRecord } from "@/app/lib/gpsTaskFilter";
 import {
   ALL_GPS_VARIABLES,
   GpsVariableDef,
@@ -100,7 +101,6 @@ export default function GpsComparativeSection({
     if (currentWeekStart && availableWeeks.some((w) => w.start === currentWeekStart)) return currentWeekStart;
     return availableWeeks.length > 0 ? availableWeeks[0].start : "";
   });
-  const [taskA, setTaskA] = useState<string>("__TOTAL__");
 
   // Elemento B
   const [jugadorIdB, setJugadorIdB] = useState<string>(() => initialPlayerId);
@@ -112,7 +112,6 @@ export default function GpsComparativeSection({
     if (availableWeeks.length > 1) return availableWeeks[1].start;
     return availableWeeks.length > 0 ? availableWeeks[0].start : "";
   });
-  const [taskB, setTaskB] = useState<string>("__TOTAL__");
 
   // ── 2. SELECCIÓN DE MÉTRICAS A COMPARAR (EXCLUSIVAMENTE FAVORITAS) ──
   const favoriteVariables = useMemo(() => {
@@ -130,7 +129,7 @@ export default function GpsComparativeSection({
   // Modalidad de visualización de gráficos ("cards" = tarjetas individuales con escala propia, "relative" = gráfico de barras % de variación, "radar" = perfil radial)
   const [chartViewMode, setChartViewMode] = useState<"cards" | "relative" | "radar">("cards");
 
-  // ── 3. DETECCIÓN DINÁMICA DE TAREAS PARA CADA FECHA ──
+  // ── 3. DETECCIÓN DINÁMICA DE TAREAS Y SELECCIÓN MULTI-TAREA PARA CADA FECHA ──
   const getTasksForDate = (dateStr: string): string[] => {
     if (!dateStr || mode !== "sesion") return [];
     const recs = teamGpsRecords.filter((r) => r.fecha === dateStr);
@@ -151,18 +150,38 @@ export default function GpsComparativeSection({
   const tasksAvailableA = useMemo(() => getTasksForDate(dateA), [dateA, teamGpsRecords, mode]);
   const tasksAvailableB = useMemo(() => getTasksForDate(dateB), [dateB, teamGpsRecords, mode]);
 
-  // Si cambia la fecha y la tarea seleccionada ya no existe, reajustar a "__TOTAL__"
+  // Selección individual de tareas activadas para Sesión A y Sesión B (todas activas por defecto)
+  const [selectedTasksA, setSelectedTasksA] = useState<string[]>(() => tasksAvailableA);
+  const [selectedTasksB, setSelectedTasksB] = useState<string[]>(() => tasksAvailableB);
+
+  // Sincronizar tareas al cambiar la fecha seleccionada
+  const prevDateARef = React.useRef(dateA);
   useEffect(() => {
-    if (taskA !== "__TOTAL__" && !tasksAvailableA.includes(taskA)) {
-      setTaskA("__TOTAL__");
+    if (prevDateARef.current !== dateA) {
+      prevDateARef.current = dateA;
+      setSelectedTasksA(tasksAvailableA);
     }
   }, [dateA, tasksAvailableA]);
 
+  const prevDateBRef = React.useRef(dateB);
   useEffect(() => {
-    if (taskB !== "__TOTAL__" && !tasksAvailableB.includes(taskB)) {
-      setTaskB("__TOTAL__");
+    if (prevDateBRef.current !== dateB) {
+      prevDateBRef.current = dateB;
+      setSelectedTasksB(tasksAvailableB);
     }
   }, [dateB, tasksAvailableB]);
+
+  const toggleTaskA = (taskName: string) => {
+    setSelectedTasksA((prev) =>
+      prev.includes(taskName) ? prev.filter((t) => t !== taskName) : [...prev, taskName]
+    );
+  };
+
+  const toggleTaskB = (taskName: string) => {
+    setSelectedTasksB((prev) =>
+      prev.includes(taskName) ? prev.filter((t) => t !== taskName) : [...prev, taskName]
+    );
+  };
 
   // ── 4. RESOLUCIÓN DE MATCH DAY Y JUGADORES ──
   const resolveMatchDay = (fecha: string): string => {
@@ -241,11 +260,12 @@ export default function GpsComparativeSection({
   const weekInfoA = useMemo(() => getWeekInfo(weekA), [weekA, availableWeeks]);
   const weekInfoB = useMemo(() => getWeekInfo(weekB), [weekB, availableWeeks]);
 
-  // ── 5. CÁLCULO DE MÉTRICAS (CON SOPORTE DE TAREAS Y MICROCICLOS) ──
+  // ── 5. CÁLCULO DE MÉTRICAS (CON FILTRO DE TAREAS ACTIVADAS Y MICROCICLOS) ──
   const calculateEntityMetrics = (
     playerId: string,
     targetKey: string,
-    targetTask: string
+    activeTasks: string[],
+    allTasksForDate: string[]
   ): Record<string, number> => {
     const isTeam = playerId === "TEAM";
     const result: Record<string, number> = {};
@@ -258,21 +278,15 @@ export default function GpsComparativeSection({
         const sessionRecs = teamGpsRecords.filter((r) => r.fecha === fecha);
         if (sessionRecs.length === 0) return result;
 
+        const filteredRecs = sessionRecs.map((r) =>
+          getEffectiveRecord(r, activeTasks, allTasksForDate, derivedVariables)
+        );
+
         allVariables.forEach((v) => {
           const values: number[] = [];
-          sessionRecs.forEach((r) => {
-            if (targetTask && targetTask !== "__TOTAL__") {
-              const t = (r.metricas?.tareas || []).find(
-                (x: any) => (x.nombre || x.task || x.tarea || "").trim() === targetTask
-              );
-              if (t) {
-                const val = calculateGpsMetricValue(t, v.key, derivedVariables);
-                if (val > 0) values.push(val);
-              }
-            } else {
-              const val = calculateGpsMetricValue(r.metricas, v.key, derivedVariables);
-              if (val > 0) values.push(val);
-            }
+          filteredRecs.forEach((r) => {
+            const val = calculateGpsMetricValue(r?.metricas, v.key, derivedVariables);
+            if (val > 0) values.push(val);
           });
 
           if (v.esPicoMaximo) {
@@ -286,16 +300,12 @@ export default function GpsComparativeSection({
         const r = teamGpsRecords.find((rec) => rec.jugador_id === playerId && rec.fecha === fecha);
         if (!r) return result;
 
-        let targetObj: any = r.metricas;
-        if (targetTask && targetTask !== "__TOTAL__") {
-          const t = (r.metricas?.tareas || []).find(
-            (x: any) => (x.nombre || x.task || x.tarea || "").trim() === targetTask
-          );
-          targetObj = t || null;
-        }
+        const filteredRecord = getEffectiveRecord(r, activeTasks, allTasksForDate, derivedVariables);
 
         allVariables.forEach((v) => {
-          result[v.key] = targetObj ? calculateGpsMetricValue(targetObj, v.key, derivedVariables) : 0;
+          result[v.key] = filteredRecord
+            ? calculateGpsMetricValue(filteredRecord.metricas, v.key, derivedVariables)
+            : 0;
         });
       }
     } else {
@@ -340,13 +350,13 @@ export default function GpsComparativeSection({
   };
 
   const metricsA = useMemo(
-    () => calculateEntityMetrics(jugadorIdA, mode === "sesion" ? dateA : weekA, taskA),
-    [jugadorIdA, dateA, weekA, taskA, mode, teamGpsRecords, allVariables, derivedVariables]
+    () => calculateEntityMetrics(jugadorIdA, mode === "sesion" ? dateA : weekA, selectedTasksA, tasksAvailableA),
+    [jugadorIdA, dateA, weekA, selectedTasksA, tasksAvailableA, mode, teamGpsRecords, allVariables, derivedVariables]
   );
 
   const metricsB = useMemo(
-    () => calculateEntityMetrics(jugadorIdB, mode === "sesion" ? dateB : weekB, taskB),
-    [jugadorIdB, dateB, weekB, taskB, mode, teamGpsRecords, allVariables, derivedVariables]
+    () => calculateEntityMetrics(jugadorIdB, mode === "sesion" ? dateB : weekB, selectedTasksB, tasksAvailableB),
+    [jugadorIdB, dateB, weekB, selectedTasksB, tasksAvailableB, mode, teamGpsRecords, allVariables, derivedVariables]
   );
 
   // ── 6. LISTA DE MÉTRICAS FILTRADAS / SELECCIONADAS (SOLO FAVORITAS) ──
@@ -385,9 +395,9 @@ export default function GpsComparativeSection({
       setDateA(dateB);
       setDateB(tempD);
 
-      const tempT = taskA;
-      setTaskA(taskB);
-      setTaskB(tempT);
+      const tempTasks = selectedTasksA;
+      setSelectedTasksA(selectedTasksB);
+      setSelectedTasksB(tempTasks);
     } else {
       const tempW = weekA;
       setWeekA(weekB);
@@ -401,19 +411,41 @@ export default function GpsComparativeSection({
 
   const subLabelA = useMemo(() => {
     if (mode === "sesion") {
-      const taskStr = taskA && taskA !== "__TOTAL__" ? ` · [${taskA}]` : "";
+      let taskStr = "";
+      if (tasksAvailableA.length > 0) {
+        if (selectedTasksA.length === tasksAvailableA.length) {
+          taskStr = " · [Todas las tareas]";
+        } else if (selectedTasksA.length === 0) {
+          taskStr = " · [Sin tareas activas]";
+        } else if (selectedTasksA.length === 1) {
+          taskStr = ` · [${selectedTasksA[0]}]`;
+        } else {
+          taskStr = ` · [${selectedTasksA.length}/${tasksAvailableA.length} tareas]`;
+        }
+      }
       return `${formatDateDisplay(dateA)} (${resolveMatchDay(dateA)})${taskStr}`;
     }
     return weekInfoA.label;
-  }, [mode, dateA, taskA, weekInfoA]);
+  }, [mode, dateA, selectedTasksA, tasksAvailableA]);
 
   const subLabelB = useMemo(() => {
     if (mode === "sesion") {
-      const taskStr = taskB && taskB !== "__TOTAL__" ? ` · [${taskB}]` : "";
+      let taskStr = "";
+      if (tasksAvailableB.length > 0) {
+        if (selectedTasksB.length === tasksAvailableB.length) {
+          taskStr = " · [Todas las tareas]";
+        } else if (selectedTasksB.length === 0) {
+          taskStr = " · [Sin tareas activas]";
+        } else if (selectedTasksB.length === 1) {
+          taskStr = ` · [${selectedTasksB[0]}]`;
+        } else {
+          taskStr = ` · [${selectedTasksB.length}/${tasksAvailableB.length} tareas]`;
+        }
+      }
       return `${formatDateDisplay(dateB)} (${resolveMatchDay(dateB)})${taskStr}`;
     }
     return weekInfoB.label;
-  }, [mode, dateB, taskB, weekInfoB]);
+  }, [mode, dateB, selectedTasksB, tasksAvailableB]);
 
   // ── 8. DATASETS PARA LOS GRÁFICOS ──
   // Radar data (normalizado a escala 0-100 para comparar perfiles)
@@ -576,22 +608,26 @@ export default function GpsComparativeSection({
             >
               Misma Fecha/Semana
             </button>
-            {mode === "sesion" && (
+            {mode === "sesion" && tasksAvailableA.length > 0 && tasksAvailableB.length > 0 && (
               <button
                 type="button"
-                onClick={() => setTaskB(taskA)}
+                onClick={() => {
+                  const matching = tasksAvailableB.filter((t) => selectedTasksA.includes(t));
+                  setSelectedTasksB(matching.length > 0 ? matching : [...tasksAvailableB]);
+                }}
                 style={{
                   padding: "3px 8px",
                   borderRadius: "5px",
-                  border: taskA === taskB ? "1px solid #1e3a8a" : "1px solid #cbd5e1",
-                  background: taskA === taskB ? "#eff6ff" : "#f8fafc",
-                  color: taskA === taskB ? "#1e3a8a" : "#475569",
+                  border: "1px solid #cbd5e1",
+                  background: "#f8fafc",
+                  color: "#475569",
                   fontSize: "11px",
                   fontWeight: 700,
                   cursor: "pointer",
                 }}
+                title="Sincronizar tareas activadas de Sesión A a Sesión B"
               >
-                Misma Tarea
+                Mismas Tareas
               </button>
             )}
             <button
@@ -714,32 +750,7 @@ export default function GpsComparativeSection({
               </select>
             )}
 
-            {/* Tarea A (solo sesión) */}
-            {mode === "sesion" && (
-              <select
-                value={taskA}
-                onChange={(e) => setTaskA(e.target.value)}
-                style={{
-                  flex: "1 1 140px",
-                  padding: "6px 8px",
-                  borderRadius: "6px",
-                  border: "1px solid #93c5fd",
-                  background: "#eff6ff",
-                  fontSize: "11.5px",
-                  fontWeight: 800,
-                  color: "#1e3a8a",
-                  outline: "none",
-                }}
-                title="Tarea de entrenamiento A"
-              >
-                <option value="__TOTAL__">🎯 Toda la Sesión (Total)</option>
-                {tasksAvailableA.map((tName) => (
-                  <option key={tName} value={tName}>
-                    ⚡ Tarea: {tName}
-                  </option>
-                ))}
-              </select>
-            )}
+
           </div>
 
           {/* BOTÓN SWAP ⇄ */}
@@ -854,34 +865,251 @@ export default function GpsComparativeSection({
               </select>
             )}
 
-            {/* Tarea B (solo sesión) */}
-            {mode === "sesion" && (
-              <select
-                value={taskB}
-                onChange={(e) => setTaskB(e.target.value)}
-                style={{
-                  flex: "1 1 140px",
-                  padding: "6px 8px",
-                  borderRadius: "6px",
-                  border: "1px solid #fdba74",
-                  background: "#fff7ed",
-                  fontSize: "11.5px",
-                  fontWeight: 800,
-                  color: "#c2410c",
-                  outline: "none",
-                }}
-                title="Tarea de entrenamiento B"
-              >
-                <option value="__TOTAL__">🎯 Toda la Sesión (Total)</option>
-                {tasksAvailableB.map((tName) => (
-                  <option key={tName} value={tName}>
-                    ⚡ Tarea: {tName}
-                  </option>
-                ))}
-              </select>
-            )}
+
           </div>
         </div>
+
+        {/* ── ACTIVACIÓN INDIVIDUAL DE TAREAS PARA SESIÓN A Y SESIÓN B ── */}
+        {mode === "sesion" && (tasksAvailableA.length > 0 || tasksAvailableB.length > 0) && (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: "12px",
+              marginTop: "2px",
+              paddingTop: "10px",
+              borderTop: "1px dashed #e2e8f0",
+            }}
+          >
+            {/* Panel Tareas Sesión A */}
+            <div
+              style={{
+                background: "#f8fafc",
+                border: "1px solid #bfdbfe",
+                borderRadius: "8px",
+                padding: "10px 12px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "8px",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "6px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span
+                    style={{
+                      fontSize: "10px",
+                      fontWeight: 900,
+                      background: "#1e3a8a",
+                      color: "#ffffff",
+                      padding: "2px 6px",
+                      borderRadius: "4px",
+                      letterSpacing: "0.04em",
+                    }}
+                  >
+                    TAREAS SESIÓN A
+                  </span>
+                  <span style={{ fontSize: "11.5px", fontWeight: 800, color: "#1e3a8a" }}>
+                    {tasksAvailableA.length > 0
+                      ? `(${selectedTasksA.length}/${tasksAvailableA.length} activadas)`
+                      : "(Sesión completa)"}
+                  </span>
+                </div>
+
+                {tasksAvailableA.length > 0 && (
+                  <div style={{ display: "flex", gap: "4px" }}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedTasksA([...tasksAvailableA])}
+                      disabled={selectedTasksA.length === tasksAvailableA.length}
+                      style={{
+                        fontSize: "10.5px",
+                        fontWeight: 700,
+                        padding: "2px 6px",
+                        borderRadius: "4px",
+                        border: "1px solid #cbd5e1",
+                        background: selectedTasksA.length === tasksAvailableA.length ? "#f1f5f9" : "#ffffff",
+                        color: selectedTasksA.length === tasksAvailableA.length ? "#94a3b8" : "#1e3a8a",
+                        cursor: selectedTasksA.length === tasksAvailableA.length ? "default" : "pointer",
+                      }}
+                      title="Activar todas las tareas de la Sesión A"
+                    >
+                      ✓ Todas
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedTasksA([])}
+                      disabled={selectedTasksA.length === 0}
+                      style={{
+                        fontSize: "10.5px",
+                        fontWeight: 700,
+                        padding: "2px 6px",
+                        borderRadius: "4px",
+                        border: "1px solid #cbd5e1",
+                        background: selectedTasksA.length === 0 ? "#f1f5f9" : "#ffffff",
+                        color: selectedTasksA.length === 0 ? "#94a3b8" : "#dc2626",
+                        cursor: selectedTasksA.length === 0 ? "default" : "pointer",
+                      }}
+                      title="Desactivar todas las tareas de la Sesión A"
+                    >
+                      ✕ Ninguna
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {tasksAvailableA.length === 0 ? (
+                <span style={{ fontSize: "11.5px", color: "#64748b", fontStyle: "italic" }}>
+                  ℹ️ Sesión completa (sin desglose de tareas individuales)
+                </span>
+              ) : (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                  {tasksAvailableA.map((tName) => {
+                    const isChecked = selectedTasksA.includes(tName);
+                    return (
+                      <button
+                        key={tName}
+                        type="button"
+                        onClick={() => toggleTaskA(tName)}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "5px",
+                          padding: "3px 8px",
+                          borderRadius: "6px",
+                          border: isChecked ? "1.5px solid #1e3a8a" : "1px dashed #cbd5e1",
+                          background: isChecked ? "#eff6ff" : "#ffffff",
+                          color: isChecked ? "#1e3a8a" : "#94a3b8",
+                          fontSize: "11px",
+                          fontWeight: isChecked ? 800 : 600,
+                          cursor: "pointer",
+                          textDecoration: isChecked ? "none" : "line-through",
+                          transition: "all 0.15s ease",
+                        }}
+                      >
+                        <span>{isChecked ? "☑" : "☐"}</span>
+                        <span>{tName}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Panel Tareas Sesión B */}
+            <div
+              style={{
+                background: "#f8fafc",
+                border: "1px solid #fed7aa",
+                borderRadius: "8px",
+                padding: "10px 12px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "8px",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "6px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span
+                    style={{
+                      fontSize: "10px",
+                      fontWeight: 900,
+                      background: "#ea580c",
+                      color: "#ffffff",
+                      padding: "2px 6px",
+                      borderRadius: "4px",
+                      letterSpacing: "0.04em",
+                    }}
+                  >
+                    TAREAS SESIÓN B
+                  </span>
+                  <span style={{ fontSize: "11.5px", fontWeight: 800, color: "#c2410c" }}>
+                    {tasksAvailableB.length > 0
+                      ? `(${selectedTasksB.length}/${tasksAvailableB.length} activadas)`
+                      : "(Sesión completa)"}
+                  </span>
+                </div>
+
+                {tasksAvailableB.length > 0 && (
+                  <div style={{ display: "flex", gap: "4px" }}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedTasksB([...tasksAvailableB])}
+                      disabled={selectedTasksB.length === tasksAvailableB.length}
+                      style={{
+                        fontSize: "10.5px",
+                        fontWeight: 700,
+                        padding: "2px 6px",
+                        borderRadius: "4px",
+                        border: "1px solid #cbd5e1",
+                        background: selectedTasksB.length === tasksAvailableB.length ? "#f1f5f9" : "#ffffff",
+                        color: selectedTasksB.length === tasksAvailableB.length ? "#94a3b8" : "#c2410c",
+                        cursor: selectedTasksB.length === tasksAvailableB.length ? "default" : "pointer",
+                      }}
+                      title="Activar todas las tareas de la Sesión B"
+                    >
+                      ✓ Todas
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedTasksB([])}
+                      disabled={selectedTasksB.length === 0}
+                      style={{
+                        fontSize: "10.5px",
+                        fontWeight: 700,
+                        padding: "2px 6px",
+                        borderRadius: "4px",
+                        border: "1px solid #cbd5e1",
+                        background: selectedTasksB.length === 0 ? "#f1f5f9" : "#ffffff",
+                        color: selectedTasksB.length === 0 ? "#94a3b8" : "#dc2626",
+                        cursor: selectedTasksB.length === 0 ? "default" : "pointer",
+                      }}
+                      title="Desactivar todas las tareas de la Sesión B"
+                    >
+                      ✕ Ninguna
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {tasksAvailableB.length === 0 ? (
+                <span style={{ fontSize: "11.5px", color: "#64748b", fontStyle: "italic" }}>
+                  ℹ️ Sesión completa (sin desglose de tareas individuales)
+                </span>
+              ) : (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                  {tasksAvailableB.map((tName) => {
+                    const isChecked = selectedTasksB.includes(tName);
+                    return (
+                      <button
+                        key={tName}
+                        type="button"
+                        onClick={() => toggleTaskB(tName)}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "5px",
+                          padding: "3px 8px",
+                          borderRadius: "6px",
+                          border: isChecked ? "1.5px solid #ea580c" : "1px dashed #cbd5e1",
+                          background: isChecked ? "#fff7ed" : "#ffffff",
+                          color: isChecked ? "#c2410c" : "#94a3b8",
+                          fontSize: "11px",
+                          fontWeight: isChecked ? 800 : 600,
+                          cursor: "pointer",
+                          textDecoration: isChecked ? "none" : "line-through",
+                          transition: "all 0.15s ease",
+                        }}
+                      >
+                        <span>{isChecked ? "☑" : "☐"}</span>
+                        <span>{tName}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── SELECTOR DE MÉTRICAS GPS INTERACTIVO (SOLO FAVORITAS) (NO-PRINT) ── */}
