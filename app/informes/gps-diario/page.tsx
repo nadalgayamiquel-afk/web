@@ -1569,7 +1569,12 @@ function InformeGpsDiarioContent() {
         <div className="no-print" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", margin: "0 0 16px 0", background: "#f8fafc", padding: "5px", borderRadius: "10px", border: "1px solid #e2e8f0" }}>
           <button
             type="button"
-            onClick={() => setSubView("jugador")}
+            onClick={() => {
+              if (selectedJugadorId === "TEAM") {
+                setSelectedJugadorId(jugadores.length > 0 ? jugadores[0].id : "");
+              }
+              setSubView("jugador");
+            }}
             style={{
               flex: 1,
               padding: "7px 14px",
@@ -1593,7 +1598,12 @@ function InformeGpsDiarioContent() {
 
           <button
             type="button"
-            onClick={() => setSubView("comparativa")}
+            onClick={() => {
+              if (subView === "equipo") {
+                setSelectedJugadorId("TEAM");
+              }
+              setSubView("comparativa");
+            }}
             style={{
               flex: 1,
               padding: "7px 14px",

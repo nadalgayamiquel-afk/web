@@ -715,7 +715,7 @@ export default function GpsComparativeSection({
   });
 
   // Elemento B
-  const [jugadorIdB, setJugadorIdB] = useState<string>(() => initialPlayerId);
+  const [jugadorIdB, setJugadorIdB] = useState<string>(() => (initialPlayerId === "TEAM" ? "TEAM" : initialPlayerId));
   const [dateB, setDateB] = useState<string>(() => {
     if (availableDates.length > 1) return availableDates[1];
     return availableDates.length > 0 ? availableDates[0] : "";
@@ -729,6 +729,15 @@ export default function GpsComparativeSection({
 
   // Estado para la ventana emergente de Mini Calendario ("A" | "B" | null)
   const [calendarModalTarget, setCalendarModalTarget] = useState<"A" | "B" | null>(null);
+
+  useEffect(() => {
+    if (initialJugadorId) {
+      setJugadorIdA(initialJugadorId);
+      if (initialJugadorId === "TEAM") {
+        setJugadorIdB("TEAM");
+      }
+    }
+  }, [initialJugadorId]);
 
   // ── 2. SELECCIÓN DE MÉTRICAS A COMPARAR (EXCLUSIVAMENTE FAVORITAS) ──
   const favoriteVariables = useMemo(() => {
@@ -982,8 +991,8 @@ export default function GpsComparativeSection({
     if (id === "TEAM") {
       return {
         id: "TEAM",
-        nombre: "Media del Equipo",
-        apodo: "Media Equipo",
+        nombre: "TEAM (avg)",
+        apodo: "TEAM (avg)",
         posicion: "Equipo",
         foto_url: null,
       };
@@ -1408,19 +1417,48 @@ export default function GpsComparativeSection({
             )}
             <button
               type="button"
-              onClick={() => setJugadorIdB("TEAM")}
+              onClick={() => {
+                setJugadorIdA("TEAM");
+                setJugadorIdB("TEAM");
+              }}
+              style={{
+                padding: "3px 9px",
+                borderRadius: "5px",
+                border: (jugadorIdA === "TEAM" && jugadorIdB === "TEAM") ? "1.5px solid #1e3a8a" : "1px solid #cbd5e1",
+                background: (jugadorIdA === "TEAM" && jugadorIdB === "TEAM") ? "#dbeafe" : "#f8fafc",
+                color: (jugadorIdA === "TEAM" && jugadorIdB === "TEAM") ? "#1e3a8a" : "#475569",
+                fontSize: "11px",
+                fontWeight: (jugadorIdA === "TEAM" && jugadorIdB === "TEAM") ? 800 : 700,
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "4px",
+              }}
+              title="Comparar el equipo entero (TEAM avg) entre ambas sesiones o microciclos"
+            >
+              <span>👥</span> TEAM (avg) vs TEAM (avg)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (jugadorIdA === "TEAM" && jugadores.length > 0) {
+                  setJugadorIdA(jugadores[0].id);
+                }
+                setJugadorIdB("TEAM");
+              }}
               style={{
                 padding: "3px 8px",
                 borderRadius: "5px",
-                border: jugadorIdB === "TEAM" ? "1px solid #1e3a8a" : "1px solid #cbd5e1",
-                background: jugadorIdB === "TEAM" ? "#eff6ff" : "#f8fafc",
-                color: jugadorIdB === "TEAM" ? "#1e3a8a" : "#475569",
+                border: (jugadorIdA !== "TEAM" && jugadorIdB === "TEAM") ? "1.5px solid #1e3a8a" : "1px solid #cbd5e1",
+                background: (jugadorIdA !== "TEAM" && jugadorIdB === "TEAM") ? "#eff6ff" : "#f8fafc",
+                color: (jugadorIdA !== "TEAM" && jugadorIdB === "TEAM") ? "#1e3a8a" : "#475569",
                 fontSize: "11px",
-                fontWeight: 700,
+                fontWeight: (jugadorIdA !== "TEAM" && jugadorIdB === "TEAM") ? 800 : 700,
                 cursor: "pointer",
               }}
+              title="Comparar el jugador seleccionado contra la media del equipo (TEAM avg)"
             >
-              vs Media Equipo
+              vs TEAM (avg)
             </button>
           </div>
         </div>
@@ -1471,7 +1509,7 @@ export default function GpsComparativeSection({
                 outline: "none",
               }}
             >
-              <option value="TEAM">👥 Media del Equipo</option>
+              <option value="TEAM" style={{ fontWeight: 800, color: "#1e3a8a" }}>👥 TEAM (avg) · Media del Equipo</option>
               {jugadores.map((j) => (
                 <option key={j.id} value={j.id}>
                   {j.dorsal ? `#${j.dorsal} ` : ""}{j.apodo || j.nombre}
@@ -1587,7 +1625,7 @@ export default function GpsComparativeSection({
                 outline: "none",
               }}
             >
-              <option value="TEAM">👥 Media del Equipo</option>
+              <option value="TEAM" style={{ fontWeight: 800, color: "#ea580c" }}>👥 TEAM (avg) · Media del Equipo</option>
               {jugadores.map((j) => (
                 <option key={j.id} value={j.id}>
                   {j.dorsal ? `#${j.dorsal} ` : ""}{j.apodo || j.nombre}
@@ -2017,7 +2055,7 @@ export default function GpsComparativeSection({
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
               <span style={{ fontSize: "13.5px", fontWeight: 900, color: "#1e3a8a" }}>
-                {playerA.id === "TEAM" ? "Media del Equipo" : (playerA.apodo || playerA.nombre)}
+                {playerA.id === "TEAM" ? "TEAM (avg)" : (playerA.apodo || playerA.nombre)}
               </span>
               <span style={{ fontSize: "10px", fontWeight: 800, background: "#dbeafe", color: "#1e40af", padding: "1px 5px", borderRadius: "4px" }}>
                 SUJETO A
@@ -2061,7 +2099,7 @@ export default function GpsComparativeSection({
                 SUJETO B
               </span>
               <span style={{ fontSize: "13.5px", fontWeight: 900, color: "#ea580c" }}>
-                {playerB.id === "TEAM" ? "Media del Equipo" : (playerB.apodo || playerB.nombre)}
+                {playerB.id === "TEAM" ? "TEAM (avg)" : (playerB.apodo || playerB.nombre)}
               </span>
             </div>
             <span style={{ fontSize: "11.5px", color: "#475569", fontWeight: 700 }}>
@@ -2165,7 +2203,7 @@ export default function GpsComparativeSection({
                     <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                       <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#1e3a8a", flexShrink: 0 }} />
                       <span style={{ color: "#1e3a8a", fontSize: "13px", fontWeight: 900 }}>
-                        {playerA.id === "TEAM" ? "Media Equipo" : (playerA.apodo || playerA.nombre)}
+                        {playerA.id === "TEAM" ? "TEAM (avg)" : (playerA.apodo || playerA.nombre)}
                       </span>
                     </div>
                     <span style={{ fontSize: "10.5px", color: "#64748b", paddingLeft: "14px" }}>
@@ -2211,7 +2249,7 @@ export default function GpsComparativeSection({
                     <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                       <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#ea580c", flexShrink: 0 }} />
                       <span style={{ color: "#ea580c", fontSize: "13px", fontWeight: 900 }}>
-                        {playerB.id === "TEAM" ? "Media Equipo" : (playerB.apodo || playerB.nombre)}
+                        {playerB.id === "TEAM" ? "TEAM (avg)" : (playerB.apodo || playerB.nombre)}
                       </span>
                     </div>
                     <span style={{ fontSize: "10.5px", color: "#64748b", paddingLeft: "14px" }}>
@@ -2597,11 +2635,11 @@ export default function GpsComparativeSection({
               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "12px", marginTop: "8px", flexWrap: "wrap" }}>
                 <span style={{ fontSize: "12px", fontWeight: 800, color: "#1e3a8a", background: "#eff6ff", padding: "4px 12px", borderRadius: "6px", border: "1px solid #bfdbfe", display: "inline-flex", alignItems: "center", gap: "6px" }}>
                   <span style={{ width: "9px", height: "9px", borderRadius: "50%", background: "#1e3a8a" }} />
-                  <span>Sujeto A: <strong>{playerA.id === "TEAM" ? "Media Equipo" : (playerA.apodo || playerA.nombre)}</strong> — {subLabelA}</span>
+                  <span>Sujeto A: <strong>{playerA.id === "TEAM" ? "TEAM (avg)" : (playerA.apodo || playerA.nombre)}</strong> — {subLabelA}</span>
                 </span>
                 <span style={{ fontSize: "12px", fontWeight: 800, color: "#ea580c", background: "#fff7ed", padding: "4px 12px", borderRadius: "6px", border: "1px solid #fed7aa", display: "inline-flex", alignItems: "center", gap: "6px" }}>
                   <span style={{ width: "9px", height: "9px", borderRadius: "50%", background: "#ea580c" }} />
-                  <span>Sujeto B: <strong>{playerB.id === "TEAM" ? "Media Equipo" : (playerB.apodo || playerB.nombre)}</strong> — {subLabelB}</span>
+                  <span>Sujeto B: <strong>{playerB.id === "TEAM" ? "TEAM (avg)" : (playerB.apodo || playerB.nombre)}</strong> — {subLabelB}</span>
                 </span>
               </div>
             </div>
