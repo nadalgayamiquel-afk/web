@@ -17,6 +17,21 @@ export interface CargaExternaSectionProps {
 
 export type ExternaSubTab = "velocidad" | "perfil_competitivo" | "ratios_semanales" | "preguntas_clave" | "sesiones_bbdd";
 
+function isRecordSimulado(record: any): boolean {
+  if (!record) return false;
+  if (record.es_simulado === true) return true;
+  if (String(record.tipo_registro || "").toUpperCase() === "SIMULADO") return true;
+  if (String(record.origen_dato || "").toUpperCase() === "SIMULADO") return true;
+  if (!record.metricas) return false;
+  return Boolean(
+    record.metricas.es_simulado ||
+    String(record.metricas.tipo_registro || "").toUpperCase() === "SIMULADO" ||
+    String(record.metricas.origen_dato || "").toUpperCase() === "SIMULADO" ||
+    (record.metricas.colC && String(record.metricas.colC).toUpperCase().includes("SIMULA")) ||
+    (record.metricas["REAL / SIMULADO"] && String(record.metricas["REAL / SIMULADO"]).toUpperCase().includes("SIMULA"))
+  );
+}
+
 export default function CargaExternaSection({
   gpsRecords,
   jugadores,
@@ -113,6 +128,8 @@ export default function CargaExternaSection({
   const speedRecordsByPlayer = useMemo(() => {
     const map = new Map<string, Array<{ fecha: string; speed: number; md?: string; tipo?: string }>>();
     gpsRecords.forEach((r) => {
+      // FILTRO ESTRICTO: Las velocidades máximas DEBEN venir exclusivamente de datos REALES
+      if (isRecordSimulado(r)) return;
       const pId = r.jugador_id;
       if (!pId) return;
       const spd = Number(
@@ -232,6 +249,8 @@ export default function CargaExternaSection({
   // ── 4. CÁLCULO DE PERFIL COMPETITIVO (MATCH BENCHMARK) ──
   const competitiveProfiles = useMemo(() => {
     const matchRecs = gpsRecords.filter((r) => {
+      // Excluir registros simulados del perfil competitivo
+      if (isRecordSimulado(r)) return false;
       const tipo = (r.tipo_sesion || r.metricas?.tipo_sesion || "").toUpperCase();
       const md = (r.match_day || r.metricas?.match_day || "").toUpperCase();
       return tipo.includes("PARTIDO") || md === "MD" || r.es_partido === true;
@@ -348,7 +367,7 @@ export default function CargaExternaSection({
   const weeklyRatiosData = useMemo(() => {
     if (!activeWeek || activeWeek.dates.length === 0) return [];
 
-    const weekRecords = gpsRecords.filter((r) => activeWeek.dates.includes(r.fecha));
+    const weekRecords = gpsRecords.filter((r) => activeWeek.dates.includes(r.fecha) && !isRecordSimulado(r));
     const byPlayer = new Map<string, any[]>();
     weekRecords.forEach((r) => {
       if (!r.jugador_id) return;
@@ -706,6 +725,9 @@ export default function CargaExternaSection({
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                 <span style={{ fontSize: "13px", fontWeight: 900, color: "#0f172a", textTransform: "uppercase" }}>
                   Monitor de Exposición Neuromuscular (≥ {vmaxThresholdPct}% Vmax)
+                </span>
+                <span style={{ fontSize: "10.5px", fontWeight: 800, background: "#dcfce7", color: "#15803d", border: "1px solid #bbf7d0", padding: "2px 8px", borderRadius: "12px", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                  <span>🛡️</span> Datos 100% Reales (Simulados Excluidos)
                 </span>
                 <span style={{ fontSize: "11px", fontWeight: 700, color: "#64748b", background: "#e2e8f0", padding: "2px 8px", borderRadius: "12px" }}>
                   {filteredVmaxList.length} jugadores
@@ -1537,7 +1559,16 @@ export default function CargaExternaSection({
                         <td style={{ padding: "8px 10px", textAlign: "right", color: "#9333ea", fontWeight: 800 }}>{topSpd > 0 ? topSpd.toFixed(1) : "-"}</td>
                         <td style={{ padding: "8px 10px", textAlign: "right", color: "#0284c7", fontWeight: 700 }}>{load > 0 ? load.toLocaleString("es-ES") : "-"}</td>
                         <td style={{ padding: "8px 10px", textAlign: "center", fontWeight: 800 }}>{sprints > 0 ? sprints : "-"}</td>
-                        <td style={{ padding: "8px 10px", textAlign: "center", fontSize: "11px", color: "#64748b" }}>{tipoSesion}</td>
+                        <td style={{ padding: "8px 10px", textAlign: "center", fontSize: "11px" }}>
+                          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
+                            <span style={{ color: "#64748b" }}>{tipoSesion}</span>
+                            {rec && (
+                              <span style={{ fontSize: "9.5px", fontWeight: 800, padding: "1px 5px", borderRadius: "4px", background: isRecordSimulado(rec) ? "#fef3c7" : "#dcfce7", color: isRecordSimulado(rec) ? "#b45309" : "#15803d" }}>
+                                {isRecordSimulado(rec) ? "SIMULADO" : "REAL"}
+                              </span>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     );
                   })}
