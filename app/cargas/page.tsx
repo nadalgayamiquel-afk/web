@@ -709,7 +709,14 @@ function CargasContent() {
   useEffect(() => {
     try {
       const saved = localStorage.getItem("gps_datos_map_v1");
-      if (saved) setGpsRecords(JSON.parse(saved));
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setGpsRecords(parsed);
+          // Si había datos en localStorage, respaldar a Supabase para que nada se pierda
+          saveGpsDatosBatch(parsed).catch(() => {});
+        }
+      }
     } catch {}
   }, []);
 
@@ -722,12 +729,13 @@ function CargasContent() {
           const map = new Map();
           prev.forEach((r) => map.set(`${r.jugador_id}_${r.fecha}`, r));
           dbGps.forEach((r) => map.set(`${r.jugador_id}_${r.fecha}`, r));
-          const merged = Array.from(map.values());
-          if (typeof window !== "undefined") {
-            localStorage.setItem("gps_datos_map_v1", JSON.stringify(merged));
-          }
-          return merged;
+          return Array.from(map.values());
         });
+        // Liberar la memoria local saturada en localStorage de forma segura
+        try {
+          localStorage.removeItem("gps_datos_map_v1");
+          localStorage.removeItem("gps_datos_cache");
+        } catch {}
       }
     } catch (e) {}
   };
@@ -880,17 +888,16 @@ function CargasContent() {
       // Guardar batch en la BBDD Supabase datos_gps
       await saveGpsDatosBatch(newRecords);
 
-      // Actualizar estado local y localStorage
+      // Actualizar estado local en memoria
       setGpsRecords((prev) => {
         const map = new Map();
         prev.forEach((r) => map.set(`${r.jugador_id}_${r.fecha}`, r));
         newRecords.forEach((r) => map.set(`${r.jugador_id}_${r.fecha}`, r));
-        const updated = Array.from(map.values());
-        if (typeof window !== "undefined") {
-          localStorage.setItem("gps_datos_map_v1", JSON.stringify(updated));
-        }
-        return updated;
+        return Array.from(map.values());
       });
+      try {
+        localStorage.removeItem("gps_datos_map_v1");
+      } catch {}
 
       const now = new Date().toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
       setGpsUploadStatus({
