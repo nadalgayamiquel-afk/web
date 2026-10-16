@@ -15,7 +15,7 @@ export interface CargaExternaSectionProps {
   renderDisponibilidadBadge?: (player: any) => React.ReactNode;
 }
 
-export type ExternaSubTab = "velocidad" | "perfil_competitivo" | "ratios_semanales" | "preguntas_clave" | "sesiones_bbdd";
+export type ExternaSubTab = "velocidad" | "acwr" | "perfil_competitivo" | "ratios_semanales" | "preguntas_clave" | "sesiones_bbdd";
 
 function isRecordSimulado(record: any): boolean {
   if (!record) return false;
@@ -51,6 +51,13 @@ export default function CargaExternaSection({
   const [vmaxSortBy, setVmaxSortBy] = useState<"dias_desc" | "vmax_desc" | "nombre">("dias_desc");
   const [vmaxFilterPos, setVmaxFilterPos] = useState<string>("TODOS");
   const [vmaxSearch, setVmaxSearch] = useState<string>("");
+
+
+  // ── ESTADOS PARA MONITOR ACWR (AGUDA : CRÓNICA) ──
+  const [acwrMetric, setAcwrMetric] = useState<"player_load" | "distancia" | "hsr" | "sprint" | "acc_dec">("player_load");
+  const [acwrFilterPos, setAcwrFilterPos] = useState<string>("TODOS");
+  const [acwrSortBy, setAcwrSortBy] = useState<"riesgo_first" | "acwr_desc" | "acwr_asc" | "nombre">("riesgo_first");
+  const [acwrSearch, setAcwrSearch] = useState<string>("");
 
   // ── 2. ESTADOS PARA PERFIL COMPETITIVO ──
   const [profileSearch, setProfileSearch] = useState<string>("");
@@ -245,6 +252,120 @@ export default function CargaExternaSection({
 
     return { optimo, alerta, riesgo, sinDatos, maxTeamSpeed, fastestPlayer };
   }, [vmaxAnalysis]);
+
+
+  // ── CÁLCULO DE ACWR (ACUTE:CHRONIC WORKLOAD RATIO) POR JUGADOR ──
+  const acwrAnalysis = useMemo(() => {
+    const refDateObj = new Date((selectedDate || latestGpsDate) + "T23:59:59");
+    const acuteStart = new Date(refDateObj);
+    acuteStart.setDate(acuteStart.getDate() - 7);
+
+    const chronicStart = new Date(refDateObj);
+    chronicStart.setDate(chronicStart.getDate() - 28);
+
+    const realChronicRecords = gpsRecords.filter((r) => {
+      if (isRecordSimulado(r)) return false;
+      if (!r.fecha) return false;
+      const rDate = new Date(r.fecha + "T12:00:00");
+      return rDate >= chronicStart && rDate <= refDateObj;
+    });
+
+    const distinctDates = Array.from(new Set(realChronicRecords.map((r) => r.fecha)));
+    const totalDaysSpan = distinctDates.length > 0 ? Math.max(7, Math.min(28, distinctDates.length)) : 28;
+
+    return jugadores.map((j) => {
+      const playerRecords = realChronicRecords.filter((r) => r.jugador_id === j.id);
+
+      let acuteLoad = 0;
+      let acuteSessions = 0;
+      let chronicTotal = 0;
+      let chronicSessions = 0;
+
+      playerRecords.forEach((r) => {
+        const rDate = new Date(r.fecha + "T12:00:00");
+        let val = 0;
+        if (acwrMetric === "player_load") {
+          val = Number(r.metricas?.["Player Load"] || r.player_load || 0);
+        } else if (acwrMetric === "distancia") {
+          val = Number(r.metricas?.["Distance(m)"] || r.distancia_total || 0);
+        } else if (acwrMetric === "hsr") {
+          val = Number(r.metricas?.["HSR Abs (m)"] || r.metricas?.hsr || r.distancia_z4 || 0);
+        } else if (acwrMetric === "sprint") {
+          val = Number(r.metricas?.["Sprint (m)"] || r.metricas?.sprint_m || (r.num_sprints ? r.num_sprints * 15 : 0));
+        } else if (acwrMetric === "acc_dec") {
+          val = Number(r.metricas?.["Accs Count"] || r.aceleraciones || 0) + Number(r.metricas?.["Decs Count"] || r.desaceleraciones || 0);
+        }
+
+        chronicTotal += val;
+        chronicSessions++;
+
+        if (rDate >= acuteStart && rDate <= refDateObj) {
+          acuteLoad += val;
+          acuteSessions++;
+        }
+      });
+
+      const chronicWeekly = totalDaysSpan >= 28
+        ? (chronicTotal / 4)
+        : (chronicTotal / totalDaysSpan) * 7;
+
+      const acwr = chronicWeekly > 0 ? Math.round((acuteLoad / chronicWeekly) * 100) / 100 : 0;
+
+      let zone: "subentrenamiento" | "sweet_spot" | "precaucion" | "peligro" | "sin_datos" = "sin_datos";
+      if (chronicWeekly > 0 || acuteLoad > 0) {
+        if (acwr < 0.80) zone = "subentrenamiento";
+        else if (acwr <= 1.30) zone = "sweet_spot";
+        else if (acwr <= 1.50) zone = "precaucion";
+        else zone = "peligro";
+      }
+
+      return {
+        jugador: j,
+        acuteLoad: Math.round(acuteLoad),
+        acuteSessions,
+        chronicWeekly: Math.round(chronicWeekly),
+        chronicSessions,
+        acwr,
+        zone,
+      };
+    });
+  }, [gpsRecords, jugadores, selectedDate, latestGpsDate, acwrMetric]);
+
+  const filteredAcwrList = useMemo(() => {
+    let list = acwrAnalysis.filter((item) => {
+      const name = (item.jugador.apodo || item.jugador.nombre || "").toLowerCase();
+      const pos = (item.jugador.posicion || "").toUpperCase();
+      if (acwrSearch && !name.includes(acwrSearch.toLowerCase())) return false;
+      if (acwrFilterPos !== "TODOS") {
+        if (acwrFilterPos === "DEF" && !pos.includes("DEF") && !pos.includes("LAT") && !pos.includes("CEN")) return false;
+        if (acwrFilterPos === "MED" && !pos.includes("MED") && !pos.includes("PIV") && !pos.includes("INT")) return false;
+        if (acwrFilterPos === "DEL" && !pos.includes("DEL") && !pos.includes("EXT") && !pos.includes("PUN")) return false;
+        if (acwrFilterPos === "POR" && !pos.includes("POR")) return false;
+      }
+      return true;
+    });
+
+    if (acwrSortBy === "riesgo_first") {
+      const priority: Record<string, number> = { peligro: 1, precaucion: 2, subentrenamiento: 3, sweet_spot: 4, sin_datos: 5 };
+      list.sort((a, b) => (priority[a.zone] || 9) - (priority[b.zone] || 9));
+    } else if (acwrSortBy === "acwr_desc") {
+      list.sort((a, b) => b.acwr - a.acwr);
+    } else if (acwrSortBy === "acwr_asc") {
+      list.sort((a, b) => a.acwr - b.acwr);
+    } else if (acwrSortBy === "nombre") {
+      list.sort((a, b) => (a.jugador.apodo || a.jugador.nombre).localeCompare(b.jugador.apodo || b.jugador.nombre));
+    }
+
+    return list;
+  }, [acwrAnalysis, acwrSearch, acwrFilterPos, acwrSortBy]);
+
+  const acwrStats = useMemo(() => {
+    const sweetSpot = acwrAnalysis.filter((x) => x.zone === "sweet_spot").length;
+    const sub = acwrAnalysis.filter((x) => x.zone === "subentrenamiento").length;
+    const precaucion = acwrAnalysis.filter((x) => x.zone === "precaucion").length;
+    const peligro = acwrAnalysis.filter((x) => x.zone === "peligro").length;
+    return { sweetSpot, sub, precaucion, peligro };
+  }, [acwrAnalysis]);
 
   // ── 4. CÁLCULO DE PERFIL COMPETITIVO (MATCH BENCHMARK) ──
   const competitiveProfiles = useMemo(() => {
@@ -488,6 +609,29 @@ export default function CargaExternaSection({
           <span>🚀</span> Velocidad & Vmax (90%)
         </button>
 
+        <button
+          type="button"
+          onClick={() => setSubTab("acwr")}
+          style={{
+            flex: "1 1 160px",
+            padding: "8px 14px",
+            borderRadius: "8px",
+            fontSize: "12.5px",
+            fontWeight: 800,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "6px",
+            background: subTab === "acwr" ? "#16a34a" : "transparent",
+            color: subTab === "acwr" ? "#ffffff" : "#475569",
+            border: "none",
+            boxShadow: subTab === "acwr" ? "0 2px 6px rgba(22,163,74,0.25)" : "none",
+            transition: "all 0.15s ease",
+          }}
+        >
+          <span>⚖️</span> ACWR (Aguda : Crónica)
+        </button>
         <button
           type="button"
           onClick={() => setSubTab("perfil_competitivo")}
@@ -893,6 +1037,346 @@ export default function CargaExternaSection({
                           ) : (
                             <span style={{ fontSize: "11px", color: "#94a3b8" }}>Sin registros</span>
                           )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* ── SUB-PESTAÑA ACWR (AGUDA : CRÓNICA DE GABBETT) ── */}
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {subTab === "acwr" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+          {/* BANNER KPI CARDS DE ESTADO DE ACWR */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px" }}>
+            <div style={{ background: "#ffffff", padding: "14px 18px", borderRadius: "10px", border: "1px solid #cbd5e1", borderLeft: "4px solid #16a34a", display: "flex", flexDirection: "column", gap: "4px" }}>
+              <span style={{ fontSize: "11px", fontWeight: 800, color: "#16a34a", textTransform: "uppercase" }}>🟢 Sweet Spot (0.80 - 1.30)</span>
+              <strong style={{ fontSize: "24px", fontWeight: 900, color: "#0f172a" }}>
+                {acwrStats.sweetSpot} <small style={{ fontSize: "12px", color: "#64748b" }}>jugadores</small>
+              </strong>
+              <span style={{ fontSize: "11px", color: "#64748b" }}>Rango óptimo: Alto rendimiento y mínimo riesgo de lesión</span>
+            </div>
+
+            <div style={{ background: "#ffffff", padding: "14px 18px", borderRadius: "10px", border: "1px solid #cbd5e1", borderLeft: "4px solid #f59e0b", display: "flex", flexDirection: "column", gap: "4px" }}>
+              <span style={{ fontSize: "11px", fontWeight: 800, color: "#d97706", textTransform: "uppercase" }}>🟡 Subentrenamiento (&lt; 0.80)</span>
+              <strong style={{ fontSize: "24px", fontWeight: 900, color: "#b45309" }}>
+                {acwrStats.sub} <small style={{ fontSize: "12px", color: "#64748b" }}>jugadores</small>
+              </strong>
+              <span style={{ fontSize: "11px", color: "#64748b" }}>Carga baja reciente: Riesgo por desacondicionamiento</span>
+            </div>
+
+            <div style={{ background: "#ffffff", padding: "14px 18px", borderRadius: "10px", border: "1px solid #cbd5e1", borderLeft: "4px solid #ea580c", display: "flex", flexDirection: "column", gap: "4px" }}>
+              <span style={{ fontSize: "11px", fontWeight: 800, color: "#c2410c", textTransform: "uppercase" }}>🟠 Precaución (1.30 - 1.50)</span>
+              <strong style={{ fontSize: "24px", fontWeight: 900, color: "#c2410c" }}>
+                {acwrStats.precaucion} <small style={{ fontSize: "12px", color: "#64748b" }}>jugadores</small>
+              </strong>
+              <span style={{ fontSize: "11px", color: "#64748b" }}>Aumento moderado de fatiga: Monitorear sensaciones</span>
+            </div>
+
+            <div style={{ background: "#ffffff", padding: "14px 18px", borderRadius: "10px", border: "1px solid #cbd5e1", borderLeft: "4px solid #ef4444", display: "flex", flexDirection: "column", gap: "4px" }}>
+              <span style={{ fontSize: "11px", fontWeight: 800, color: "#dc2626", textTransform: "uppercase" }}>🔴 Peligro Spike (&gt; 1.50)</span>
+              <strong style={{ fontSize: "24px", fontWeight: 900, color: "#b91c1c" }}>
+                {acwrStats.peligro} <small style={{ fontSize: "12px", color: "#64748b" }}>jugadores</small>
+              </strong>
+              <span style={{ fontSize: "11px", color: "#64748b" }}>Pico agudo de carga: Riesgo elevado de lesión muscular</span>
+            </div>
+          </div>
+
+          {/* BARRA DE HERRAMIENTAS Y FILTROS DE ACWR */}
+          <div
+            style={{
+              background: "#ffffff",
+              padding: "12px 16px",
+              borderRadius: "10px",
+              border: "1px solid #cbd5e1",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              flexWrap: "wrap",
+              gap: "10px",
+            }}
+          >
+            {/* Lado Izquierdo: Métrica Base para ACWR */}
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+              <span style={{ fontSize: "12px", fontWeight: 800, color: "#0f172a" }}>
+                📊 Variable ACWR:
+              </span>
+              {[
+                { key: "player_load", label: "Player Load" },
+                { key: "distancia", label: "Distancia Total" },
+                { key: "hsr", label: "HSR (>18 km/h)" },
+                { key: "sprint", label: "Sprint (>25 km/h)" },
+                { key: "acc_dec", label: "Acc + Dec" },
+              ].map((m) => (
+                <button
+                  key={m.key}
+                  type="button"
+                  onClick={() => setAcwrMetric(m.key as any)}
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: "6px",
+                    border: acwrMetric === m.key ? "1.5px solid #16a34a" : "1px solid #cbd5e1",
+                    background: acwrMetric === m.key ? "#dcfce7" : "#f8fafc",
+                    color: acwrMetric === m.key ? "#15803d" : "#475569",
+                    fontWeight: acwrMetric === m.key ? 800 : 600,
+                    fontSize: "12px",
+                    cursor: "pointer",
+                  }}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Lado Derecho: Filtros y Orden */}
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+              <select
+                value={acwrFilterPos}
+                onChange={(e) => setAcwrFilterPos(e.target.value)}
+                style={{
+                  padding: "5px 8px",
+                  borderRadius: "6px",
+                  border: "1px solid #cbd5e1",
+                  background: "#ffffff",
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  color: "#0f172a",
+                }}
+              >
+                <option value="TODOS">Todas las Posiciones</option>
+                <option value="DEF">Defensas</option>
+                <option value="MED">Centrocampistas</option>
+                <option value="DEL">Delanteros</option>
+                <option value="POR">Porteros</option>
+              </select>
+
+              <select
+                value={acwrSortBy}
+                onChange={(e) => setAcwrSortBy(e.target.value as any)}
+                style={{
+                  padding: "5px 8px",
+                  borderRadius: "6px",
+                  border: "1px solid #cbd5e1",
+                  background: "#ffffff",
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  color: "#0f172a",
+                }}
+              >
+                <option value="riesgo_first">Ordenar: Riesgo primero (Peligro arriba)</option>
+                <option value="acwr_desc">Ordenar: ACWR Mayor a menor</option>
+                <option value="acwr_asc">Ordenar: ACWR Menor a mayor</option>
+                <option value="nombre">Ordenar: Nombre</option>
+              </select>
+
+              <input
+                type="text"
+                placeholder="Buscar jugador..."
+                value={acwrSearch}
+                onChange={(e) => setAcwrSearch(e.target.value)}
+                style={{
+                  padding: "5px 10px",
+                  borderRadius: "6px",
+                  border: "1px solid #cbd5e1",
+                  fontSize: "12px",
+                  outline: "none",
+                  width: "140px",
+                }}
+              />
+            </div>
+          </div>
+
+          {/* TABLA PRINCIPAL DE ACWR */}
+          <div style={{ background: "#ffffff", borderRadius: "10px", border: "1px solid #cbd5e1", overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.03)" }}>
+            <div style={{ padding: "12px 16px", borderBottom: "1px solid #e2e8f0", background: "#f8fafc", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ fontSize: "13px", fontWeight: 900, color: "#0f172a", textTransform: "uppercase" }}>
+                  Monitor ACWR (Carga Aguda 7d : Crónica 28d)
+                </span>
+                <span style={{ fontSize: "10.5px", fontWeight: 800, background: "#dcfce7", color: "#15803d", border: "1px solid #bbf7d0", padding: "2px 8px", borderRadius: "12px", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                  <span>🛡️</span> Datos 100% Reales
+                </span>
+                <span style={{ fontSize: "11px", fontWeight: 700, color: "#64748b", background: "#e2e8f0", padding: "2px 8px", borderRadius: "12px" }}>
+                  {filteredAcwrList.length} jugadores
+                </span>
+              </div>
+              <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>
+                Fecha ref: {selectedDate || latestGpsDate}
+              </span>
+            </div>
+
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12.5px", color: "#0f172a" }}>
+                <thead>
+                  <tr style={{ background: "#f1f5f9", borderBottom: "2px solid #cbd5e1", textAlign: "left", color: "#475569", fontSize: "11px", textTransform: "uppercase" }}>
+                    <th style={{ padding: "10px 12px" }}>Jugador</th>
+                    <th style={{ padding: "10px 10px", textAlign: "right" }}>Carga Aguda (7 días)</th>
+                    <th style={{ padding: "10px 10px", textAlign: "right" }}>Carga Crónica (Semanal 28d)</th>
+                    <th style={{ padding: "10px 12px", textAlign: "center" }}>Ratio ACWR</th>
+                    <th style={{ padding: "10px 12px", textAlign: "center" }}>Estado / Zona de Riesgo</th>
+                    <th style={{ padding: "10px 12px", textAlign: "left" }}>Rango Visual (Gabbett)</th>
+                    <th style={{ padding: "10px 12px", textAlign: "left" }}>Orientación Práctica</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredAcwrList.map((item, idx) => {
+                    const j = item.jugador;
+                    const r = item.acwr;
+
+                    let badgeColor = "#64748b";
+                    let badgeBg = "#f1f5f9";
+                    let badgeText = "Sin datos suficientes";
+                    let recomendacion = "Esperando acumular sesiones reales.";
+
+                    if (item.zone === "sweet_spot") {
+                      badgeColor = "#15803d";
+                      badgeBg = "#dcfce7";
+                      badgeText = "🟢 Sweet Spot (0.8 - 1.3)";
+                      recomendacion = "Estímulo óptimo. Mantener plan de carga.";
+                    } else if (item.zone === "subentrenamiento") {
+                      badgeColor = "#b45309";
+                      badgeBg = "#fef3c7";
+                      badgeText = "🟡 Subentrenamiento (< 0.8)";
+                      recomendacion = "Carga baja. Compensar con tareas si no jugó.";
+                    } else if (item.zone === "precaucion") {
+                      badgeColor = "#c2410c";
+                      badgeBg = "#ffedd5";
+                      badgeText = "🟠 Precaución (1.3 - 1.5)";
+                      recomendacion = "Fatiga acumulada. Monitorear RPE y descanso.";
+                    } else if (item.zone === "peligro") {
+                      badgeColor = "#b91c1c";
+                      badgeBg = "#fee2e2";
+                      badgeText = "🔴 Peligro Spike (> 1.5)";
+                      recomendacion = "Pico agudo de carga. Descargar o limitar minutos.";
+                    }
+
+                    // Porcentaje en el rango visual (de 0.0 a 2.0 ACWR)
+                    const clampAcwr = Math.max(0, Math.min(2.0, r));
+                    const pinPct = Math.round((clampAcwr / 2.0) * 100);
+
+                    return (
+                      <tr
+                        key={j.id || idx}
+                        style={{
+                          borderBottom: "1px solid #f1f5f9",
+                          background: item.zone === "peligro" ? "rgba(254, 226, 226, 0.3)" : idx % 2 === 0 ? "#ffffff" : "#fcfcfd",
+                        }}
+                      >
+                        {/* Jugador */}
+                        <td style={{ padding: "10px 12px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                            {renderDisponibilidadBadge && renderDisponibilidadBadge(j)}
+                            <div style={{ display: "flex", flexDirection: "column" }}>
+                              <span style={{ fontWeight: 800, color: "#0f172a" }}>
+                                {j.dorsal ? `#${j.dorsal} ` : ""}{j.apodo || j.nombre}
+                              </span>
+                              <span style={{ fontSize: "10.5px", color: "#64748b" }}>
+                                {j.posicion || "Jugador"}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Carga Aguda */}
+                        <td style={{ padding: "10px 10px", textAlign: "right" }}>
+                          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+                            <strong style={{ fontSize: "13px", color: "#0f172a" }}>
+                              {item.acuteLoad > 0 ? item.acuteLoad.toLocaleString("es-ES") : "-"}
+                            </strong>
+                            <span style={{ fontSize: "10.5px", color: "#64748b" }}>
+                              {item.acuteSessions} {item.acuteSessions === 1 ? "sesión" : "sesiones"} (7d)
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Carga Crónica */}
+                        <td style={{ padding: "10px 10px", textAlign: "right" }}>
+                          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+                            <strong style={{ fontSize: "13px", color: "#0f172a" }}>
+                              {item.chronicWeekly > 0 ? item.chronicWeekly.toLocaleString("es-ES") : "-"}
+                            </strong>
+                            <span style={{ fontSize: "10.5px", color: "#64748b" }}>
+                              {item.chronicSessions} {item.chronicSessions === 1 ? "sesión" : "sesiones"} (28d)
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Ratio ACWR */}
+                        <td style={{ padding: "10px 12px", textAlign: "center" }}>
+                          {item.chronicWeekly > 0 ? (
+                            <span
+                              style={{
+                                fontSize: "14px",
+                                fontWeight: 900,
+                                color: item.zone === "sweet_spot" ? "#15803d" : item.zone === "peligro" ? "#b91c1c" : item.zone === "precaucion" ? "#c2410c" : "#b45309",
+                              }}
+                            >
+                              {r.toFixed(2)}
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: "12px", color: "#94a3b8" }}>-</span>
+                          )}
+                        </td>
+
+                        {/* Estado / Zona */}
+                        <td style={{ padding: "10px 12px", textAlign: "center" }}>
+                          <span
+                            style={{
+                              padding: "3px 8px",
+                              borderRadius: "6px",
+                              fontSize: "11px",
+                              fontWeight: 800,
+                              background: badgeBg,
+                              color: badgeColor,
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {badgeText}
+                          </span>
+                        </td>
+
+                        {/* Rango Visual (Gauge Gabbett) */}
+                        <td style={{ padding: "10px 12px", minWidth: "150px" }}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                            <div style={{ position: "relative", width: "100%", height: "8px", borderRadius: "4px", background: "#e2e8f0", overflow: "hidden", display: "flex" }}>
+                              {/* Subentrenamiento (< 0.8 -> 40% del ancho) */}
+                              <div style={{ width: "40%", height: "100%", background: "#fde047" }} title="Subentrenamiento (< 0.80)" />
+                              {/* Sweet Spot (0.8 - 1.3 -> 25% del ancho) */}
+                              <div style={{ width: "25%", height: "100%", background: "#4ade80" }} title="Sweet Spot (0.80 - 1.30)" />
+                              {/* Precaución (1.3 - 1.5 -> 10% del ancho) */}
+                              <div style={{ width: "10%", height: "100%", background: "#fb923c" }} title="Precaución (1.30 - 1.50)" />
+                              {/* Peligro (> 1.5 -> 25% del ancho) */}
+                              <div style={{ width: "25%", height: "100%", background: "#f87171" }} title="Peligro (> 1.50)" />
+                            </div>
+                            {item.chronicWeekly > 0 && (
+                              <div style={{ position: "relative", width: "100%", height: "6px" }}>
+                                <div
+                                  style={{
+                                    position: "absolute",
+                                    left: `${pinPct}%`,
+                                    top: "-2px",
+                                    transform: "translateX(-50%)",
+                                    width: "0",
+                                    height: "0",
+                                    borderLeft: "4px solid transparent",
+                                    borderRight: "4px solid transparent",
+                                    borderBottom: "5px solid #0f172a",
+                                  }}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Orientación Práctica */}
+                        <td style={{ padding: "10px 12px", fontSize: "11px", color: "#475569" }}>
+                          {recomendacion}
                         </td>
                       </tr>
                     );
