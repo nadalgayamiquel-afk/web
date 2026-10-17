@@ -132,15 +132,7 @@ export default function HistorialLesionesView({
   const seasonEnd = is2025_26 ? "2026-06-30" : "2027-06-30";
   const seasonLabel = is2025_26 ? "Temporada 2025/26" : "Temporada 2026/27";
   // Estado para mostrar / ocultar el gráfico dinámico
-  const [showChart, setShowChart] = useState<boolean>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const saved = localStorage.getItem("historial_show_chart_v1");
-        if (saved !== null) return JSON.parse(saved);
-      } catch (e) {}
-    }
-    return true;
-  });
+  const [showChart, setShowChart] = useState<boolean>(true);
 
   const toggleShowChart = (val?: boolean) => {
     const nextVal = typeof val === "boolean" ? val : !showChart;
@@ -166,34 +158,35 @@ export default function HistorialLesionesView({
   const [saveIndicatorId, setSaveIndicatorId] = useState<string | null>(null);
 
   // Claves de lesiones eliminadas por el usuario
-  const [deletedLesionKeys, setDeletedLesionKeys] = useState<Set<string>>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const raw = localStorage.getItem("lesiones_eliminadas_v1");
-        return raw ? new Set(JSON.parse(raw)) : new Set();
-      } catch (e) {}
-    }
-    return new Set();
-  });
+  const [deletedLesionKeys, setDeletedLesionKeys] = useState<Set<string>>(new Set());
 
   // 1. Estado local de registros clasificados detallados (filtrado estricto por temporada activa y sin 30-08-2026)
-  const [localRecords, setLocalRecords] = useState<LesionFormData[]>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const raw = localStorage.getItem("lesiones_registro_detallado_v1");
-        if (raw) {
-          const parsed: LesionFormData[] = JSON.parse(raw);
-          // Purgar de forma permanente cualquier registro fechado el 30-08-2026 (fecha cuestionario inicial)
-          const cleaned = parsed.filter((r) => !isFechaCuestionarioOInvalida(r.fecha));
-          if (cleaned.length !== parsed.length) {
-            localStorage.setItem("lesiones_registro_detallado_v1", JSON.stringify(cleaned));
-          }
-          return cleaned;
+  const [localRecords, setLocalRecords] = useState<LesionFormData[]>([]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const savedChart = localStorage.getItem("historial_show_chart_v1");
+      if (savedChart !== null) setShowChart(JSON.parse(savedChart));
+    } catch (e) {}
+
+    try {
+      const rawDeleted = localStorage.getItem("lesiones_eliminadas_v1");
+      if (rawDeleted) setDeletedLesionKeys(new Set(JSON.parse(rawDeleted)));
+    } catch (e) {}
+
+    try {
+      const raw = localStorage.getItem("lesiones_registro_detallado_v1");
+      if (raw) {
+        const parsed: LesionFormData[] = JSON.parse(raw);
+        const cleaned = parsed.filter((r) => !isFechaCuestionarioOInvalida(r.fecha));
+        if (cleaned.length !== parsed.length) {
+          localStorage.setItem("lesiones_registro_detallado_v1", JSON.stringify(cleaned));
         }
-      } catch (e) {}
-    }
-    return [];
-  });
+        setLocalRecords(cleaned);
+      }
+    } catch (e) {}
+  }, []);
 
   // Guardar en localStorage cada vez que localRecords cambia
   const saveRecordsToStorage = (updatedList: LesionFormData[]) => {

@@ -461,13 +461,7 @@ function DisponibilidadContent() {
 
   const [seasons, setSeasons] = useState<Array<keyof typeof teamsBySeason>>(["2026/27"]);
   const [team, setTeam] = useState<string>("CE Europa");
-  const [pitchSystem, setPitchSystem] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("disponibilidad_pitch_system");
-      if (saved) return saved;
-    }
-    return "3-6-1";
-  });
+  const [pitchSystem, setPitchSystem] = useState<string>("3-6-1");
 
   useEffect(() => {
     try {
@@ -478,6 +472,8 @@ function DisponibilidadContent() {
       }
       const savedTeam = localStorage.getItem("active_team");
       if (savedTeam) setTeam(savedTeam);
+      const savedPitch = localStorage.getItem("disponibilidad_pitch_system");
+      if (savedPitch) setPitchSystem(savedPitch);
     } catch {}
   }, []);
 
@@ -717,15 +713,14 @@ function DisponibilidadContent() {
   };
 
   // Control de etiquetas R (Regenerativo) y C (Compensa) por jugador y fecha
-  const [playerTags, setPlayerTags] = useState<Record<string, { r?: boolean; c?: boolean }>>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const saved = localStorage.getItem("disponibilidad_player_tags_v1");
-        if (saved) return JSON.parse(saved);
-      } catch (e) {}
-    }
-    return {};
-  });
+  const [playerTags, setPlayerTags] = useState<Record<string, { r?: boolean; c?: boolean }>>({});
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("disponibilidad_player_tags_v1");
+      if (saved) setPlayerTags(JSON.parse(saved));
+    } catch (e) {}
+  }, []);
 
   const toggleTagR = (playerId: string) => {
     const key = `${playerId}_${selectedDate}`;
@@ -1037,15 +1032,14 @@ function DisponibilidadContent() {
   const [showAvailability, setShowAvailability] = useState<boolean>(true);
 
   // Control para activar o desactivar imágenes de los deportistas
-  const [showPlayerPhotos, setShowPlayerPhotos] = useState<boolean>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const saved = localStorage.getItem("disponibilidad_show_photos");
-        if (saved !== null) return saved === "true";
-      } catch (e) {}
-    }
-    return false;
-  });
+  const [showPlayerPhotos, setShowPlayerPhotos] = useState<boolean>(false);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("disponibilidad_show_photos");
+      if (saved !== null) setShowPlayerPhotos(saved === "true");
+    } catch (e) {}
+  }, []);
 
   const togglePlayerPhotos = () => {
     setShowPlayerPhotos((prev) => {
@@ -1137,15 +1131,14 @@ function DisponibilidadContent() {
   const [liveRecords, setLiveRecords] = useState<any[]>([]);
   const [jugadoresDB, setJugadoresDB] = useState<any[]>([]);
   const [archivadosDB, setArchivadosDB] = useState<any[]>([]);
-  const [extraArchivedPlayerIds, setExtraArchivedPlayerIds] = useState<string[]>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const saved = localStorage.getItem("disponibilidad_extra_archived_v1");
-        if (saved) return JSON.parse(saved);
-      } catch {}
-    }
-    return [];
-  });
+  const [extraArchivedPlayerIds, setExtraArchivedPlayerIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("disponibilidad_extra_archived_v1");
+      if (saved) setExtraArchivedPlayerIds(JSON.parse(saved));
+    } catch {}
+  }, []);
 
   const availableTeams = Array.from(new Set(seasons.flatMap((seasonOption) => teamsBySeason[seasonOption])));
 
