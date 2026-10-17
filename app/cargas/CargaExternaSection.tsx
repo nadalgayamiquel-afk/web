@@ -14,6 +14,7 @@ import {
   ReferenceArea,
   ReferenceLine,
   Cell,
+  LabelList,
 } from "recharts";
 
 export interface CargaExternaSectionProps {
@@ -112,36 +113,74 @@ function CustomAcwrTooltip({ active, payload }: any) {
     badgeLabel = "🔴 Peligro Spike (> 1.5)";
   }
 
+  const isMatch = Boolean(data.isMatch);
+  const isOff = !data.hasSession;
+
   return (
     <div
       style={{
         background: "#0f172a",
         color: "#f8fafc",
-        padding: "10px 14px",
-        borderRadius: "8px",
+        padding: "12px 15px",
+        borderRadius: "10px",
         fontSize: "12px",
-        boxShadow: "0 4px 14px rgba(0,0,0,0.3)",
-        border: "1px solid #334155",
-        minWidth: "220px",
+        boxShadow: "0 6px 18px rgba(0,0,0,0.35)",
+        border: isMatch ? "1.5px solid #ef4444" : "1px solid #334155",
+        minWidth: "240px",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px", borderBottom: "1px solid #334155", paddingBottom: "4px" }}>
-        <span style={{ fontWeight: 800, color: "#e2e8f0" }}>{data.fecha}</span>
-        {data.md && (
-          <span style={{ fontSize: "10px", background: "#3b82f6", color: "#ffffff", padding: "1px 6px", borderRadius: "4px", fontWeight: 800 }}>
-            {data.md}
+      {/* Cabecera del Tooltip */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px", borderBottom: "1px solid #334155", paddingBottom: "6px" }}>
+        <span style={{ fontWeight: 900, color: "#f1f5f9", fontSize: "12.5px" }}>{data.fecha}</span>
+        {isMatch ? (
+          <span style={{ fontSize: "10px", background: "#ef4444", color: "#ffffff", padding: "2px 7px", borderRadius: "4px", fontWeight: 900, letterSpacing: "0.5px" }}>
+            ⚽ MATCH DAY
+          </span>
+        ) : isOff ? (
+          <span style={{ fontSize: "10px", background: "#475569", color: "#e2e8f0", padding: "2px 7px", borderRadius: "4px", fontWeight: 800 }}>
+            🏖️ DÍA LIBRE (OFF)
+          </span>
+        ) : (
+          <span style={{ fontSize: "10px", background: "#0284c7", color: "#ffffff", padding: "2px 7px", borderRadius: "4px", fontWeight: 800 }}>
+            🏋️ {data.md || "ENTRENO"}
           </span>
         )}
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+        {/* Volumen del día */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span style={{ color: "#94a3b8" }}>Volumen del Día:</span>
-          <strong style={{ color: "#38bdf8", fontSize: "13px" }}>
+          <strong style={{ color: isOff ? "#64748b" : "#38bdf8", fontSize: "13.5px" }}>
             {Number(data.volumen).toLocaleString()} {currentCfg.unit}
           </strong>
         </div>
 
+        {/* Porcentaje de cambio de sesión a otra */}
+        {data.hasSession && (
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#1e293b", padding: "4px 8px", borderRadius: "6px" }}>
+            <span style={{ color: "#cbd5e1", fontSize: "11px", fontWeight: 700 }}>
+              Δ% vs Sesión Ant:
+            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+              <strong style={{
+                fontSize: "12.5px",
+                color: data.pctChange === null ? "#94a3b8" :
+                       data.pctChange > 30 ? "#f87171" :
+                       data.pctChange > 0 ? "#4ade80" : "#60a5fa"
+              }}>
+                {data.changeLabel}
+              </strong>
+              {data.prevActiveDate && (
+                <span style={{ fontSize: "9.5px", color: "#64748b" }}>
+                  (vs {data.prevActiveDate.split("-").slice(1).join("/")})
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Carga Aguda y Crónica */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span style={{ color: "#94a3b8" }}>Carga Aguda (7d):</span>
           <strong style={{ color: "#ffffff" }}>
@@ -156,16 +195,18 @@ function CustomAcwrTooltip({ active, payload }: any) {
           </strong>
         </div>
 
-        <div style={{ marginTop: "4px", paddingTop: "4px", borderTop: "1px dashed #334155", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        {/* Ratio ACWR */}
+        <div style={{ marginTop: "4px", paddingTop: "5px", borderTop: "1px dashed #334155", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span style={{ color: "#94a3b8", fontWeight: 700 }}>Ratio ACWR:</span>
-          <strong style={{ color: "#facc15", fontSize: "14px" }}>{Number(data.acwr).toFixed(2)}</strong>
+          <strong style={{ color: "#facc15", fontSize: "15px" }}>{Number(data.acwr).toFixed(2)}</strong>
         </div>
 
-        <div style={{ marginTop: "4px", padding: "3px 6px", borderRadius: "4px", background: badgeBg, color: badgeColor, fontSize: "10.5px", fontWeight: 800, textAlign: "center" }}>
+        {/* Badge Zona de Riesgo */}
+        <div style={{ marginTop: "3px", padding: "3px 6px", borderRadius: "4px", background: badgeBg, color: badgeColor, fontSize: "10.5px", fontWeight: 800, textAlign: "center" }}>
           {badgeLabel}
         </div>
 
-        {data.jugadoresCount !== undefined && (
+        {data.jugadoresCount !== undefined && data.hasSession && (
           <div style={{ fontSize: "10px", color: "#64748b", marginTop: "2px", textAlign: "right" }}>
             👥 {data.jugadoresCount} jugadores activos
           </div>
@@ -174,6 +215,34 @@ function CustomAcwrTooltip({ active, payload }: any) {
     </div>
   );
 }
+
+
+const CustomXAxisTick = ({ x, y, payload }: any) => {
+  const parts = String(payload.value || "").split("\n");
+  const dateStr = parts[0] || "";
+  const mdStr = parts[1] || "";
+  const isMatch = mdStr.toUpperCase() === "MD";
+  const isOff = mdStr.toUpperCase() === "OFF";
+
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <text x={0} y={0} dy={12} textAnchor="middle" fill="#475569" fontSize={10.5} fontWeight={700}>
+        {dateStr}
+      </text>
+      <text
+        x={0}
+        y={0}
+        dy={25}
+        textAnchor="middle"
+        fill={isMatch ? "#dc2626" : isOff ? "#94a3b8" : "#0284c7"}
+        fontSize={10}
+        fontWeight={800}
+      >
+        {isMatch ? "⚽ MD" : mdStr}
+      </text>
+    </g>
+  );
+};
 
 export default function CargaExternaSection({
   gpsRecords,
@@ -526,32 +595,73 @@ export default function CargaExternaSection({
     const realGps = gpsRecords.filter((r) => !isRecordSimulado(r));
     if (realGps.length === 0) return [];
 
-    const distinctDates = Array.from(new Set(realGps.map((r) => r.fecha).filter(Boolean))).sort();
-    if (distinctDates.length === 0) return [];
+    // Fechas únicas activas
+    const distinctActiveDates = Array.from(new Set(realGps.map((r) => r.fecha).filter(Boolean))).sort();
+    if (distinctActiveDates.length === 0) return [];
 
-    const earliestDateObj = new Date(distinctDates[0] + "T12:00:00");
+    const minDateObj = new Date(distinctActiveDates[0] + "T12:00:00");
+    const maxDateObj = new Date(distinctActiveDates[distinctActiveDates.length - 1] + "T12:00:00");
 
-    const dailyMap = new Map<string, { volumen: number; count: number; md: string; teamAvg: number }>();
+    // CALENDARIO CONTINUO: No saltarse días vacíos (días de descanso / OFF)
+    const allCalendarDates: string[] = [];
+    const cur = new Date(minDateObj);
+    while (cur <= maxDateObj) {
+      allCalendarDates.push(cur.toISOString().split("T")[0]);
+      cur.setDate(cur.getDate() + 1);
+    }
 
-    distinctDates.forEach((dStr) => {
+    // Mapa de volumen y metadatos por fecha
+    const dailyMap = new Map<string, { volumen: number; count: number; md: string; isMatch: boolean; hasSession: boolean }>();
+
+    allCalendarDates.forEach((dStr) => {
       const dayRecords = realGps.filter((r) => r.fecha === dStr);
-      const teamSum = dayRecords.reduce((acc, r) => acc + getGpsMetricValue(r, acwrVolumeMetric), 0);
-      const teamAvg = dayRecords.length > 0 ? Math.round(teamSum / dayRecords.length) : 0;
-      const md = dayRecords[0]?.md || dayRecords[0]?.tipo_evento || "";
+      const hasSession = dayRecords.length > 0;
 
       let vol = 0;
-      if (acwrViewMode === "equipo") {
-        vol = teamAvg;
-      } else {
-        const targetId = acwrSelectedPlayerId || jugadores[0]?.id;
-        const pRecord = dayRecords.find((r) => r.jugador_id === targetId);
-        vol = pRecord ? Math.round(getGpsMetricValue(pRecord, acwrVolumeMetric)) : 0;
+      let md = "OFF";
+      let isMatch = false;
+
+      if (hasSession) {
+        md = dayRecords[0]?.match_day || dayRecords[0]?.md || (dayRecords[0]?.tipo_sesion === "PARTIDO" ? "MD" : "ENT");
+        isMatch = md.toUpperCase() === "MD" || dayRecords[0]?.tipo_sesion === "PARTIDO";
+
+        if (acwrViewMode === "equipo") {
+          const teamSum = dayRecords.reduce((acc, r) => acc + getGpsMetricValue(r, acwrVolumeMetric), 0);
+          vol = Math.round(teamSum / dayRecords.length);
+        } else {
+          const targetId = acwrSelectedPlayerId || jugadores[0]?.id;
+          const pRecord = dayRecords.find((r) => r.jugador_id === targetId);
+          vol = pRecord ? Math.round(getGpsMetricValue(pRecord, acwrVolumeMetric)) : 0;
+        }
       }
 
-      dailyMap.set(dStr, { volumen: vol, count: dayRecords.length, md, teamAvg });
+      dailyMap.set(dStr, { volumen: vol, count: dayRecords.length, md, isMatch, hasSession });
     });
 
-    const fullList = distinctDates.map((dStr) => {
+    // Calcular variación porcentual de sesión activa a otra sesión activa
+    let prevActiveVol: number | null = null;
+    let prevActiveDate: string | null = null;
+
+    const fullList = allCalendarDates.map((dStr) => {
+      const info = dailyMap.get(dStr)!;
+
+      let pctChange: number | null = null;
+      let changeLabel = "—";
+      let localPrevDate: string | null = null;
+
+      if (info.hasSession && info.volumen > 0) {
+        if (prevActiveVol !== null && prevActiveVol > 0) {
+          pctChange = Math.round(((info.volumen - prevActiveVol) / prevActiveVol) * 1000) / 10;
+          changeLabel = (pctChange >= 0 ? "+" : "") + pctChange.toFixed(1) + "%";
+          localPrevDate = prevActiveDate;
+        } else {
+          changeLabel = "Base";
+        }
+        prevActiveVol = info.volumen;
+        prevActiveDate = dStr;
+      }
+
+      // Carga Aguda (7d) y Crónica (28d) sobre el calendario completo (los días OFF con 0 computan naturalmente)
       const dObj = new Date(dStr + "T12:00:00");
       const acuteStart = new Date(dObj.getTime() - 6 * 24 * 3600 * 1000);
       const chronicStart = new Date(dObj.getTime() - 27 * 24 * 3600 * 1000);
@@ -569,7 +679,7 @@ export default function CargaExternaSection({
         }
       }
 
-      const daysSpan = Math.max(7, Math.min(28, Math.round((dObj.getTime() - earliestDateObj.getTime()) / (24 * 3600 * 1000)) + 1));
+      const daysSpan = Math.max(7, Math.min(28, Math.round((dObj.getTime() - minDateObj.getTime()) / (24 * 3600 * 1000)) + 1));
       const chronicWeekly = daysSpan >= 28 ? Math.round(chronicSum / 4) : Math.round((chronicSum / daysSpan) * 7);
       const acwr = chronicWeekly > 0 ? Math.round((acuteSum / chronicWeekly) * 100) / 100 : 0;
 
@@ -579,18 +689,21 @@ export default function CargaExternaSection({
       else if (acwr <= 1.5) zone = "precaucion";
       else zone = "peligro";
 
-      const info = dailyMap.get(dStr)!;
       const parts = dStr.split("-");
       const dateLabel = `${parts[2]}/${parts[1]}`;
-      const fullLabel = info.md ? `${dateLabel} (${info.md})` : dateLabel;
+      const fullLabel = `${dateLabel}\n${info.md}`;
 
       return {
         fecha: dStr,
         dateLabel,
         fullLabel,
         md: info.md,
+        isMatch: info.isMatch,
+        hasSession: info.hasSession,
         volumen: info.volumen,
-        teamAvg: info.teamAvg,
+        pctChange,
+        changeLabel,
+        prevActiveDate: localPrevDate,
         aguda7d: acuteSum,
         cronicaSemanal: chronicWeekly,
         acwr,
@@ -1609,9 +1722,10 @@ export default function CargaExternaSection({
                     
                     <XAxis
                       dataKey="fullLabel"
-                      tick={{ fontSize: 11, fill: "#475569", fontWeight: 700 }}
+                      tick={<CustomXAxisTick />}
                       tickLine={false}
                       axisLine={{ stroke: "#cbd5e1" }}
+                      height={40}
                     />
                     
                     {/* Eje Y1 (Izquierdo): Volumen Diario y Cargas */}
@@ -1672,13 +1786,53 @@ export default function CargaExternaSection({
                       radius={[5, 5, 0, 0]}
                       maxBarSize={44}
                     >
+                      <LabelList
+                        dataKey="changeLabel"
+                        position="top"
+                        content={(props: any) => {
+                          const { x, y, width, value, index } = props;
+                          const entry = acwrTimelineData[index];
+                          if (!entry || !entry.hasSession || !value || value === "—") return null;
+                          const isBase = value === "Base";
+                          const isPos = entry.pctChange !== null && entry.pctChange > 0;
+                          const isSpike = entry.pctChange !== null && entry.pctChange > 30;
+
+                          const labelColor = isBase ? "#64748b" : isSpike ? "#dc2626" : isPos ? "#15803d" : "#2563eb";
+
+                          return (
+                            <text
+                              x={x + width / 2}
+                              y={Math.max(10, y - 7)}
+                              textAnchor="middle"
+                              fill={labelColor}
+                              fontSize={9.5}
+                              fontWeight={800}
+                            >
+                              {value}
+                            </text>
+                          );
+                        }}
+                      />
                       {acwrTimelineData.map((entry, index) => {
-                        const isMatch = entry.md?.toUpperCase().includes("MD") && !entry.md?.toUpperCase().includes("-");
+                        const isMatch = Boolean(entry.isMatch);
+                        const isOff = !entry.hasSession;
+                        let barColor = ACWR_METRIC_CONFIG[acwrVolumeMetric]?.color || "#0284c7";
+
+                        if (isMatch) {
+                          barColor = "#dc2626"; // Crimson Red para Match Day
+                        } else if (entry.md === "MD-1") {
+                          barColor = "#38bdf8"; // Sky Blue para activación prepartido
+                        } else if (entry.md === "MD+1" || entry.md === "MD+2") {
+                          barColor = "#10b981"; // Emerald Green para recuperación
+                        } else if (isOff) {
+                          barColor = "#cbd5e1";
+                        }
+
                         return (
                           <Cell
                             key={`cell-${index}`}
-                            fill={isMatch ? "#b91c1c" : ACWR_METRIC_CONFIG[acwrVolumeMetric]?.color}
-                            fillOpacity={0.85}
+                            fill={barColor}
+                            fillOpacity={isOff ? 0.2 : 0.88}
                           />
                         );
                       })}
