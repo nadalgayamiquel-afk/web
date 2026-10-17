@@ -80,6 +80,10 @@ export default function FuerzaBBDDClient({ initialRows = [], jugadores = [] }: P
                   pesoKg: String(ej.pesoKg || ''),
                   rpe: ej.rpe ?? null,
                   comentario: ej.notas || '',
+                  videoUrl: ej.videoUrl || '',
+                  sesionNotas: ses.notas || '',
+                  sesionVideoUrl: ses.videoUrl || '',
+                  bloque: ej.bloque || 'PP',
                   tiempo: ej.tiempo || ej.variablesPersonalizadas?.['Tiempo'] || ej.variablesPersonalizadas?.['tiempo'] || null,
                   velocidad: ej.velocidad || ej.variablesPersonalizadas?.['Velocidad'] || ej.variablesPersonalizadas?.['velocidad'] || null,
                   material: ej.material || ej.variablesPersonalizadas?.['Material'] || ej.variablesPersonalizadas?.['material'] || null,
@@ -309,7 +313,8 @@ export default function FuerzaBBDDClient({ initialRows = [], jugadores = [] }: P
         const mS = r.nombreSesion?.toLowerCase().includes(q);
         const mC = r.comentario?.toLowerCase().includes(q);
         const mG = r.grupoMuscular?.toLowerCase().includes(q);
-        if (!mJ && !mE && !mS && !mC && !mG) return false;
+        const mV = r.videoUrl?.toLowerCase().includes(q);
+        if (!mJ && !mE && !mS && !mC && !mG && !mV) return false;
       }
       return true;
     });
@@ -355,6 +360,7 @@ export default function FuerzaBBDDClient({ initialRows = [], jugadores = [] }: P
       Carga_Kg: r.pesoKg,
       RPE: r.rpe || '',
       Comentario_Observacion: r.comentario || '',
+      Video_URL: r.videoUrl || '',
       Variables: Object.entries(r.variables || {}).map(([k, v]) => k + ': ' + v).join('; '),
       Estado: r.estado || 'completado',
     }));
@@ -368,7 +374,7 @@ export default function FuerzaBBDDClient({ initialRows = [], jugadores = [] }: P
 
   // Exportar a CSV
     const handleExportCSV = () => {
-    const headers = ['Fecha', 'MD', 'Jugador', 'Dorsal', 'Posicion', 'Categoria', 'Sesion', 'Ejercicio', 'GrupoMuscular', 'Series', 'Reps', 'Carga_Kg', 'RPE', 'Comentario', 'Variables'];
+    const headers = ['Fecha', 'MD', 'Jugador', 'Dorsal', 'Posicion', 'Categoria', 'Sesion', 'Ejercicio', 'GrupoMuscular', 'Series', 'Reps', 'Carga_Kg', 'RPE', 'Comentario', 'Video_URL', 'Variables'];
     const lines = filteredRows.map(r => [
       r.fecha,
       r.md || '',
@@ -384,6 +390,7 @@ export default function FuerzaBBDDClient({ initialRows = [], jugadores = [] }: P
       r.pesoKg,
       r.rpe || '',
       '"' + (r.comentario || '').replace(/"/g, '""') + '"',
+      '"' + (r.videoUrl || '').replace(/"/g, '""') + '"',
       '"' + Object.entries(r.variables || {}).map(([k, v]) => k + ': ' + v).join('; ') + '"',
     ].join(';'));
 
@@ -417,7 +424,36 @@ export default function FuerzaBBDDClient({ initialRows = [], jugadores = [] }: P
       await updateFuerzaBBDDRow(editingRow.id, editingRow);
     }
     setRows(rows.map(r => (r.id === editingRow.id ? editingRow : r)));
-    showToast('✓ Registro actualizado');
+
+    // Sincronizar también con el almacenamiento local del Gimnasio
+    try {
+      const savedMap = localStorage.getItem('gimnasio_sesiones_map_v1');
+      if (savedMap) {
+        const parsed = JSON.parse(savedMap);
+        let changed = false;
+        for (const k in parsed) {
+          const list = parsed[k];
+          if (Array.isArray(list)) {
+            list.forEach((ses: any) => {
+              if (ses.fecha === editingRow.fecha && ses.nombreSesion === editingRow.nombreSesion) {
+                (ses.ejercicios || []).forEach((ej: any) => {
+                  if (ej.nombre === editingRow.ejercicioNombre) {
+                    if (editingRow.comentario !== undefined) ej.notas = editingRow.comentario;
+                    if (editingRow.videoUrl !== undefined) ej.videoUrl = editingRow.videoUrl;
+                    changed = true;
+                  }
+                });
+              }
+            });
+          }
+        }
+        if (changed) {
+          localStorage.setItem('gimnasio_sesiones_map_v1', JSON.stringify(parsed));
+        }
+      }
+    } catch (e) {}
+
+    showToast('✓ Registro actualizado en Supabase y BBDD');
     setEditingRow(null);
   };
 
@@ -812,6 +848,7 @@ export default function FuerzaBBDDClient({ initialRows = [], jugadores = [] }: P
                 <th style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 800 }}>Variables</th>
                 <th style={{ padding: '6px 6px', textAlign: 'center', fontWeight: 800 }}>RPE</th>
                 <th style={{ padding: '6px 12px', textAlign: 'left', fontWeight: 800 }}>Observación / Comentario</th>
+                <th style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 800 }}>Video</th>
                 <th style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 800, width: '60px' }}>Acciones</th>
               </tr>
             </thead>
@@ -819,7 +856,7 @@ export default function FuerzaBBDDClient({ initialRows = [], jugadores = [] }: P
             <tbody>
               {filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={15} style={{ textAlign: 'center', padding: '36px', color: '#94a3b8', fontSize: '13px' }}>
+                  <td colSpan={16} style={{ textAlign: 'center', padding: '36px', color: '#94a3b8', fontSize: '13px' }}>
                     No se encontraron registros de ejercicios con los filtros seleccionados.
                   </td>
                 </tr>
@@ -970,6 +1007,37 @@ export default function FuerzaBBDDClient({ initialRows = [], jugadores = [] }: P
                         )}
                       </td>
 
+                      {/* Video */}
+                      <td style={{ padding: '4px 8px', textAlign: 'center' }}>
+                        {r.videoUrl ? (
+                          <a
+                            href={r.videoUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={r.videoUrl}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '3px',
+                              padding: '2px 7px',
+                              borderRadius: '4px',
+                              background: '#fee2e2',
+                              color: '#b91c1c',
+                              border: '1px solid #fca5a5',
+                              fontSize: '10.5px',
+                              fontWeight: 800,
+                              textDecoration: 'none',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            <span>🎥</span>
+                            <span>Ver</span>
+                          </a>
+                        ) : (
+                          <span style={{ color: '#cbd5e1' }}>—</span>
+                        )}
+                      </td>
+
                       {/* Acciones */}
                       <td style={{ padding: '4px 8px', textAlign: 'center' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
@@ -1117,7 +1185,31 @@ export default function FuerzaBBDDClient({ initialRows = [], jugadores = [] }: P
                 <textarea
                   value={editingRow.comentario || ''}
                   onChange={e => setEditingRow({ ...editingRow, comentario: e.target.value })}
-                  style={{ width: '100%', padding: '6px 10px', borderRadius: '4px', border: '1px solid #cbd5e1', fontSize: '11.5px', minHeight: '50px' }}
+                  placeholder="Observación del ejercicio..."
+                  style={{ width: '100%', padding: '6px 10px', borderRadius: '4px', border: '1px solid #cbd5e1', fontSize: '11.5px', minHeight: '44px' }}
+                />
+              </div>
+
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '3px' }}>
+                  <label style={{ display: 'block', fontSize: '10.5px', fontWeight: 800, color: '#b91c1c' }}>🎥 Enlace de Video (URL)</label>
+                  {editingRow.videoUrl && (
+                    <a
+                      href={editingRow.videoUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ fontSize: '10px', color: '#dc2626', fontWeight: 800, textDecoration: 'none' }}
+                    >
+                      ▶ Probar video
+                    </a>
+                  )}
+                </div>
+                <input
+                  type="url"
+                  value={editingRow.videoUrl || ''}
+                  onChange={e => setEditingRow({ ...editingRow, videoUrl: e.target.value })}
+                  placeholder="https://... (YouTube, Drive, Vimeo de este ejercicio)"
+                  style={{ width: '100%', padding: '6px 10px', borderRadius: '4px', border: '1px solid #fca5a5', fontSize: '11.5px' }}
                 />
               </div>
             </div>

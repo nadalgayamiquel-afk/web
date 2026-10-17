@@ -4498,6 +4498,7 @@ export type FuerzaBBDDRow = {
   posicion?: string | null;
   nombreSesion: string;
   categoria: string;
+  bloque?: string | null;
   ejercicioNombre: string;
   grupoMuscular?: string | null;
   series: number | string;
@@ -4505,6 +4506,11 @@ export type FuerzaBBDDRow = {
   pesoKg: string;
   rpe?: number | null;
   comentario?: string | null;
+  videoUrl?: string | null;
+  sesionNotas?: string | null;
+  sesionVideoUrl?: string | null;
+  hora?: string | null;
+  lugar?: string | null;
   tiempo?: string | null;
   velocidad?: string | null;
   material?: string | null;
@@ -4551,12 +4557,19 @@ export async function saveFuerzaSesionesBatch(rows: Array<Omit<FuerzaBBDDRow, 'i
       const velocidadVal = r.velocidad || vars['Velocidad'] || vars['velocidad'] || null;
       const materialVal = r.material || vars['Material'] || vars['material'] || null;
       const potenciaVal = r.potencia || vars['Potencia'] || vars['potencia'] || null;
+      const videoUrlVal = r.videoUrl || vars['videoUrl'] || vars['video_url'] || null;
+      const sesionVideoUrlVal = r.sesionVideoUrl || null;
+      const sesionNotasVal = r.sesionNotas || null;
+      const bloqueVal = r.bloque || null;
+      const horaVal = r.hora || null;
+      const lugarVal = r.lugar || null;
 
       const fullVars = { ...vars };
       if (tiempoVal && !fullVars['Tiempo']) fullVars['Tiempo'] = tiempoVal;
       if (velocidadVal && !fullVars['Velocidad']) fullVars['Velocidad'] = velocidadVal;
       if (materialVal && !fullVars['Material']) fullVars['Material'] = materialVal;
       if (potenciaVal && !fullVars['Potencia']) fullVars['Potencia'] = potenciaVal;
+      if (videoUrlVal && !fullVars['videoUrl']) fullVars['videoUrl'] = videoUrlVal;
 
       const contenidoObj = {
         fecha: r.fecha,
@@ -4566,6 +4579,7 @@ export async function saveFuerzaSesionesBatch(rows: Array<Omit<FuerzaBBDDRow, 'i
         posicion: r.posicion || null,
         nombreSesion: r.nombreSesion,
         categoria: r.categoria,
+        bloque: bloqueVal,
         ejercicioNombre: r.ejercicioNombre,
         grupoMuscular: r.grupoMuscular || '',
         series: r.series,
@@ -4573,6 +4587,11 @@ export async function saveFuerzaSesionesBatch(rows: Array<Omit<FuerzaBBDDRow, 'i
         pesoKg: r.pesoKg,
         rpe: r.rpe ?? null,
         comentario: r.comentario || '',
+        videoUrl: videoUrlVal || '',
+        sesionNotas: sesionNotasVal || '',
+        sesionVideoUrl: sesionVideoUrlVal || '',
+        hora: horaVal || '',
+        lugar: lugarVal || '',
         tiempo: tiempoVal,
         velocidad: velocidadVal,
         material: materialVal,
@@ -4702,12 +4721,17 @@ export async function getFuerzaBBDDRows(desde?: string, hasta?: string, jugadorN
       const velocidad = item.velocidad || parsedContenido.velocidad || vars['Velocidad'] || vars['velocidad'] || null;
       const material = item.material || parsedContenido.material || vars['Material'] || vars['material'] || null;
       const potencia = item.potencia || parsedContenido.potencia || vars['Potencia'] || vars['potencia'] || null;
+      const videoUrl = item.video_url || parsedContenido.videoUrl || parsedContenido.video_url || vars['videoUrl'] || vars['video_url'] || null;
+      const sesionNotas = parsedContenido.sesionNotas || parsedContenido.notasSesion || null;
+      const sesionVideoUrl = parsedContenido.sesionVideoUrl || null;
+      const bloque = parsedContenido.bloque || null;
 
       const fullVars = { ...vars };
       if (tiempo && !fullVars['Tiempo']) fullVars['Tiempo'] = tiempo;
       if (velocidad && !fullVars['Velocidad']) fullVars['Velocidad'] = velocidad;
       if (material && !fullVars['Material']) fullVars['Material'] = material;
       if (potencia && !fullVars['Potencia']) fullVars['Potencia'] = potencia;
+      if (videoUrl && !fullVars['videoUrl']) fullVars['videoUrl'] = videoUrl;
 
       rows.push({
         id: item.id,
@@ -4720,6 +4744,7 @@ export async function getFuerzaBBDDRows(desde?: string, hasta?: string, jugadorN
         posicion: item.posicion || parsedContenido.posicion || item.jugadores?.posicion || null,
         nombreSesion: item.nombre_sesion || parsedContenido.nombreSesion || 'Sesión de Fuerza',
         categoria: item.categoria || item.tipo_entreno || parsedContenido.categoria || 'FUERZA',
+        bloque,
         ejercicioNombre: item.ejercicio_nombre || parsedContenido.ejercicioNombre || parsedContenido.ejercicio || 'Ejercicio',
         grupoMuscular: item.grupo_muscular || parsedContenido.grupoMuscular || '',
         series: item.series !== undefined && item.series !== null ? item.series : (parsedContenido.series || 1),
@@ -4727,6 +4752,9 @@ export async function getFuerzaBBDDRows(desde?: string, hasta?: string, jugadorN
         pesoKg: String(item.peso_kg !== undefined && item.peso_kg !== null ? item.peso_kg : (parsedContenido.pesoKg || '')),
         rpe: item.rpe !== null && item.rpe !== undefined ? Number(item.rpe) : (parsedContenido.rpe ?? null),
         comentario: item.comentario || parsedContenido.comentario || parsedContenido.notas || '',
+        videoUrl,
+        sesionNotas,
+        sesionVideoUrl,
         tiempo,
         velocidad,
         material,
@@ -4769,16 +4797,21 @@ export async function updateFuerzaBBDDRow(id: string, updatedFields: Partial<Fue
   const velocidadVal = updatedFields.velocidad !== undefined ? updatedFields.velocidad : (parsed.velocidad || vars['Velocidad'] || vars['velocidad'] || null);
   const materialVal = updatedFields.material !== undefined ? updatedFields.material : (parsed.material || vars['Material'] || vars['material'] || null);
   const potenciaVal = updatedFields.potencia !== undefined ? updatedFields.potencia : (parsed.potencia || vars['Potencia'] || vars['potencia'] || null);
+  const videoUrlVal = updatedFields.videoUrl !== undefined ? updatedFields.videoUrl : (parsed.videoUrl || vars['videoUrl'] || vars['video_url'] || null);
+  const comentarioVal = updatedFields.comentario !== undefined ? updatedFields.comentario : (parsed.comentario || null);
 
   const fullVars = { ...vars };
   if (tiempoVal) fullVars['Tiempo'] = tiempoVal;
   if (velocidadVal) fullVars['Velocidad'] = velocidadVal;
   if (materialVal) fullVars['Material'] = materialVal;
   if (potenciaVal) fullVars['Potencia'] = potenciaVal;
+  if (videoUrlVal) fullVars['videoUrl'] = videoUrlVal;
 
   const mergedContenido = {
     ...parsed,
     ...updatedFields,
+    comentario: comentarioVal || '',
+    videoUrl: videoUrlVal || '',
     tiempo: tiempoVal,
     velocidad: velocidadVal,
     material: materialVal,
@@ -4803,7 +4836,7 @@ export async function updateFuerzaBBDDRow(id: string, updatedFields: Partial<Fue
     reps: updatedFields.reps !== undefined && updatedFields.reps !== null ? String(updatedFields.reps) : (mergedContenido.reps || null),
     peso_kg: updatedFields.pesoKg !== undefined && updatedFields.pesoKg !== null ? String(updatedFields.pesoKg) : (mergedContenido.pesoKg || null),
     rpe: updatedFields.rpe !== undefined && updatedFields.rpe !== null ? Number(updatedFields.rpe) : (mergedContenido.rpe ?? null),
-    comentario: updatedFields.comentario || mergedContenido.comentario || null,
+    comentario: comentarioVal,
     estado: updatedFields.estado || mergedContenido.estado || 'completado',
     tiempo: tiempoVal,
     velocidad: velocidadVal,
@@ -5013,12 +5046,19 @@ export async function getFuerzaSesionesForMatrix(): Promise<Record<string, any[]
           incluirRpe: c.rpe !== null && c.rpe !== undefined,
           hora: c.hora || '',
           lugar: c.lugar || '',
-          notas: c.comentario || '',
-          videoUrl: c.videoUrl || '',
+          notas: c.sesionNotas || c.notasSesion || (c.notas && c.notas !== c.comentario ? c.notas : ''),
+          videoUrl: c.sesionVideoUrl || c.videoUrlSesion || '',
           variablesColumnas: c.variablesColumnas || [],
           ejercicios: [],
         };
         matrixMap[key].push(ses);
+      } else {
+        if (!ses.notas && (c.sesionNotas || c.notasSesion)) {
+          ses.notas = c.sesionNotas || c.notasSesion;
+        }
+        if (!ses.videoUrl && (c.sesionVideoUrl || c.videoUrlSesion)) {
+          ses.videoUrl = c.sesionVideoUrl || c.videoUrlSesion;
+        }
       }
 
       ses.ejercicios.push({
@@ -5032,8 +5072,8 @@ export async function getFuerzaSesionesForMatrix(): Promise<Record<string, any[]
         rpe: c.rpe !== undefined ? c.rpe : (row.rpe ?? null),
         velocidad: c.velocidad || row.velocidad || '',
         material: c.material || row.material || '',
-        notas: c.comentario || row.comentario || '',
-        videoUrl: c.videoUrl || '',
+        notas: c.comentario || row.comentario || c.notas || '',
+        videoUrl: c.videoUrl || c.video_url || row.video_url || c.variables?.videoUrl || '',
         variablesPersonalizadas: c.variables || row.variables || {},
       });
     });

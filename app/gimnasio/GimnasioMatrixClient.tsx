@@ -266,7 +266,7 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
       });
     });
 
-    // 2. Si hay algo en localStorage que no esté en Supabase, combinarlo de forma segura
+    // 2. Si hay algo en localStorage, combinarlo de forma inteligente para no perder videos ni notas
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
@@ -274,9 +274,37 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
         if (parsed && typeof parsed === 'object') {
           for (const k in parsed) {
             const item = parsed[k];
-            const list = Array.isArray(item) ? item : (item ? [item] : []);
+            const localList: GimnasioSesion[] = Array.isArray(item) ? item : (item ? [item] : []);
             if (!loadedMap[k] || loadedMap[k].length === 0) {
-              if (list.length > 0) loadedMap[k] = list;
+              if (localList.length > 0) loadedMap[k] = localList;
+            } else {
+              // Si ya está en Supabase, rescatar videoUrl y notas locales si en Supabase vinieron vacías
+              loadedMap[k] = loadedMap[k].map(supSes => {
+                const matchedLocal = localList.find(loc => loc.id === supSes.id || loc.nombreSesion === supSes.nombreSesion);
+                if (!matchedLocal) return supSes;
+
+                const mergedNotas = (supSes.notas && supSes.notas.trim()) ? supSes.notas : (matchedLocal.notas || '');
+                const mergedVideo = (supSes.videoUrl && supSes.videoUrl.trim() && supSes.videoUrl !== 'https://youtube.com') ? supSes.videoUrl : (matchedLocal.videoUrl || '');
+
+                const mergedEjercicios = (supSes.ejercicios || []).map((ej, idx) => {
+                  const localEj = matchedLocal.ejercicios?.find(e => e.id === ej.id || e.nombre.toLowerCase().trim() === ej.nombre.toLowerCase().trim()) || matchedLocal.ejercicios?.[idx];
+                  if (!localEj) return ej;
+
+                  return {
+                    ...ej,
+                    notas: (ej.notas && ej.notas.trim()) ? ej.notas : (localEj.notas || ''),
+                    videoUrl: (ej.videoUrl && ej.videoUrl.trim() && ej.videoUrl !== 'https://youtube.com') ? ej.videoUrl : (localEj.videoUrl || ''),
+                    bloque: ej.bloque || localEj.bloque || 'PP',
+                  };
+                });
+
+                return {
+                  ...supSes,
+                  notas: mergedNotas,
+                  videoUrl: mergedVideo,
+                  ejercicios: mergedEjercicios,
+                };
+              });
             }
           }
         }
@@ -639,6 +667,7 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
           posicion: jug.posicion || null,
           nombreSesion: modalSesion.nombreSesion,
           categoria: modalSesion.categoria,
+          bloque: ej.bloque || 'PP',
           ejercicioNombre: ej.nombre,
           grupoMuscular: ej.grupoMuscular || '',
           series: ej.series,
@@ -646,7 +675,12 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
           pesoKg: String(ej.pesoKg || ''),
           rpe: modalSesion.incluirRpe ? ej.rpe : null,
           comentario: ej.notas || '',
-          variables: { ...ej.variablesPersonalizadas, ...(ej.material ? { Material: ej.material } : {}), ...(ej.velocidad ? { Velocidad: ej.velocidad } : {}) },
+          videoUrl: ej.videoUrl || '',
+          sesionVideoUrl: modalSesion.videoUrl || '',
+          sesionNotas: modalSesion.notas || '',
+          hora: modalSesion.hora || '',
+          lugar: modalSesion.lugar || '',
+          variables: { ...ej.variablesPersonalizadas, ...(ej.material ? { Material: ej.material } : {}), ...(ej.velocidad ? { Velocidad: ej.velocidad } : {}), ...(ej.videoUrl ? { videoUrl: ej.videoUrl } : {}) },
           estado: modalSesion.estado || 'completado',
         });
       });
@@ -711,6 +745,7 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
           posicion: jug.posicion || null,
           nombreSesion: sesion.nombreSesion,
           categoria: sesion.categoria,
+          bloque: ej.bloque || 'PP',
           ejercicioNombre: ej.nombre,
           grupoMuscular: ej.grupoMuscular || '',
           series: ej.series,
@@ -718,7 +753,12 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
           pesoKg: String(ej.pesoKg || ''),
           rpe: sesion.incluirRpe ? ej.rpe : null,
           comentario: ej.notas || '',
-          variables: { ...ej.variablesPersonalizadas, ...(ej.material ? { Material: ej.material } : {}) },
+          videoUrl: ej.videoUrl || '',
+          sesionVideoUrl: sesion.videoUrl || '',
+          sesionNotas: sesion.notas || '',
+          hora: sesion.hora || '',
+          lugar: sesion.lugar || '',
+          variables: { ...ej.variablesPersonalizadas, ...(ej.material ? { Material: ej.material } : {}), ...(ej.videoUrl ? { videoUrl: ej.videoUrl } : {}) },
           estado: sesion.estado || 'completado',
         });
       });
@@ -791,6 +831,7 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
       posicion: targetJug?.posicion || null,
       nombreSesion: pasted.nombreSesion,
       categoria: pasted.categoria,
+      bloque: ej.bloque || 'PP',
       ejercicioNombre: ej.nombre,
       grupoMuscular: ej.grupoMuscular || '',
       series: ej.series,
@@ -798,7 +839,12 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
       pesoKg: String(ej.pesoKg || ''),
       rpe: pasted.incluirRpe ? ej.rpe : null,
       comentario: ej.notas || '',
-      variables: ej.variablesPersonalizadas || {},
+      videoUrl: ej.videoUrl || '',
+      sesionVideoUrl: pasted.videoUrl || '',
+      sesionNotas: pasted.notas || '',
+      hora: pasted.hora || '',
+      lugar: pasted.lugar || '',
+      variables: { ...(ej.variablesPersonalizadas || {}), ...(ej.videoUrl ? { videoUrl: ej.videoUrl } : {}) },
       estado: pasted.estado || 'completado',
     }));
     saveFuerzaSesionesBatch(rowsToSave).catch(console.warn);
@@ -850,6 +896,7 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
       posicion: targetJug?.posicion || null,
       nombreSesion: movedSesion.nombreSesion,
       categoria: movedSesion.categoria,
+      bloque: ej.bloque || 'PP',
       ejercicioNombre: ej.nombre,
       grupoMuscular: ej.grupoMuscular || '',
       series: ej.series,
@@ -857,7 +904,12 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
       pesoKg: String(ej.pesoKg || ''),
       rpe: movedSesion.incluirRpe ? ej.rpe : null,
       comentario: ej.notas || '',
-      variables: ej.variablesPersonalizadas || {},
+      videoUrl: ej.videoUrl || '',
+      sesionVideoUrl: movedSesion.videoUrl || '',
+      sesionNotas: movedSesion.notas || '',
+      hora: movedSesion.hora || '',
+      lugar: movedSesion.lugar || '',
+      variables: { ...(ej.variablesPersonalizadas || {}), ...(ej.videoUrl ? { videoUrl: ej.videoUrl } : {}) },
       estado: movedSesion.estado || 'completado',
     }));
     saveFuerzaSesionesBatch(rowsToSave).catch(console.warn);
