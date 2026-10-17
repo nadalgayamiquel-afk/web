@@ -361,7 +361,7 @@ export default function CargaExternaSection({
   // ── ESTADOS PARA TABLAS PLEGABLES INDIVIDUALES POR JUGADOR ──
   const [expandedPlayerIds, setExpandedPlayerIds] = useState<Record<string, boolean>>({});
   const [playerTableFilterDays, setPlayerTableFilterDays] = useState<"all" | "active">("all");
-  const [playerTableOrder, setPlayerTableOrder] = useState<"desc" | "asc">("desc");
+  const [playerTableOrder, setPlayerTableOrder] = useState<"desc" | "asc">("asc");
   const [openTablePrevMd, setOpenTablePrevMd] = useState<boolean>(true);
   const [openTableLast5Md, setOpenTableLast5Md] = useState<boolean>(true);
 
@@ -2510,7 +2510,7 @@ export default function CargaExternaSection({
                       color: playerTableFilterDays === "all" ? "#ffffff" : "#475569",
                       cursor: "pointer",
                     }}
-                    title="Muestra todos los días del calendario (incluyendo días de descanso OFF)"
+                    title="Muestra todos los días del calendario continuo (con descansos OFF)"
                   >
                     Días completos (con OFF)
                   </button>
@@ -2533,22 +2533,26 @@ export default function CargaExternaSection({
                   </button>
                 </div>
 
-                {/* Orden cronológico */}
+                {/* Selector de orden: De derecha a izquierda vs De izquierda a derecha */}
                 <button
                   type="button"
-                  onClick={() => setPlayerTableOrder((prev) => (prev === "desc" ? "asc" : "desc"))}
+                  onClick={() => setPlayerTableOrder((prev) => (prev === "asc" ? "desc" : "asc"))}
                   style={{
-                    padding: "3px 8px",
+                    padding: "3px 9px",
                     borderRadius: "5px",
-                    border: "1px solid #cbd5e1",
-                    background: "#ffffff",
+                    border: "1.5px solid #2563eb",
+                    background: "#eff6ff",
                     fontSize: "11px",
-                    fontWeight: 700,
+                    fontWeight: 800,
                     cursor: "pointer",
                     color: "#1e3a8a",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px",
                   }}
+                  title="Cambia el orden de lectura de los días"
                 >
-                  {playerTableOrder === "desc" ? "⬇️ Más recientes a la izquierda" : "➡️ Orden cronológico"}
+                  <span>{playerTableOrder === "asc" ? "⬅️ Leer de derecha a izquierda (Hoy a la dcha)" : "➡️ Leer de izquierda a derecha (Hoy a la izq)"}</span>
                 </button>
               </div>
 
@@ -2596,6 +2600,9 @@ export default function CargaExternaSection({
             </div>
 
             {(() => {
+              // Determinar la fecha actual / fecha de referencia
+              const currentRefDate = latestGpsDate || selectedDate || "";
+
               // Preparar días del calendario para las columnas
               let activeDates = [...playerCalendarDates];
               if (playerTableFilterDays === "active") {
@@ -2777,6 +2784,7 @@ export default function CargaExternaSection({
                                 const dateFormatted = dayName + " " + p[2] + "/" + p[1];
                                 const isMatch = Boolean(tInfo?.isMatch);
                                 const isOff = !tInfo?.hasSession || tInfo?.normMd === "OFF";
+                                const isCurrentDay = dStr === currentRefDate;
 
                                 let badgeBg = "#e0f2fe";
                                 let badgeColor = "#0369a1";
@@ -2804,13 +2812,35 @@ export default function CargaExternaSection({
                                     style={{
                                       padding: "5px 6px",
                                       textAlign: "center",
-                                      background: isMatch ? "#fee2e2" : "#f1f5f9",
-                                      borderRight: "1px solid #e2e8f0",
-                                      borderBottom: "2px solid #cbd5e1",
-                                      minWidth: "68px",
+                                      background: isCurrentDay ? "#dbeafe" : isMatch ? "#fee2e2" : "#f1f5f9",
+                                      borderLeft: isCurrentDay ? "2px solid #2563eb" : undefined,
+                                      borderRight: isCurrentDay ? "2px solid #2563eb" : "1px solid #e2e8f0",
+                                      borderBottom: isCurrentDay ? "3px solid #2563eb" : "2px solid #cbd5e1",
+                                      minWidth: isCurrentDay ? "76px" : "68px",
+                                      position: "relative",
                                     }}
                                   >
                                     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
+                                      {/* BADGE DESTACADO DÍA ACTUAL */}
+                                      {isCurrentDay && (
+                                        <span
+                                          style={{
+                                            padding: "1px 5px",
+                                            borderRadius: "3px",
+                                            background: "#2563eb",
+                                            color: "#ffffff",
+                                            fontSize: "8.5px",
+                                            fontWeight: 900,
+                                            letterSpacing: "0.4px",
+                                            textTransform: "uppercase",
+                                            boxShadow: "0 1px 2px rgba(37,99,235,0.3)",
+                                            whiteSpace: "nowrap",
+                                          }}
+                                        >
+                                          📍 ACTUAL
+                                        </span>
+                                      )}
+
                                       <span
                                         style={{
                                           padding: "1px 5px",
@@ -2823,7 +2853,14 @@ export default function CargaExternaSection({
                                       >
                                         {badgeText}
                                       </span>
-                                      <span style={{ fontSize: "10px", fontWeight: 700, color: isOff ? "#94a3b8" : "#475569", whiteSpace: "nowrap" }}>
+                                      <span
+                                        style={{
+                                          fontSize: "10px",
+                                          fontWeight: isCurrentDay ? 900 : 700,
+                                          color: isCurrentDay ? "#1e3a8a" : isOff ? "#94a3b8" : "#475569",
+                                          whiteSpace: "nowrap",
+                                        }}
+                                      >
                                         {dateFormatted}
                                       </span>
                                     </div>
@@ -2902,14 +2939,19 @@ export default function CargaExternaSection({
                                   {activeDates.map((dStr) => {
                                     const r = item.timelineMap.get(dStr);
                                     const isOff = !r?.hasSession || r?.normMd === "OFF";
+                                    const isCurrentDay = dStr === currentRefDate;
+
                                     return (
                                       <td
                                         key={dStr}
                                         style={{
                                           padding: "5px 6px",
                                           textAlign: "center",
-                                          borderRight: "1px solid #f1f5f9",
-                                          background: r?.isMatch ? "#fff5f5" : isOff ? "#fafbfc" : "transparent",
+                                          borderLeft: isCurrentDay ? "2px solid #3b82f6" : undefined,
+                                          borderRight: isCurrentDay ? "2px solid #3b82f6" : "1px solid #f1f5f9",
+                                          background: isCurrentDay
+                                            ? (r?.isMatch ? "#fee2e2" : "#eff6ff")
+                                            : (r?.isMatch ? "#fff5f5" : isOff ? "#fafbfc" : "transparent"),
                                         }}
                                       >
                                         {renderCompactBadge(r?.labelVsPrevSameMd || "—", r?.diffVsPrevSameMd ?? null, isOff)}
@@ -3020,6 +3062,7 @@ export default function CargaExternaSection({
                                 const dateFormatted = dayName + " " + p[2] + "/" + p[1];
                                 const isMatch = Boolean(tInfo?.isMatch);
                                 const isOff = !tInfo?.hasSession || tInfo?.normMd === "OFF";
+                                const isCurrentDay = dStr === currentRefDate;
 
                                 let badgeBg = "#e0f2fe";
                                 let badgeColor = "#0369a1";
@@ -3047,13 +3090,35 @@ export default function CargaExternaSection({
                                     style={{
                                       padding: "5px 6px",
                                       textAlign: "center",
-                                      background: isMatch ? "#fee2e2" : "#f1f5f9",
-                                      borderRight: "1px solid #e2e8f0",
-                                      borderBottom: "2px solid #cbd5e1",
-                                      minWidth: "68px",
+                                      background: isCurrentDay ? "#dbeafe" : isMatch ? "#fee2e2" : "#f1f5f9",
+                                      borderLeft: isCurrentDay ? "2px solid #2563eb" : undefined,
+                                      borderRight: isCurrentDay ? "2px solid #2563eb" : "1px solid #e2e8f0",
+                                      borderBottom: isCurrentDay ? "3px solid #2563eb" : "2px solid #cbd5e1",
+                                      minWidth: isCurrentDay ? "76px" : "68px",
+                                      position: "relative",
                                     }}
                                   >
                                     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
+                                      {/* BADGE DESTACADO DÍA ACTUAL */}
+                                      {isCurrentDay && (
+                                        <span
+                                          style={{
+                                            padding: "1px 5px",
+                                            borderRadius: "3px",
+                                            background: "#2563eb",
+                                            color: "#ffffff",
+                                            fontSize: "8.5px",
+                                            fontWeight: 900,
+                                            letterSpacing: "0.4px",
+                                            textTransform: "uppercase",
+                                            boxShadow: "0 1px 2px rgba(37,99,235,0.3)",
+                                            whiteSpace: "nowrap",
+                                          }}
+                                        >
+                                          📍 ACTUAL
+                                        </span>
+                                      )}
+
                                       <span
                                         style={{
                                           padding: "1px 5px",
@@ -3066,7 +3131,14 @@ export default function CargaExternaSection({
                                       >
                                         {badgeText}
                                       </span>
-                                      <span style={{ fontSize: "10px", fontWeight: 700, color: isOff ? "#94a3b8" : "#475569", whiteSpace: "nowrap" }}>
+                                      <span
+                                        style={{
+                                          fontSize: "10px",
+                                          fontWeight: isCurrentDay ? 900 : 700,
+                                          color: isCurrentDay ? "#1e3a8a" : isOff ? "#94a3b8" : "#475569",
+                                          whiteSpace: "nowrap",
+                                        }}
+                                      >
                                         {dateFormatted}
                                       </span>
                                     </div>
@@ -3145,14 +3217,19 @@ export default function CargaExternaSection({
                                   {activeDates.map((dStr) => {
                                     const r = item.timelineMap.get(dStr);
                                     const isOff = !r?.hasSession || r?.normMd === "OFF";
+                                    const isCurrentDay = dStr === currentRefDate;
+
                                     return (
                                       <td
                                         key={dStr}
                                         style={{
                                           padding: "5px 6px",
                                           textAlign: "center",
-                                          borderRight: "1px solid #f1f5f9",
-                                          background: r?.isMatch ? "#fff5f5" : isOff ? "#fafbfc" : "transparent",
+                                          borderLeft: isCurrentDay ? "2px solid #3b82f6" : undefined,
+                                          borderRight: isCurrentDay ? "2px solid #3b82f6" : "1px solid #f1f5f9",
+                                          background: isCurrentDay
+                                            ? (r?.isMatch ? "#fee2e2" : "#eff6ff")
+                                            : (r?.isMatch ? "#fff5f5" : isOff ? "#fafbfc" : "transparent"),
                                         }}
                                       >
                                         {renderCompactBadge(r?.labelVsLast5SameMd || "—", r?.diffVsLast5SameMd ?? null, isOff)}
