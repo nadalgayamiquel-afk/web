@@ -2474,37 +2474,37 @@ export default function CargaExternaSection({
           {/* ══════════════════════════════════════════════════════════════════ */}
           {/* ── SECCIÓN PLEGABLE: TABLAS SEPARADAS DE COMPARATIVA MATCHDAY ── */}
           {/* ══════════════════════════════════════════════════════════════════ */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-            {/* Barra de Controles Común Compacta */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
+            {/* Barra de Controles Común */}
             <div
               style={{
                 background: "#ffffff",
-                padding: "10px 16px",
-                borderRadius: "8px",
+                padding: "12px 18px",
+                borderRadius: "10px",
                 border: "1px solid #cbd5e1",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
                 flexWrap: "wrap",
-                gap: "10px",
-                boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+                gap: "12px",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                <span style={{ fontSize: "12px", fontWeight: 800, color: "#1e3a8a", display: "flex", alignItems: "center", gap: "4px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                <span style={{ fontSize: "13px", fontWeight: 800, color: "#1e3a8a", display: "flex", alignItems: "center", gap: "6px" }}>
                   <span>📊</span> Tablas Comparativas MatchDay ({filteredAcwrList.length} jugadores):
                 </span>
 
                 {/* Filtro: Días completos vs Solo activos */}
-                <div style={{ display: "flex", alignItems: "center", background: "#f1f5f9", padding: "2px", borderRadius: "5px", border: "1px solid #cbd5e1" }}>
+                <div style={{ display: "flex", alignItems: "center", background: "#f1f5f9", padding: "2px", borderRadius: "6px", border: "1px solid #cbd5e1" }}>
                   <button
                     type="button"
                     onClick={() => setPlayerTableFilterDays("all")}
                     style={{
-                      padding: "3px 8px",
+                      padding: "4px 10px",
                       borderRadius: "4px",
                       border: "none",
-                      fontSize: "11px",
+                      fontSize: "11.5px",
                       fontWeight: playerTableFilterDays === "all" ? 800 : 600,
                       background: playerTableFilterDays === "all" ? "#1e3a8a" : "transparent",
                       color: playerTableFilterDays === "all" ? "#ffffff" : "#475569",
@@ -2518,10 +2518,10 @@ export default function CargaExternaSection({
                     type="button"
                     onClick={() => setPlayerTableFilterDays("active")}
                     style={{
-                      padding: "3px 8px",
+                      padding: "4px 10px",
                       borderRadius: "4px",
                       border: "none",
-                      fontSize: "11px",
+                      fontSize: "11.5px",
                       fontWeight: playerTableFilterDays === "active" ? 800 : 600,
                       background: playerTableFilterDays === "active" ? "#1e3a8a" : "transparent",
                       color: playerTableFilterDays === "active" ? "#ffffff" : "#475569",
@@ -2538,11 +2538,11 @@ export default function CargaExternaSection({
                   type="button"
                   onClick={() => setPlayerTableOrder((prev) => (prev === "asc" ? "desc" : "asc"))}
                   style={{
-                    padding: "3px 9px",
-                    borderRadius: "5px",
+                    padding: "4px 10px",
+                    borderRadius: "6px",
                     border: "1.5px solid #2563eb",
                     background: "#eff6ff",
-                    fontSize: "11px",
+                    fontSize: "11.5px",
                     fontWeight: 800,
                     cursor: "pointer",
                     color: "#1e3a8a",
@@ -2552,12 +2552,12 @@ export default function CargaExternaSection({
                   }}
                   title="Cambia el orden de lectura de los días"
                 >
-                  <span>{playerTableOrder === "asc" ? "⬅️ Leer de derecha a izquierda (Hoy a la dcha)" : "➡️ Leer de izquierda a derecha (Hoy a la izq)"}</span>
+                  <span>{playerTableOrder === "asc" ? "⬅️ Orden: De derecha a izquierda (Hoy a la dcha)" : "➡️ Orden: De izquierda a derecha (Hoy a la izq)"}</span>
                 </button>
               </div>
 
               {/* Botones plegar / desplegar ambas */}
-              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                 <button
                   type="button"
                   onClick={() => {
@@ -2565,11 +2565,11 @@ export default function CargaExternaSection({
                     setOpenTableLast5Md(true);
                   }}
                   style={{
-                    padding: "3px 8px",
-                    borderRadius: "4px",
+                    padding: "4px 10px",
+                    borderRadius: "6px",
                     border: "1px solid #cbd5e1",
                     background: "#f8fafc",
-                    fontSize: "11px",
+                    fontSize: "11.5px",
                     fontWeight: 700,
                     cursor: "pointer",
                     color: "#334155",
@@ -2584,11 +2584,11 @@ export default function CargaExternaSection({
                     setOpenTableLast5Md(false);
                   }}
                   style={{
-                    padding: "3px 8px",
-                    borderRadius: "4px",
+                    padding: "4px 10px",
+                    borderRadius: "6px",
                     border: "1px solid #cbd5e1",
                     background: "#f8fafc",
-                    fontSize: "11px",
+                    fontSize: "11.5px",
                     fontWeight: 700,
                     cursor: "pointer",
                     color: "#334155",
@@ -2629,22 +2629,23 @@ export default function CargaExternaSection({
                 };
               });
 
-              // Helper para badges compactos de variación
-              const renderCompactBadge = (label: string, diff: number | null, isOff: boolean) => {
+              // Helper para micro badge de porcentaje de cambio (más pequeño para dar protagonismo al valor)
+              const renderMicroBadge = (label: string, diff: number | null, isOff: boolean) => {
                 if (isOff || label === "—" || !label) {
-                  return <span style={{ color: "#cbd5e1", fontSize: "11px" }}>—</span>;
+                  return <span style={{ color: "#cbd5e1", fontSize: "9.5px", lineHeight: 1 }}>—</span>;
                 }
                 if (label === "1º (Base)") {
                   return (
                     <span
                       style={{
                         display: "inline-block",
-                        padding: "1px 5px",
-                        borderRadius: "3px",
+                        padding: "1px 4px",
+                        borderRadius: "2px",
                         background: "#f1f5f9",
                         color: "#64748b",
-                        fontSize: "10px",
+                        fontSize: "9px",
                         fontWeight: 800,
+                        lineHeight: 1.1,
                         whiteSpace: "nowrap",
                       }}
                     >
@@ -2673,12 +2674,13 @@ export default function CargaExternaSection({
                   <span
                     style={{
                       display: "inline-block",
-                      padding: "1px 5px",
-                      borderRadius: "3px",
+                      padding: "1px 4px",
+                      borderRadius: "2px",
                       background: bg,
                       color: color,
-                      fontSize: "10.5px",
+                      fontSize: "9.5px",
                       fontWeight: 800,
+                      lineHeight: 1.1,
                       whiteSpace: "nowrap",
                     }}
                   >
@@ -2690,22 +2692,22 @@ export default function CargaExternaSection({
               return (
                 <>
                   {/* ════════════════════════════════════════════════════════════ */}
-                  {/* ── TABLA 1: VS ANTERIOR MISMO MATCH DAY ── */}
+                  {/* ── TABLA 1: VS ANTERIOR MISMO MATCH DAY (MÁS GRANDE & SIN SCROLL) ── */}
                   {/* ════════════════════════════════════════════════════════════ */}
                   <div
                     style={{
                       background: "#ffffff",
-                      borderRadius: "8px",
+                      borderRadius: "10px",
                       border: "1px solid #cbd5e1",
                       overflow: "hidden",
-                      boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+                      boxShadow: "0 2px 5px rgba(0,0,0,0.04)",
                     }}
                   >
                     {/* Cabecera Plegable Tabla 1 */}
                     <div
                       onClick={() => setOpenTablePrevMd((prev) => !prev)}
                       style={{
-                        padding: "11px 16px",
+                        padding: "13px 18px",
                         background: "linear-gradient(to right, #eff6ff, #ffffff)",
                         borderBottom: openTablePrevMd ? "1px solid #bfdbfe" : "none",
                         display: "flex",
@@ -2715,49 +2717,49 @@ export default function CargaExternaSection({
                         userSelect: "none",
                       }}
                     >
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                         <span
                           style={{
                             display: "inline-flex",
                             alignItems: "center",
                             justifyContent: "center",
-                            width: "20px",
-                            height: "20px",
-                            borderRadius: "4px",
+                            width: "22px",
+                            height: "22px",
+                            borderRadius: "5px",
                             background: "#1e3a8a",
                             color: "#ffffff",
-                            fontSize: "10.5px",
+                            fontSize: "11px",
                             fontWeight: 900,
                           }}
                         >
                           {openTablePrevMd ? "▼" : "▶"}
                         </span>
                         <div>
-                          <strong style={{ fontSize: "13.5px", color: "#1e3a8a", fontWeight: 800 }}>
-                            🔄 1. % Variación vs Anterior Sesión del Mismo MatchDay
+                          <strong style={{ fontSize: "14px", color: "#1e3a8a", fontWeight: 800 }}>
+                            🔄 1. Valor del Día & % Variación vs Anterior Sesión del Mismo MatchDay
                           </strong>
-                          <span style={{ marginLeft: "8px", fontSize: "11px", color: "#64748b" }}>
-                            (% Δ comparado con la sesión previa del mismo tipo MD · {ACWR_METRIC_CONFIG[acwrVolumeMetric]?.label})
+                          <span style={{ marginLeft: "10px", fontSize: "11.5px", color: "#64748b" }}>
+                            Valor en {ACWR_METRIC_CONFIG[acwrVolumeMetric]?.unit} (grande) y % Δ respecto a la sesión previa del mismo MD (pequeño)
                           </span>
                         </div>
                       </div>
-                      <span style={{ fontSize: "11.5px", color: "#2563eb", fontWeight: 700 }}>
+                      <span style={{ fontSize: "12px", color: "#2563eb", fontWeight: 700 }}>
                         {openTablePrevMd ? "Plegar tabla ▲" : "Desplegar tabla ▼"}
                       </span>
                     </div>
 
-                    {/* Contenido Tabla 1 */}
+                    {/* Contenido Tabla 1 SIN SCROLL PROPIO (EXPANDIDA NATURALMENTE) */}
                     {openTablePrevMd && (
-                      <div style={{ overflowX: "auto", maxHeight: "480px" }}>
-                        <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: "11.5px", color: "#0f172a" }}>
+                      <div style={{ overflowX: "auto" }}>
+                        <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: "12px", color: "#0f172a" }}>
                           <thead style={{ position: "sticky", top: 0, zIndex: 15 }}>
                             <tr style={{ background: "#f1f5f9", borderBottom: "2px solid #cbd5e1" }}>
-                              {/* Columna fija Jugador (compacta) */}
+                              {/* Columna fija Jugador (más amplia y legible) */}
                               <th
                                 style={{
-                                  padding: "7px 10px",
+                                  padding: "9px 12px",
                                   textAlign: "left",
-                                  fontSize: "10.5px",
+                                  fontSize: "11px",
                                   fontWeight: 900,
                                   textTransform: "uppercase",
                                   color: "#334155",
@@ -2765,8 +2767,8 @@ export default function CargaExternaSection({
                                   position: "sticky",
                                   left: 0,
                                   zIndex: 20,
-                                  minWidth: "155px",
-                                  maxWidth: "165px",
+                                  minWidth: "175px",
+                                  maxWidth: "195px",
                                   borderRight: "2px solid #cbd5e1",
                                   boxShadow: "2px 0 4px rgba(0,0,0,0.03)",
                                 }}
@@ -2810,14 +2812,13 @@ export default function CargaExternaSection({
                                   <th
                                     key={dStr}
                                     style={{
-                                      padding: "5px 6px",
+                                      padding: "7px 8px",
                                       textAlign: "center",
                                       background: isCurrentDay ? "#dbeafe" : isMatch ? "#fee2e2" : "#f1f5f9",
                                       borderLeft: isCurrentDay ? "2px solid #2563eb" : undefined,
                                       borderRight: isCurrentDay ? "2px solid #2563eb" : "1px solid #e2e8f0",
                                       borderBottom: isCurrentDay ? "3px solid #2563eb" : "2px solid #cbd5e1",
-                                      minWidth: isCurrentDay ? "76px" : "68px",
-                                      position: "relative",
+                                      minWidth: isCurrentDay ? "84px" : "74px",
                                     }}
                                   >
                                     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
@@ -2843,11 +2844,11 @@ export default function CargaExternaSection({
 
                                       <span
                                         style={{
-                                          padding: "1px 5px",
+                                          padding: "1px 6px",
                                           borderRadius: "3px",
                                           background: badgeBg,
                                           color: badgeColor,
-                                          fontSize: "9.5px",
+                                          fontSize: "10px",
                                           fontWeight: 900,
                                         }}
                                       >
@@ -2855,7 +2856,7 @@ export default function CargaExternaSection({
                                       </span>
                                       <span
                                         style={{
-                                          fontSize: "10px",
+                                          fontSize: "10.5px",
                                           fontWeight: isCurrentDay ? 900 : 700,
                                           color: isCurrentDay ? "#1e3a8a" : isOff ? "#94a3b8" : "#475569",
                                           whiteSpace: "nowrap",
@@ -2880,7 +2881,7 @@ export default function CargaExternaSection({
                                   {/* Columna fija Jugador */}
                                   <td
                                     style={{
-                                      padding: "6px 10px",
+                                      padding: "8px 12px",
                                       background: rowBg,
                                       position: "sticky",
                                       left: 0,
@@ -2890,26 +2891,28 @@ export default function CargaExternaSection({
                                       whiteSpace: "nowrap",
                                     }}
                                   >
-                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "4px" }}>
-                                      <div style={{ display: "flex", alignItems: "center", gap: "5px", overflow: "hidden" }}>
+                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "6px" }}>
+                                      <div style={{ display: "flex", alignItems: "center", gap: "6px", overflow: "hidden" }}>
                                         <span
                                           style={{
-                                            padding: "1px 5px",
-                                            borderRadius: "3px",
+                                            padding: "2px 6px",
+                                            borderRadius: "4px",
                                             background: "#1e3a8a",
                                             color: "#ffffff",
-                                            fontSize: "10px",
+                                            fontSize: "11px",
                                             fontWeight: 900,
                                           }}
                                         >
                                           #{j.dorsal || "—"}
                                         </span>
-                                        <strong style={{ fontSize: "12px", color: "#0f172a", textOverflow: "ellipsis", overflow: "hidden" }}>
-                                          {j.apodo || j.nombre}
-                                        </strong>
-                                        <span style={{ fontSize: "9.5px", color: "#64748b", fontWeight: 700 }}>
-                                          ({j.posicion || "JUG"})
-                                        </span>
+                                        <div style={{ display: "flex", flexDirection: "column" }}>
+                                          <strong style={{ fontSize: "12.5px", color: "#0f172a", textOverflow: "ellipsis", overflow: "hidden" }}>
+                                            {j.apodo || j.nombre}
+                                          </strong>
+                                          <span style={{ fontSize: "10px", color: "#64748b", fontWeight: 700 }}>
+                                            {j.posicion || "JUG"}
+                                          </span>
+                                        </div>
                                       </div>
 
                                       <button
@@ -2920,11 +2923,11 @@ export default function CargaExternaSection({
                                           window.scrollTo({ top: 300, behavior: "smooth" });
                                         }}
                                         style={{
-                                          padding: "2px 5px",
-                                          borderRadius: "3px",
+                                          padding: "3px 6px",
+                                          borderRadius: "4px",
                                           border: "1px solid #cbd5e1",
                                           background: "#ffffff",
-                                          fontSize: "10px",
+                                          fontSize: "11px",
                                           cursor: "pointer",
                                           color: "#1e3a8a",
                                         }}
@@ -2935,7 +2938,7 @@ export default function CargaExternaSection({
                                     </div>
                                   </td>
 
-                                  {/* Celdas de la Tabla 1 (% vs Ant. Mismo MD) */}
+                                  {/* Celdas Tabla 1: VALOR DEL DÍA GRANDE + MICRO BADGE % */}
                                   {activeDates.map((dStr) => {
                                     const r = item.timelineMap.get(dStr);
                                     const isOff = !r?.hasSession || r?.normMd === "OFF";
@@ -2945,7 +2948,7 @@ export default function CargaExternaSection({
                                       <td
                                         key={dStr}
                                         style={{
-                                          padding: "5px 6px",
+                                          padding: "7px 6px",
                                           textAlign: "center",
                                           borderLeft: isCurrentDay ? "2px solid #3b82f6" : undefined,
                                           borderRight: isCurrentDay ? "2px solid #3b82f6" : "1px solid #f1f5f9",
@@ -2954,7 +2957,15 @@ export default function CargaExternaSection({
                                             : (r?.isMatch ? "#fff5f5" : isOff ? "#fafbfc" : "transparent"),
                                         }}
                                       >
-                                        {renderCompactBadge(r?.labelVsPrevSameMd || "—", r?.diffVsPrevSameMd ?? null, isOff)}
+                                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
+                                          {/* Valor del día del jugador (algo más grande) */}
+                                          <strong style={{ fontSize: "12.5px", fontWeight: 900, color: isOff ? "#94a3b8" : "#0f172a", lineHeight: 1.1 }}>
+                                            {r && r.volumen > 0 ? r.volumen.toLocaleString() : "0"}
+                                          </strong>
+
+                                          {/* Porcentaje de cambio (disminuido de tamaño) */}
+                                          {renderMicroBadge(r?.labelVsPrevSameMd || "—", r?.diffVsPrevSameMd ?? null, isOff)}
+                                        </div>
                                       </td>
                                     );
                                   })}
@@ -2968,22 +2979,22 @@ export default function CargaExternaSection({
                   </div>
 
                   {/* ════════════════════════════════════════════════════════════ */}
-                  {/* ── TABLA 2: VS 5 ÚLTIMOS MISMOS MATCH DAYS ── */}
+                  {/* ── TABLA 2: VS 5 ÚLTIMOS MISMOS MATCH DAYS (MÁS GRANDE & SIN SCROLL) ── */}
                   {/* ════════════════════════════════════════════════════════════ */}
                   <div
                     style={{
                       background: "#ffffff",
-                      borderRadius: "8px",
+                      borderRadius: "10px",
                       border: "1px solid #cbd5e1",
                       overflow: "hidden",
-                      boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+                      boxShadow: "0 2px 5px rgba(0,0,0,0.04)",
                     }}
                   >
                     {/* Cabecera Plegable Tabla 2 */}
                     <div
                       onClick={() => setOpenTableLast5Md((prev) => !prev)}
                       style={{
-                        padding: "11px 16px",
+                        padding: "13px 18px",
                         background: "linear-gradient(to right, #faf5ff, #ffffff)",
                         borderBottom: openTableLast5Md ? "1px solid #e9d5ff" : "none",
                         display: "flex",
@@ -2993,49 +3004,49 @@ export default function CargaExternaSection({
                         userSelect: "none",
                       }}
                     >
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                         <span
                           style={{
                             display: "inline-flex",
                             alignItems: "center",
                             justifyContent: "center",
-                            width: "20px",
-                            height: "20px",
-                            borderRadius: "4px",
+                            width: "22px",
+                            height: "22px",
+                            borderRadius: "5px",
                             background: "#6b21a8",
                             color: "#ffffff",
-                            fontSize: "10.5px",
+                            fontSize: "11px",
                             fontWeight: 900,
                           }}
                         >
                           {openTableLast5Md ? "▼" : "▶"}
                         </span>
                         <div>
-                          <strong style={{ fontSize: "13.5px", color: "#6b21a8", fontWeight: 800 }}>
-                            📈 2. % Variación vs Media de los 5 Últimos Mismos MatchDays
+                          <strong style={{ fontSize: "14px", color: "#6b21a8", fontWeight: 800 }}>
+                            📈 2. Valor del Día & % Variación vs Media de los 5 Últimos Mismos MatchDays
                           </strong>
-                          <span style={{ marginLeft: "8px", fontSize: "11px", color: "#64748b" }}>
-                            (% Δ comparado con la media de las 5 sesiones previas del mismo tipo MD · {ACWR_METRIC_CONFIG[acwrVolumeMetric]?.label})
+                          <span style={{ marginLeft: "10px", fontSize: "11.5px", color: "#64748b" }}>
+                            Valor en {ACWR_METRIC_CONFIG[acwrVolumeMetric]?.unit} (grande) y % Δ respecto a la media de 5 MD previos (pequeño)
                           </span>
                         </div>
                       </div>
-                      <span style={{ fontSize: "11.5px", color: "#7e22ce", fontWeight: 700 }}>
+                      <span style={{ fontSize: "12px", color: "#7e22ce", fontWeight: 700 }}>
                         {openTableLast5Md ? "Plegar tabla ▲" : "Desplegar tabla ▼"}
                       </span>
                     </div>
 
-                    {/* Contenido Tabla 2 */}
+                    {/* Contenido Tabla 2 SIN SCROLL PROPIO (EXPANDIDA NATURALMENTE) */}
                     {openTableLast5Md && (
-                      <div style={{ overflowX: "auto", maxHeight: "480px" }}>
-                        <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: "11.5px", color: "#0f172a" }}>
+                      <div style={{ overflowX: "auto" }}>
+                        <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: "12px", color: "#0f172a" }}>
                           <thead style={{ position: "sticky", top: 0, zIndex: 15 }}>
                             <tr style={{ background: "#f1f5f9", borderBottom: "2px solid #cbd5e1" }}>
-                              {/* Columna fija Jugador (compacta) */}
+                              {/* Columna fija Jugador (más amplia y legible) */}
                               <th
                                 style={{
-                                  padding: "7px 10px",
+                                  padding: "9px 12px",
                                   textAlign: "left",
-                                  fontSize: "10.5px",
+                                  fontSize: "11px",
                                   fontWeight: 900,
                                   textTransform: "uppercase",
                                   color: "#334155",
@@ -3043,8 +3054,8 @@ export default function CargaExternaSection({
                                   position: "sticky",
                                   left: 0,
                                   zIndex: 20,
-                                  minWidth: "155px",
-                                  maxWidth: "165px",
+                                  minWidth: "175px",
+                                  maxWidth: "195px",
                                   borderRight: "2px solid #cbd5e1",
                                   boxShadow: "2px 0 4px rgba(0,0,0,0.03)",
                                 }}
@@ -3088,14 +3099,13 @@ export default function CargaExternaSection({
                                   <th
                                     key={dStr}
                                     style={{
-                                      padding: "5px 6px",
+                                      padding: "7px 8px",
                                       textAlign: "center",
                                       background: isCurrentDay ? "#dbeafe" : isMatch ? "#fee2e2" : "#f1f5f9",
                                       borderLeft: isCurrentDay ? "2px solid #2563eb" : undefined,
                                       borderRight: isCurrentDay ? "2px solid #2563eb" : "1px solid #e2e8f0",
                                       borderBottom: isCurrentDay ? "3px solid #2563eb" : "2px solid #cbd5e1",
-                                      minWidth: isCurrentDay ? "76px" : "68px",
-                                      position: "relative",
+                                      minWidth: isCurrentDay ? "84px" : "74px",
                                     }}
                                   >
                                     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
@@ -3121,11 +3131,11 @@ export default function CargaExternaSection({
 
                                       <span
                                         style={{
-                                          padding: "1px 5px",
+                                          padding: "1px 6px",
                                           borderRadius: "3px",
                                           background: badgeBg,
                                           color: badgeColor,
-                                          fontSize: "9.5px",
+                                          fontSize: "10px",
                                           fontWeight: 900,
                                         }}
                                       >
@@ -3133,7 +3143,7 @@ export default function CargaExternaSection({
                                       </span>
                                       <span
                                         style={{
-                                          fontSize: "10px",
+                                          fontSize: "10.5px",
                                           fontWeight: isCurrentDay ? 900 : 700,
                                           color: isCurrentDay ? "#1e3a8a" : isOff ? "#94a3b8" : "#475569",
                                           whiteSpace: "nowrap",
@@ -3158,7 +3168,7 @@ export default function CargaExternaSection({
                                   {/* Columna fija Jugador */}
                                   <td
                                     style={{
-                                      padding: "6px 10px",
+                                      padding: "8px 12px",
                                       background: rowBg,
                                       position: "sticky",
                                       left: 0,
@@ -3168,26 +3178,28 @@ export default function CargaExternaSection({
                                       whiteSpace: "nowrap",
                                     }}
                                   >
-                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "4px" }}>
-                                      <div style={{ display: "flex", alignItems: "center", gap: "5px", overflow: "hidden" }}>
+                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "6px" }}>
+                                      <div style={{ display: "flex", alignItems: "center", gap: "6px", overflow: "hidden" }}>
                                         <span
                                           style={{
-                                            padding: "1px 5px",
-                                            borderRadius: "3px",
+                                            padding: "2px 6px",
+                                            borderRadius: "4px",
                                             background: "#1e3a8a",
                                             color: "#ffffff",
-                                            fontSize: "10px",
+                                            fontSize: "11px",
                                             fontWeight: 900,
                                           }}
                                         >
                                           #{j.dorsal || "—"}
                                         </span>
-                                        <strong style={{ fontSize: "12px", color: "#0f172a", textOverflow: "ellipsis", overflow: "hidden" }}>
-                                          {j.apodo || j.nombre}
-                                        </strong>
-                                        <span style={{ fontSize: "9.5px", color: "#64748b", fontWeight: 700 }}>
-                                          ({j.posicion || "JUG"})
-                                        </span>
+                                        <div style={{ display: "flex", flexDirection: "column" }}>
+                                          <strong style={{ fontSize: "12.5px", color: "#0f172a", textOverflow: "ellipsis", overflow: "hidden" }}>
+                                            {j.apodo || j.nombre}
+                                          </strong>
+                                          <span style={{ fontSize: "10px", color: "#64748b", fontWeight: 700 }}>
+                                            {j.posicion || "JUG"}
+                                          </span>
+                                        </div>
                                       </div>
 
                                       <button
@@ -3198,11 +3210,11 @@ export default function CargaExternaSection({
                                           window.scrollTo({ top: 300, behavior: "smooth" });
                                         }}
                                         style={{
-                                          padding: "2px 5px",
-                                          borderRadius: "3px",
+                                          padding: "3px 6px",
+                                          borderRadius: "4px",
                                           border: "1px solid #cbd5e1",
                                           background: "#ffffff",
-                                          fontSize: "10px",
+                                          fontSize: "11px",
                                           cursor: "pointer",
                                           color: "#1e3a8a",
                                         }}
@@ -3213,7 +3225,7 @@ export default function CargaExternaSection({
                                     </div>
                                   </td>
 
-                                  {/* Celdas de la Tabla 2 (% vs 5 Últ. Mismos MD) */}
+                                  {/* Celdas Tabla 2: VALOR DEL DÍA GRANDE + MICRO BADGE % */}
                                   {activeDates.map((dStr) => {
                                     const r = item.timelineMap.get(dStr);
                                     const isOff = !r?.hasSession || r?.normMd === "OFF";
@@ -3223,7 +3235,7 @@ export default function CargaExternaSection({
                                       <td
                                         key={dStr}
                                         style={{
-                                          padding: "5px 6px",
+                                          padding: "7px 6px",
                                           textAlign: "center",
                                           borderLeft: isCurrentDay ? "2px solid #3b82f6" : undefined,
                                           borderRight: isCurrentDay ? "2px solid #3b82f6" : "1px solid #f1f5f9",
@@ -3232,7 +3244,15 @@ export default function CargaExternaSection({
                                             : (r?.isMatch ? "#fff5f5" : isOff ? "#fafbfc" : "transparent"),
                                         }}
                                       >
-                                        {renderCompactBadge(r?.labelVsLast5SameMd || "—", r?.diffVsLast5SameMd ?? null, isOff)}
+                                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
+                                          {/* Valor del día del jugador (algo más grande) */}
+                                          <strong style={{ fontSize: "12.5px", fontWeight: 900, color: isOff ? "#94a3b8" : "#0f172a", lineHeight: 1.1 }}>
+                                            {r && r.volumen > 0 ? r.volumen.toLocaleString() : "0"}
+                                          </strong>
+
+                                          {/* Porcentaje de cambio (disminuido de tamaño) */}
+                                          {renderMicroBadge(r?.labelVsLast5SameMd || "—", r?.diffVsLast5SameMd ?? null, isOff)}
+                                        </div>
                                       </td>
                                     );
                                   })}
