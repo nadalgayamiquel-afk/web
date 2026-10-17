@@ -3690,6 +3690,10 @@ export default function CargaExternaSection({
                     <div style={{ maxHeight: "220px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "4px" }}>
                       {availableFavVariables.map((v) => {
                         const isChecked = selectedProfileKeys.includes(v.key);
+                        const displayLabel =
+                          v.key === "Acc+Dec" || v.label.includes("Aceleraciones + Desaceleraciones")
+                            ? "Acc-Dec"
+                            : v.label;
                         return (
                           <label
                             key={v.key}
@@ -3711,7 +3715,7 @@ export default function CargaExternaSection({
                               onChange={() => handleToggleColumn(v.key)}
                               style={{ cursor: "pointer" }}
                             />
-                            <span>{v.label}</span>
+                            <span>{displayLabel}</span>
                           </label>
                         );
                       })}
@@ -3752,7 +3756,14 @@ export default function CargaExternaSection({
                     <th style={{ padding: "8px 8px", textAlign: "center", minWidth: "90px" }}>Partidos</th>
                     {selectedProfileKeys.map((key) => {
                       const v = availableFavVariables.find((item) => item.key === key);
-                      const label = v ? v.label : key;
+                      let label = v ? v.label : key;
+                      if (
+                        key === "Acc+Dec" ||
+                        label.includes("Aceleraciones + Desaceleraciones") ||
+                        (label.toLowerCase().includes("aceleraciones") && label.toLowerCase().includes("desaceleraciones"))
+                      ) {
+                        label = "Acc-Dec";
+                      }
                       return (
                         <th
                           key={key}
@@ -3762,7 +3773,7 @@ export default function CargaExternaSection({
                             color: "#334155",
                             fontWeight: 800,
                             whiteSpace: "nowrap",
-                            minWidth: "90px",
+                            minWidth: "85px",
                           }}
                         >
                           {label}
