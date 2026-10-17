@@ -70,6 +70,23 @@ function normalizeMdType(rawMd?: string, tipoSesion?: string): string {
   return m || "ENT";
 }
 
+export const PROFILE_AVAILABLE_METRICS: Record<
+  string,
+  { key: string; label: string; unit: string; color: string; desc: string; isRate?: boolean }
+> = {
+  dist: { key: "dist", label: "Distancia Total", unit: "m", color: "#0284c7", desc: "Metros totales recorridos" },
+  mMin: { key: "mMin", label: "Intensidad", unit: "m/min", color: "#0891b2", desc: "Metros recorridos por minuto de juego", isRate: true },
+  hsr: { key: "hsr", label: "HSR (>21 km/h)", unit: "m", color: "#ea580c", desc: "Metros a alta velocidad de carrera" },
+  sprint: { key: "sprint", label: "Sprint (>24 km/h)", unit: "m", color: "#dc2626", desc: "Metros a máxima intensidad de sprint" },
+  accDec: { key: "accDec", label: "Acc + Dec (>3 m/s²)", unit: "cnt", color: "#9333ea", desc: "Suma de aceleraciones y deceleraciones de alta intensidad" },
+  accs: { key: "accs", label: "Aceleraciones (>3 m/s²)", unit: "cnt", color: "#2563eb", desc: "Acciones de aceleración explosiva" },
+  decs: { key: "decs", label: "Desaceleraciones (>3 m/s²)", unit: "cnt", color: "#d97706", desc: "Acciones de frenado excéntrico" },
+  load: { key: "load", label: "Player Load", unit: "AU", color: "#16a34a", desc: "Carga neuromuscular tridimensional" },
+  hmld: { key: "hmld", label: "HMLD (Metabólica)", unit: "m", color: "#059669", desc: "Distancia de alta potencia metabólica (>25.5 W/kg)" },
+  sprintsCount: { key: "sprintsCount", label: "Nº Sprints", unit: "cnt", color: "#e11d48", desc: "Cantidad de acciones de sprint (>24 km/h)" },
+  maxSpeed: { key: "maxSpeed", label: "Vmax", unit: "km/h", color: "#b91c1c", desc: "Pico máximo de velocidad", isRate: true },
+};
+
 export const ACWR_METRIC_CONFIG: Record<
   string,
   { label: string; unit: string; color: string; short: string; desc: string }
@@ -369,6 +386,41 @@ export default function CargaExternaSection({
   const [profileSearch, setProfileSearch] = useState<string>("");
   const [profileFilterPos, setProfileFilterPos] = useState<string>("TODOS");
   const [profileFilterCategory, setProfileFilterCategory] = useState<string>("TODOS");
+  const [profileSelectedMetrics, setProfileSelectedMetrics] = useState<string[]>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("gps_profile_selected_metrics");
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch {}
+    }
+    return ["dist", "mMin", "hsr", "sprint", "accDec"];
+  });
+
+  const handleToggleProfileMetric = (key: string) => {
+    setProfileSelectedMetrics((prev) => {
+      let next: string[];
+      if (prev.includes(key)) {
+        if (prev.length <= 1) return prev; // Mantener al menos 1 métrica
+        next = prev.filter((k) => k !== key);
+      } else {
+        next = [...prev, key];
+      }
+      if (typeof window !== "undefined") {
+        localStorage.setItem("gps_profile_selected_metrics", JSON.stringify(next));
+      }
+      return next;
+    });
+  };
+
+  const handleSelectProfilePreset = (presetKeys: string[]) => {
+    setProfileSelectedMetrics(presetKeys);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("gps_profile_selected_metrics", JSON.stringify(presetKeys));
+    }
+  };
   const [profileNorm90, setProfileNorm90] = useState<boolean>(true); // normalizado a 90 min o media directa
   const [customOverrides, setCustomOverrides] = useState<Record<string, any>>(() => {
     if (typeof window !== "undefined") {
@@ -1048,9 +1100,10 @@ export default function CargaExternaSection({
 
     realGps.forEach((r) => {
       if (!r.jugador_id) return;
-      const isMatch = String(r.tipo_sesion || r.metricas?.tipo_sesion || "").toUpperCase().includes("PARTIDO") ||
-                      String(r.match_day || r.metricas?.match_day || "").toUpperCase() === "MD" ||
-                      r.es_partido === true;
+      const isMatch =
+        String(r.tipo_sesion || r.metricas?.tipo_sesion || "").toUpperCase().includes("PARTIDO") ||
+        String(r.match_day || r.metricas?.match_day || "").toUpperCase() === "MD" ||
+        r.es_partido === true;
 
       const tareas = r.metricas?.tareas;
       let matchParts: any[] = [];
@@ -1062,13 +1115,16 @@ export default function CargaExternaSection({
       // Si no tiene array de tareas desglosadas pero es un partido registrado, usamos el registro global
       if (matchParts.length === 0 && isMatch) {
         const dur = Number(r.duracion || r.metricas?.["Duration(min)"] || r.minutos_totales || 90);
-        const dist = Number(r.metricas?.["Distance(m)"] || r.distancia_total || 0);
+        const dist = Number(r.metricas?.["Distance(m)"] || r.metricas?.["Distancia Total (m)"] || r.distancia_total || 0);
         const hsr = Number(r.metricas?.["HSR Abs (m)"] || r.metricas?.hsr || r.distancia_z4 || 0);
-        const sprint = Number(r.metricas?.["Sprint (m)"] || r.metricas?.sprint_m || (r.num_sprints ? r.num_sprints * 15 : 0));
-        const acc = Number(r.metricas?.["Accs Count"] || r.aceleraciones || 0);
-        const dec = Number(r.metricas?.["Decs Count"] || r.desaceleraciones || 0);
+        const sprint = Number(r.metricas?.["Sprint (m)"] || r.metricas?.["+ 24 km/h (Distancia)"] || r.metricas?.sprint_m || (r.num_sprints ? r.num_sprints * 15 : 0));
+        const acc = Number(r.metricas?.["Accs Count"] || r.metricas?.["Acc + 3 m/s2 (Num)"] || r.aceleraciones || 0);
+        const dec = Number(r.metricas?.["Decs Count"] || r.metricas?.["Dec + 3 m/s2 (Num)"] || r.desaceleraciones || 0);
         const load = Number(r.metricas?.["Player Load"] || r.player_load || 0);
-        const maxSpd = Number(r.metricas?.["MAX Speed(km/h)"] || r.max_speed || 0);
+        const hmld = Number(r.metricas?.HMLD || r.metricas?.hmld || 0);
+        const sprintsCount = Number(r.metricas?.["Sprints Count"] || r.metricas?.["+24 km/h (Num)"] || r.num_sprints || 0);
+        const maxSpd = Number(r.metricas?.["MAX Speed(km/h)"] || r.metricas?.["Vel Max"] || r.max_speed || 0);
+        const mMin = dur > 0 ? Math.round((dist / dur) * 10) / 10 : 0;
 
         if (dist > 0) {
           if (!playerMatchesMap.has(r.jugador_id)) playerMatchesMap.set(r.jugador_id, []);
@@ -1076,12 +1132,17 @@ export default function CargaExternaSection({
             fecha: r.fecha,
             minutos: dur,
             dist,
+            mMin,
             hsr,
             sprint,
             accDec: acc + dec,
+            accs: acc,
+            decs: dec,
             load,
+            hmld,
+            sprintsCount,
             maxSpeed: maxSpd,
-            parts: [{ nombre: "Partido Completo", minutos: dur, dist, hsr, sprint, accDec: acc + dec, load, maxSpeed: maxSpd }],
+            parts: [{ nombre: "Partido Completo", minutos: dur, dist, mMin, hsr, sprint, accDec: acc + dec, accs: acc, decs: dec, load, hmld, sprintsCount, maxSpeed: maxSpd }],
           });
         }
         return;
@@ -1092,186 +1153,194 @@ export default function CargaExternaSection({
       if (!playerMatchesMap.has(r.jugador_id)) playerMatchesMap.set(r.jugador_id, []);
 
       const totalMinutes = matchParts.reduce((acc, t) => acc + Number(t.Tiempo || t.duracion_min || t.Duration || 0), 0);
-      const totalDist = matchParts.reduce((acc, t) => acc + Number(t["Distance(m)"] || t.distancia_total || 0), 0);
+      const totalDist = matchParts.reduce((acc, t) => acc + Number(t["Distance(m)"] || t["Distancia Total (m)"] || t.distancia_total || 0), 0);
       const totalHsr = matchParts.reduce((acc, t) => acc + Number(t.hsr || t["HSR Abs (m)"] || t.distancia_z4 || 0), 0);
       const totalSprint = matchParts.reduce((acc, t) => acc + Number(t["+ 24 km/h (Distancia)"] || t["+28 km/h (Distancia)"] || t.distancia_z5 || t.sprint || 0), 0);
       const totalAcc = matchParts.reduce((acc, t) => acc + Number(t["Accs Count"] || t["Acc + 3 m/s2 (Num)"] || t.aceleraciones || 0), 0);
       const totalDec = matchParts.reduce((acc, t) => acc + Number(t["Decs Count"] || t["Dec + 3 m/s2 (Num)"] || t.desaceleraciones || 0), 0);
       const totalLoad = matchParts.reduce((acc, t) => acc + Number(t["Player Load"] || t.player_load || 0), 0);
+      const totalHmld = matchParts.reduce((acc, t) => acc + Number(t.HMLD || t.hmld || 0), 0);
+      const totalSprintsCount = matchParts.reduce((acc, t) => acc + Number(t["Sprints Count"] || t["+24 km/h (Num)"] || t.num_sprints || 0), 0);
       const maxSpeed = Math.max(...matchParts.map((t) => Number(t["MAX Speed(km/h)"] || t["Vel Max"] || t.max_speed || 0)));
+      const mMin = totalMinutes > 0 ? Math.round((totalDist / totalMinutes) * 10) / 10 : 0;
 
-      const parts = matchParts.map((t) => ({
-        nombre: t.nombre || t.name || t.tarea || "Parte",
-        minutos: Number(t.Tiempo || t.duracion_min || t.Duration || 0),
-        dist: Number(t["Distance(m)"] || t.distancia_total || 0),
-        hsr: Number(t.hsr || t["HSR Abs (m)"] || t.distancia_z4 || 0),
-        sprint: Number(t["+ 24 km/h (Distancia)"] || t["+28 km/h (Distancia)"] || t.distancia_z5 || t.sprint || 0),
-        accDec: Number(t["Accs Count"] || t["Acc + 3 m/s2 (Num)"] || 0) + Number(t["Decs Count"] || t["Dec + 3 m/s2 (Num)"] || 0),
-        load: Number(t["Player Load"] || t.player_load || 0),
-        maxSpeed: Number(t["MAX Speed(km/h)"] || t["Vel Max"] || 0),
-      }));
+      const parts = matchParts.map((t) => {
+        const pMin = Number(t.Tiempo || t.duracion_min || t.Duration || 0);
+        const pDist = Number(t["Distance(m)"] || t["Distancia Total (m)"] || t.distancia_total || 0);
+        return {
+          nombre: t.nombre || t.name || t.tarea || "Parte",
+          minutos: pMin,
+          dist: pDist,
+          mMin: pMin > 0 ? Math.round((pDist / pMin) * 10) / 10 : 0,
+          hsr: Number(t.hsr || t["HSR Abs (m)"] || t.distancia_z4 || 0),
+          sprint: Number(t["+ 24 km/h (Distancia)"] || t["+28 km/h (Distancia)"] || t.distancia_z5 || t.sprint || 0),
+          accDec: Number(t["Accs Count"] || t["Acc + 3 m/s2 (Num)"] || 0) + Number(t["Decs Count"] || t["Dec + 3 m/s2 (Num)"] || 0),
+          accs: Number(t["Accs Count"] || t["Acc + 3 m/s2 (Num)"] || 0),
+          decs: Number(t["Decs Count"] || t["Dec + 3 m/s2 (Num)"] || 0),
+          load: Number(t["Player Load"] || t.player_load || 0),
+          hmld: Number(t.HMLD || t.hmld || 0),
+          sprintsCount: Number(t["Sprints Count"] || t["+24 km/h (Num)"] || t.num_sprints || 0),
+          maxSpeed: Number(t["MAX Speed(km/h)"] || t["Vel Max"] || 0),
+        };
+      });
 
       playerMatchesMap.get(r.jugador_id)!.push({
         fecha: r.fecha,
         minutos: Math.round(totalMinutes * 10) / 10,
         dist: totalDist,
+        mMin,
         hsr: totalHsr,
         sprint: totalSprint,
         accDec: totalAcc + totalDec,
+        accs: totalAcc,
+        decs: totalDec,
         load: totalLoad,
-        maxSpeed,
+        hmld: totalHmld,
+        sprintsCount: totalSprintsCount,
+        maxSpeed: isFinite(maxSpeed) ? maxSpeed : 0,
         parts,
       });
     });
 
     const profiles = new Map<string, any>();
-    const posPool = new Map<string, any[]>();
+    const positionProfilesMap = new Map<string, any[]>();
+    const metricsToCompute = ["dist", "mMin", "hsr", "sprint", "accDec", "accs", "decs", "load", "hmld", "sprintsCount"];
 
-    // PASO 1: Calcular perfiles reales o estimados
+    // PASO 1: Calcular perfiles directos para jugadores con datos
     jugadores.forEach((j) => {
-      const matches = playerMatchesMap.get(j.id) || [];
-      const fullMatches = matches.filter((m) => m.minutos >= 80);
-      const pos = (j.posicion || "MED").toUpperCase();
       const overrides = customOverrides[j.id] || {};
+      const matches = playerMatchesMap.get(j.id) || [];
+      const pos = (j.posicion || "JUG").toUpperCase();
 
-      let category: "real_varios" | "real_uno" | "estimado_45" | "copiado_posicion" = "copiado_posicion";
-      let isReal = true;
-      let badgeText = "";
-      let asterisk = "";
-      let detailText = "";
-      let profile: any = { dist: 0, hsr: 0, sprint: 0, accDec: 0, load: 0, maxSpeed: 0, mMin: 0 };
+      const fullMatches = matches.filter((m) => m.minutos >= 80);
+      const halfMatches = matches.filter((m) => m.minutos >= 40 && m.minutos < 80);
 
-      if (fullMatches.length >= 2) {
-        // CASO 1: Varios partidos 90 min -> (Máximo + Promedio) / 2
-        category = "real_varios";
-        badgeText = "Real ((Máx+Prom)/2)";
-        asterisk = "";
-        detailText = `${matches.length} part. (${fullMatches.length} de 90')`;
-        const metrics: Array<"dist" | "hsr" | "sprint" | "accDec" | "load"> = ["dist", "hsr", "sprint", "accDec", "load"];
-        metrics.forEach((k) => {
-          const vals = fullMatches.map((m) => m[k]);
-          const maxV = Math.max(...vals);
-          const avgV = vals.reduce((a, b) => a + b, 0) / vals.length;
-          profile[k] = Math.round((maxV + avgV) / 2);
-        });
-        profile.maxSpeed = Math.round(Math.max(...fullMatches.map((m) => m.maxSpeed)) * 10) / 10;
-        profile.mMin = Math.round(profile.dist / 90);
-        isReal = true;
-      } else if (fullMatches.length === 1) {
-        // CASO 2: Solo 1 partido 90 min -> coger ese valor como perfil
-        category = "real_uno";
-        badgeText = "Real (1 part. 90')";
-        asterisk = "";
-        detailText = `${matches.length} part. (1 de 90')`;
-        const m = fullMatches[0];
-        profile = {
-          dist: Math.round(m.dist),
-          hsr: Math.round(m.hsr),
-          sprint: Math.round(m.sprint),
-          accDec: Math.round(m.accDec),
-          load: Math.round(m.load),
-          maxSpeed: Math.round(m.maxSpeed * 10) / 10,
-          mMin: Math.round(m.dist / (m.minutos || 90)),
-        };
-        isReal = true;
-      } else {
-        // CASO 3 & 4: Buscar si tiene alguna parte o partido con >= 40-45 min
-        const partsOver45: any[] = [];
-        matches.forEach((m) => {
-          m.parts.forEach((p: any) => {
-            if (p.minutos >= 40) partsOver45.push(p);
-          });
-          if (m.minutos >= 45 && partsOver45.length === 0) {
-            partsOver45.push(m);
-          }
-        });
-
-        if (partsOver45.length > 0) {
-          // CASO 3: -90 min pero al menos 45 min en uno -> ese 45 min × 2 (*)
-          category = "estimado_45";
-          badgeText = "Estimado (45' × 2)*";
-          asterisk = "*";
-          partsOver45.sort((a, b) => b.dist - a.dist);
-          const best = partsOver45[0];
-          detailText = `1 tiempo (${Math.round(best.minutos)}' × 2)*`;
-          profile = {
-            dist: Math.round(best.dist * 2),
-            hsr: Math.round(best.hsr * 2),
-            sprint: Math.round(best.sprint * 2),
-            accDec: Math.round(best.accDec * 2),
-            load: Math.round(best.load * 2),
-            maxSpeed: Math.round(best.maxSpeed * 10) / 10,
-            mMin: Math.round((best.dist * 2) / 90),
-          };
-          isReal = false;
-        } else {
-          // CASO 4: No tiene ni 45 min -> copiado por posición (**)
-          category = "copiado_posicion";
-          badgeText = "Copiado Posición**";
-          asterisk = "**";
-          const maxM = matches.length > 0 ? Math.max(...matches.map((m) => m.minutos)) : 0;
-          detailText = maxM > 0 ? `Máx ${Math.round(maxM)}' (<45')**` : "Sin partidos (0')**";
-          isReal = false;
-        }
-      }
-
-      // Guardar en el pool posicional si es real
-      if (isReal && profile.dist > 0) {
-        if (!posPool.has(pos)) posPool.set(pos, []);
-        posPool.get(pos)!.push(profile);
-      }
-
-      profiles.set(j.id, {
-        jugador: j,
-        category,
-        isReal,
-        badgeText,
-        asterisk,
-        detailText,
+      const p: any = {
+        jugadorId: j.id,
+        nombre: j.apodo || j.nombre,
+        dorsal: j.dorsal,
+        posicion: j.posicion,
         matchesCount: matches.length,
-        dist: overrides.dist ?? profile.dist,
-        hsr: overrides.hsr ?? profile.hsr,
-        sprint: overrides.sprint ?? profile.sprint,
-        accDec: overrides.accDec ?? profile.accDec,
-        load: overrides.load ?? profile.load,
-        maxSpeed: overrides.maxSpeed ?? profile.maxSpeed,
-        mMin: overrides.mMin ?? profile.mMin,
-        isFallback: !isReal,
-      });
+        fullMatchesCount: fullMatches.length,
+        halfMatchesCount: halfMatches.length,
+      };
+
+      if (fullMatches.length > 1) {
+        // CASO 1: Varios partidos de 90 min -> (Máximo + Promedio) / 2
+        p.category = "real_varios";
+        p.isReal = true;
+        p.badgeText = "Varios 90' (Máx+Prom)/2";
+        p.asterisk = "";
+        p.detailText = `${fullMatches.length} partidos 90' (Fórmula Máx+Prom/2)`;
+
+        metricsToCompute.forEach((k) => {
+          const vals = fullMatches.map((m) => m[k] || 0);
+          const maxVal = Math.max(...vals);
+          const avgVal = vals.reduce((a, b) => a + b, 0) / vals.length;
+          p[k] = overrides[k] ?? Math.round((maxVal + avgVal) / 2);
+        });
+
+        const spdVals = fullMatches.map((m) => m.maxSpeed || 0);
+        const maxSpd = Math.max(...spdVals);
+        const avgSpd = spdVals.reduce((a, b) => a + b, 0) / spdVals.length;
+        p.maxSpeed = overrides.maxSpeed ?? Math.round(((maxSpd + avgSpd) / 2) * 10) / 10;
+        p.minutesMatch = Math.round(fullMatches.reduce((a, b) => a + b.minutos, 0) / fullMatches.length);
+
+        profiles.set(j.id, p);
+
+        // Guardar para medias por posición
+        if (!positionProfilesMap.has(pos)) positionProfilesMap.set(pos, []);
+        positionProfilesMap.get(pos)!.push(p);
+      } else if (fullMatches.length === 1) {
+        // CASO 2: Solo 1 partido de 90 min -> coger ese valor como perfil
+        p.category = "real_uno";
+        p.isReal = true;
+        p.badgeText = "1 Partido 90'";
+        p.asterisk = "";
+        p.detailText = `1 partido de 90' (${fullMatches[0].fecha})`;
+
+        const m = fullMatches[0];
+        metricsToCompute.forEach((k) => {
+          p[k] = overrides[k] ?? Math.round(m[k] || 0);
+        });
+        p.maxSpeed = overrides.maxSpeed ?? Math.round((m.maxSpeed || 0) * 10) / 10;
+        p.minutesMatch = m.minutos;
+
+        profiles.set(j.id, p);
+
+        if (!positionProfilesMap.has(pos)) positionProfilesMap.set(pos, []);
+        positionProfilesMap.get(pos)!.push(p);
+      } else if (halfMatches.length > 0) {
+        // CASO 3: Menos de 90 min en todos pero al menos 45 min en uno -> valor 45 min x 2 (*)
+        p.category = "estimado_45";
+        p.isReal = false;
+        p.badgeText = "Estimado 45' x 2 *";
+        p.asterisk = "*";
+        const bestHalf = [...halfMatches].sort((a, b) => (b.minutos || 0) - (a.minutos || 0))[0];
+        p.detailText = `Estimado: ${bestHalf.minutos}' x 2 (No real *)`;
+
+        metricsToCompute.forEach((k) => {
+          const isRate = k === "mMin";
+          const raw = bestHalf[k] || 0;
+          p[k] = overrides[k] ?? (isRate ? Math.round(raw) : Math.round(raw * 2));
+        });
+        p.maxSpeed = overrides.maxSpeed ?? Math.round((bestHalf.maxSpeed || 0) * 10) / 10;
+        p.minutesMatch = 90;
+
+        profiles.set(j.id, p);
+      } else {
+        // CASO 4 PRE-MARCADO: <45 min -> se resolverá por posición en paso 2
+        p.category = "copiado_posicion";
+        p.isReal = false;
+        p.badgeText = "Copiado Posición **";
+        p.asterisk = "**";
+        p.detailText = "Sin minutos suficientes (<45'). Copiado de compañeros de posición (No real **)";
+        p.minutesMatch = 90;
+        profiles.set(j.id, p);
+      }
     });
 
-    // PASO 2: Rellenar jugadores de Caso 4 copiando el promedio de su misma posición
-    profiles.forEach((p, jId) => {
-      if (p.category === "copiado_posicion") {
-        const pos = (p.jugador.posicion || "MED").toUpperCase();
-        const overrides = customOverrides[jId] || {};
-        let pool = posPool.get(pos);
+    // PASO 2: Resolver jugadores <45 min copiando el perfil de su misma posición
+    jugadores.forEach((j) => {
+      const p = profiles.get(j.id);
+      if (p && p.category === "copiado_posicion") {
+        const overrides = customOverrides[j.id] || {};
+        const pos = (j.posicion || "JUG").toUpperCase();
+
+        let pool = positionProfilesMap.get(pos);
+        if (!pool || pool.length === 0) {
+          if (pos.includes("DEF") || pos.includes("LAT") || pos.includes("CEN")) {
+            pool = Array.from(positionProfilesMap.entries()).filter(([k]) => k.includes("DEF") || k.includes("LAT") || k.includes("CEN")).flatMap(([, v]) => v);
+          } else if (pos.includes("MED") || pos.includes("PIV") || pos.includes("INT")) {
+            pool = Array.from(positionProfilesMap.entries()).filter(([k]) => k.includes("MED") || k.includes("PIV") || k.includes("INT")).flatMap(([, v]) => v);
+          } else if (pos.includes("DEL") || pos.includes("EXT") || pos.includes("PUN")) {
+            pool = Array.from(positionProfilesMap.entries()).filter(([k]) => k.includes("DEL") || k.includes("EXT") || k.includes("PUN")).flatMap(([, v]) => v);
+          }
+        }
 
         if (!pool || pool.length === 0) {
-          // Si no hay jugadores de esa posición específica, ampliar categoría
-          if (pos.includes("DEF") || pos.includes("LAT") || pos.includes("CEN")) pool = posPool.get("DEF") || [];
-          else if (pos.includes("MED") || pos.includes("PIV") || pos.includes("INT")) pool = posPool.get("MED") || [];
-          else if (pos.includes("DEL") || pos.includes("EXT") || pos.includes("PUN")) pool = posPool.get("DEL") || [];
-          if (!pool || pool.length === 0) {
-            pool = Array.from(posPool.values()).flat();
-          }
+          pool = Array.from(positionProfilesMap.values()).flat();
         }
 
         if (pool && pool.length > 0) {
-          const metrics: Array<"dist" | "hsr" | "sprint" | "accDec" | "load" | "mMin"> = ["dist", "hsr", "sprint", "accDec", "load", "mMin"];
-          metrics.forEach((k) => {
-            const vals = pool!.map((x) => x[k]);
+          metricsToCompute.forEach((k) => {
+            const vals = pool!.map((x) => x[k] || 0);
             p[k] = overrides[k] ?? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
           });
-          p.maxSpeed = overrides.maxSpeed ?? Math.round(Math.max(...pool.map((x) => x.maxSpeed)) * 10) / 10;
+          const spdVals = pool.map((x) => x.maxSpeed || 0);
+          p.maxSpeed = overrides.maxSpeed ?? Math.round((spdVals.reduce((a, b) => a + b, 0) / spdVals.length) * 10) / 10;
         } else {
-          // Fallback por defecto si no hay ningún partido registrado
+          // Fallback por defecto si no hay ningún partido registrado en el equipo
           p.dist = overrides.dist ?? 10200;
+          p.mMin = overrides.mMin ?? 113;
           p.hsr = overrides.hsr ?? 650;
           p.sprint = overrides.sprint ?? 180;
           p.accDec = overrides.accDec ?? 85;
+          p.accs = overrides.accs ?? 45;
+          p.decs = overrides.decs ?? 40;
           p.load = overrides.load ?? 850;
-          p.mMin = overrides.mMin ?? 113;
+          p.hmld = overrides.hmld ?? 820;
+          p.sprintsCount = overrides.sprintsCount ?? 15;
           p.maxSpeed = overrides.maxSpeed ?? 28.5;
         }
       }
@@ -3432,126 +3501,353 @@ export default function CargaExternaSection({
                   <h4 style={{ margin: 0, fontSize: "15px", fontWeight: 900, color: "#c2410c" }}>
                     Perfil Competitivo Individual (Benchmark 100% Match)
                   </h4>
+                  <span
+                    style={{
+                      background: "#ffedd5",
+                      color: "#9a3412",
+                      fontSize: "11px",
+                      fontWeight: 800,
+                      padding: "2px 8px",
+                      borderRadius: "6px",
+                    }}
+                  >
+                    Exclusivo 1ª y 2ª Parte (Cat / Esp)
+                  </span>
                 </div>
-                <p style={{ margin: "4px 0 0 0", fontSize: "12px", color: "#7c2d12", lineHeight: 1.5, maxWidth: "900px" }}>
-                  <strong>Metodología Oficial:</strong> Calculado exclusivamente sobre las tareas de <strong>1ª parte y 2ª parte</strong> (en catalán o español).
-                  <br />
-                  • <strong>Varios partidos de 90 min:</strong> Perfil = <code>(Máximo + Promedio) / 2</code> (100% Real).
-                  <br />
-                  • <strong>1 único partido de 90 min:</strong> Perfil = ese valor directo (100% Real).
-                  <br />
-                  • <strong>&lt;90 min pero con 45 min en uno:</strong> Perfil = <code>45 min × 2</code> (marcado con asterisco <code>*</code>).
-                  <br />
-                  • <strong>&lt;45 min en todos los partidos:</strong> Perfil = promedio de los jugadores de su misma posición (marcado con doble asterisco <code>**</code>).
+                <p style={{ margin: "6px 0 0", fontSize: "12px", color: "#475569", lineHeight: 1.5, maxWidth: "880px" }}>
+                  Cálculo científico del perfil de competición filtrando estrictamente las tareas oficiales de <strong>primera parte y segunda parte</strong> (eliminando calentamientos y activaciones).
+                  Aplica la regla estricta: <strong>(Máximo + Promedio) / 2</strong> en jugadores con varios partidos de 90 min, valor directo en 1 partido de 90 min, <strong>proyección 45' × 2 (*)</strong> en jugadores con al menos 45 min, y <strong>copia de posición (**)</strong> en aquellos con &lt;45 min.
                 </p>
               </div>
 
-              {/* Controles de Búsqueda y Filtros */}
-              <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+              {/* Botón de reset de overrides */}
+              {Object.keys(customOverrides).length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm("¿Restablecer todos los benchmarks ajustados manualmente y volver a la fórmula automática?")) {
+                      setCustomOverrides({});
+                      if (typeof window !== "undefined") {
+                        localStorage.removeItem("gps_competitive_profile_overrides");
+                      }
+                    }
+                  }}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: "6px",
+                    border: "1px solid #f87171",
+                    background: "#fef2f2",
+                    color: "#dc2626",
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  ↺ Restablecer Ajustes Manuales ({Object.keys(customOverrides).length})
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* PANEL DE CONTROL: BUSCADOR + FILTROS DE POSICIÓN Y ESTADO */}
+          <div
+            style={{
+              background: "#ffffff",
+              borderRadius: "10px",
+              padding: "14px 18px",
+              border: "1px solid #cbd5e1",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.02)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              flexWrap: "wrap",
+              gap: "12px",
+            }}
+          >
+            {/* Buscador */}
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: "1 1 240px", maxWidth: "340px" }}>
+              <span style={{ fontSize: "14px", color: "#64748b" }}>🔍</span>
+              <input
+                type="text"
+                placeholder="Buscar por jugador o dorsal..."
+                value={profileSearch}
+                onChange={(e) => setProfileSearch(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "6px 10px",
+                  borderRadius: "6px",
+                  border: "1px solid #cbd5e1",
+                  fontSize: "12px",
+                  outline: "none",
+                }}
+              />
+            </div>
+
+            {/* Filtros Posición y Categoría */}
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+              {/* Filtro Posición */}
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <span style={{ fontSize: "11.5px", fontWeight: 700, color: "#64748b" }}>Posición:</span>
                 <select
                   value={profileFilterPos}
                   onChange={(e) => setProfileFilterPos(e.target.value)}
                   style={{
-                    padding: "6px 10px",
+                    padding: "5px 10px",
                     borderRadius: "6px",
-                    border: "1px solid #fed7aa",
-                    fontSize: "12px",
-                    fontWeight: 700,
+                    border: "1px solid #cbd5e1",
                     background: "#ffffff",
-                    color: "#9a3412",
-                    outline: "none",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    color: "#0f172a",
+                    cursor: "pointer",
                   }}
                 >
                   <option value="TODOS">Todas las Posiciones</option>
-                  <option value="DEF">Defensas</option>
-                  <option value="MED">Centrocampistas</option>
-                  <option value="DEL">Delanteros</option>
-                  <option value="POR">Porteros</option>
+                  <option value="DEF">Defensas (DEF/LAT/CEN)</option>
+                  <option value="MED">Centrocampistas (MED/PIV/INT)</option>
+                  <option value="DEL">Delanteros (DEL/EXT/PUN)</option>
+                  <option value="POR">Porteros (POR)</option>
                 </select>
+              </div>
 
+              {/* Filtro Fiabilidad Metodológica */}
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <span style={{ fontSize: "11.5px", fontWeight: 700, color: "#64748b" }}>Método:</span>
                 <select
                   value={profileFilterCategory}
                   onChange={(e) => setProfileFilterCategory(e.target.value)}
                   style={{
-                    padding: "6px 10px",
+                    padding: "5px 10px",
                     borderRadius: "6px",
-                    border: "1px solid #fed7aa",
-                    fontSize: "12px",
-                    fontWeight: 700,
+                    border: "1px solid #cbd5e1",
                     background: "#ffffff",
-                    color: "#9a3412",
-                    outline: "none",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    color: "#0f172a",
+                    cursor: "pointer",
                   }}
                 >
-                  <option value="TODOS">Todos los Métodos</option>
-                  <option value="REALS">Solo 100% Reales (90 min)</option>
-                  <option value="ESTIMADOS">Solo Estimados (45' × 2)*</option>
-                  <option value="COPIADOS">Solo Copiados Posición**</option>
+                  <option value="TODOS">Todos los perfiles</option>
+                  <option value="REALS">🟢 100% Reales (Partidos 90')</option>
+                  <option value="ESTIMADOS">🟡 Estimados 45' x 2 (*)</option>
+                  <option value="COPIADOS">🟠 Copiados de Posición (**)</option>
                 </select>
-
-                <input
-                  type="text"
-                  placeholder="Buscar jugador..."
-                  value={profileSearch}
-                  onChange={(e) => setProfileSearch(e.target.value)}
-                  style={{
-                    padding: "6px 12px",
-                    borderRadius: "6px",
-                    border: "1px solid #fed7aa",
-                    fontSize: "12px",
-                    outline: "none",
-                    width: "150px",
-                    background: "#ffffff",
-                  }}
-                />
               </div>
             </div>
           </div>
 
-          {/* KPI CARDS RESUMEN DE LA PLANTILLA */}
+          {/* ── SELECTOR DINÁMICO DE VARIABLES A MOSTRAR ── */}
+          <div
+            style={{
+              background: "#ffffff",
+              borderRadius: "10px",
+              padding: "16px 20px",
+              border: "1.5px solid #cbd5e1",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "12px",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "10px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ fontSize: "16px" }}>⚙️</span>
+                <div>
+                  <strong style={{ fontSize: "13.5px", color: "#0f172a" }}>Elige las Variables de tu Perfil Competitivo:</strong>
+                  <span style={{ fontSize: "11.5px", color: "#64748b", marginLeft: "8px" }}>
+                    (Haz clic en cada métrica para activarla o desactivarla en la tabla • <strong>{profileSelectedMetrics.length} seleccionadas</strong>)
+                  </span>
+                </div>
+              </div>
+
+              {/* Botones Presets Rápidos */}
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                <span style={{ fontSize: "11px", fontWeight: 700, color: "#64748b" }}>Presets:</span>
+                <button
+                  type="button"
+                  onClick={() => handleSelectProfilePreset(["dist", "mMin", "hsr", "sprint", "accDec"])}
+                  style={{
+                    padding: "3px 8px",
+                    borderRadius: "6px",
+                    border: "1px solid #cbd5e1",
+                    background: "#f8fafc",
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    color: "#0369a1",
+                  }}
+                >
+                  ⭐ Top 5 Estándar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSelectProfilePreset(["mMin", "hsr", "sprint", "accDec", "maxSpeed"])}
+                  style={{
+                    padding: "3px 8px",
+                    borderRadius: "6px",
+                    border: "1px solid #cbd5e1",
+                    background: "#f8fafc",
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    color: "#ea580c",
+                  }}
+                >
+                  ⚡ Alta Intensidad
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSelectProfilePreset(["load", "accs", "decs", "accDec", "sprintsCount"])}
+                  style={{
+                    padding: "3px 8px",
+                    borderRadius: "6px",
+                    border: "1px solid #cbd5e1",
+                    background: "#f8fafc",
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    color: "#7e22ce",
+                  }}
+                >
+                  🔋 Neuromuscular
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSelectProfilePreset(Object.keys(PROFILE_AVAILABLE_METRICS))}
+                  style={{
+                    padding: "3px 8px",
+                    borderRadius: "6px",
+                    border: "1px solid #cbd5e1",
+                    background: "#f8fafc",
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    color: "#0f172a",
+                  }}
+                >
+                  🌐 Ver Todas ({Object.keys(PROFILE_AVAILABLE_METRICS).length})
+                </button>
+              </div>
+            </div>
+
+            {/* Chips interactivos de variables */}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+              {Object.entries(PROFILE_AVAILABLE_METRICS).map(([k, cfg]) => {
+                const isSelected = profileSelectedMetrics.includes(k);
+                return (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => handleToggleProfileMetric(k)}
+                    title={cfg.desc}
+                    style={{
+                      padding: "6px 12px",
+                      borderRadius: "8px",
+                      border: isSelected ? `2px solid ${cfg.color}` : "1px solid #cbd5e1",
+                      background: isSelected ? `${cfg.color}15` : "#ffffff",
+                      color: isSelected ? cfg.color : "#64748b",
+                      fontSize: "12px",
+                      fontWeight: isSelected ? 800 : 600,
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      boxShadow: isSelected ? "0 1px 4px rgba(0,0,0,0.05)" : "none",
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: "14px",
+                        height: "14px",
+                        borderRadius: "4px",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        border: isSelected ? `1.5px solid ${cfg.color}` : "1.5px solid #94a3b8",
+                        background: isSelected ? cfg.color : "transparent",
+                        color: "#ffffff",
+                        fontSize: "10px",
+                        fontWeight: 900,
+                      }}
+                    >
+                      {isSelected ? "✓" : ""}
+                    </span>
+                    <span>{cfg.label}</span>
+                    <span style={{ fontSize: "10px", opacity: 0.75 }}>({cfg.unit})</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* TARJETAS RESUMEN DE LA PLANTILLA SEGÚN METODOLOGÍA */}
           {(() => {
-            const allProfilesList = jugadores.map((j) => competitiveProfiles.get(j.id)).filter(Boolean);
-            const countRealVarios = allProfilesList.filter((p) => p.category === "real_varios").length;
-            const countRealUno = allProfilesList.filter((p) => p.category === "real_uno").length;
-            const countEstimados = allProfilesList.filter((p) => p.category === "estimado_45").length;
-            const countCopiados = allProfilesList.filter((p) => p.category === "copiado_posicion").length;
+            let countReales = 0;
+            let countEstimados = 0;
+            let countCopiados = 0;
+
+            jugadores.forEach((j) => {
+              const p = competitiveProfiles.get(j.id);
+              if (!p) return;
+              if (p.isReal) countReales++;
+              else if (p.category === "estimado_45") countEstimados++;
+              else countCopiados++;
+            });
 
             return (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: "12px" }}>
-                <div style={{ background: "#ffffff", padding: "12px 16px", borderRadius: "8px", border: "1px solid #cbd5e1", borderLeft: "4px solid #16a34a" }}>
-                  <span style={{ fontSize: "11px", fontWeight: 800, color: "#15803d", textTransform: "uppercase" }}>
-                    🟢 Real (Varios 90 min)
-                  </span>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                  gap: "12px",
+                }}
+              >
+                <div
+                  style={{
+                    background: "#f0fdf4",
+                    borderRadius: "8px",
+                    padding: "12px 16px",
+                    border: "1px solid #bbf7d0",
+                  }}
+                >
+                  <div style={{ fontSize: "11px", fontWeight: 800, color: "#166534", textTransform: "uppercase" }}>
+                    🟢 Perfiles 100% Reales
+                  </div>
                   <div style={{ display: "flex", alignItems: "baseline", gap: "6px", marginTop: "2px" }}>
-                    <strong style={{ fontSize: "22px", fontWeight: 900, color: "#0f172a" }}>{countRealVarios}</strong>
-                    <span style={{ fontSize: "11px", color: "#64748b" }}>jugadores (Máx + Prom) / 2</span>
+                    <strong style={{ fontSize: "22px", fontWeight: 900, color: "#0f172a" }}>{countReales}</strong>
+                    <span style={{ fontSize: "11px", color: "#64748b" }}>jugadores con 90 min</span>
                   </div>
                 </div>
 
-                <div style={{ background: "#ffffff", padding: "12px 16px", borderRadius: "8px", border: "1px solid #cbd5e1", borderLeft: "4px solid #0284c7" }}>
-                  <span style={{ fontSize: "11px", fontWeight: 800, color: "#0369a1", textTransform: "uppercase" }}>
-                    🟢 Real (1 partido 90 min)
-                  </span>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: "6px", marginTop: "2px" }}>
-                    <strong style={{ fontSize: "22px", fontWeight: 900, color: "#0f172a" }}>{countRealUno}</strong>
-                    <span style={{ fontSize: "11px", color: "#64748b" }}>jugadores (valor directo)</span>
+                <div
+                  style={{
+                    background: "#fefce8",
+                    borderRadius: "8px",
+                    padding: "12px 16px",
+                    border: "1px solid #fef08a",
+                  }}
+                >
+                  <div style={{ fontSize: "11px", fontWeight: 800, color: "#854d0e", textTransform: "uppercase" }}>
+                    🟡 Estimados 45' × 2 (*)
                   </div>
-                </div>
-
-                <div style={{ background: "#ffffff", padding: "12px 16px", borderRadius: "8px", border: "1px solid #cbd5e1", borderLeft: "4px solid #f59e0b" }}>
-                  <span style={{ fontSize: "11px", fontWeight: 800, color: "#b45309", textTransform: "uppercase" }}>
-                    🟡 Estimado (45 min × 2)*
-                  </span>
                   <div style={{ display: "flex", alignItems: "baseline", gap: "6px", marginTop: "2px" }}>
                     <strong style={{ fontSize: "22px", fontWeight: 900, color: "#0f172a" }}>{countEstimados}</strong>
-                    <span style={{ fontSize: "11px", color: "#64748b" }}>jugadores proyectados *</span>
+                    <span style={{ fontSize: "11px", color: "#64748b" }}>jugadores &ge;45 min *</span>
                   </div>
                 </div>
 
-                <div style={{ background: "#ffffff", padding: "12px 16px", borderRadius: "8px", border: "1px solid #cbd5e1", borderLeft: "4px solid #ea580c" }}>
-                  <span style={{ fontSize: "11px", fontWeight: 800, color: "#c2410c", textTransform: "uppercase" }}>
-                    🟠 Copiado Posición**
-                  </span>
+                <div
+                  style={{
+                    background: "#fff7ed",
+                    borderRadius: "8px",
+                    padding: "12px 16px",
+                    border: "1px solid #fed7aa",
+                  }}
+                >
+                  <div style={{ fontSize: "11px", fontWeight: 800, color: "#9a3412", textTransform: "uppercase" }}>
+                    🟠 Copiados Posición (**)
+                  </div>
                   <div style={{ display: "flex", alignItems: "baseline", gap: "6px", marginTop: "2px" }}>
                     <strong style={{ fontSize: "22px", fontWeight: 900, color: "#0f172a" }}>{countCopiados}</strong>
                     <span style={{ fontSize: "11px", color: "#64748b" }}>jugadores &lt;45 min **</span>
@@ -3561,23 +3857,36 @@ export default function CargaExternaSection({
             );
           })()}
 
-          {/* TABLA DE PERFILES COMPETITIVOS CON LAS 5 VARIABLES CLAVE */}
+          {/* TABLA DE PERFILES COMPETITIVOS CON LAS VARIABLES SELECCIONADAS */}
           <div style={{ background: "#ffffff", borderRadius: "10px", border: "1px solid #cbd5e1", overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", color: "#0f172a" }}>
                 <thead>
                   <tr style={{ background: "#f8fafc", borderBottom: "2px solid #cbd5e1", textAlign: "left", color: "#475569", fontSize: "11px", textTransform: "uppercase" }}>
-                    <th style={{ padding: "10px 12px" }}>Jugador</th>
-                    <th style={{ padding: "10px 10px", textAlign: "center" }}>Origen / Método</th>
-                    <th style={{ padding: "10px 10px", textAlign: "center" }}>Partidos Analizados</th>
-                    <th style={{ padding: "10px 10px", textAlign: "right" }}>Distancia Total (m)</th>
-                    <th style={{ padding: "10px 10px", textAlign: "right" }}>Intensidad (m/min)</th>
-                    <th style={{ padding: "10px 10px", textAlign: "right" }}>HSR (&gt;21 km/h)</th>
-                    <th style={{ padding: "10px 10px", textAlign: "right" }}>Sprint (&gt;24 km/h)</th>
-                    <th style={{ padding: "10px 10px", textAlign: "right" }}>Acc + Dec (&gt;3 m/s²)</th>
-                    <th style={{ padding: "10px 10px", textAlign: "right" }}>Player Load (AU)</th>
-                    <th style={{ padding: "10px 10px", textAlign: "right" }}>Vmax (km/h)</th>
-                    <th style={{ padding: "10px 12px", textAlign: "center" }}>Acción</th>
+                    <th style={{ padding: "10px 12px", minWidth: "160px" }}>Jugador</th>
+                    <th style={{ padding: "10px 10px", textAlign: "center", minWidth: "140px" }}>Origen / Método</th>
+                    <th style={{ padding: "10px 10px", textAlign: "center", minWidth: "110px" }}>Partidos Analizados</th>
+                    {profileSelectedMetrics.map((metKey) => {
+                      const cfg = PROFILE_AVAILABLE_METRICS[metKey];
+                      if (!cfg) return null;
+                      return (
+                        <th
+                          key={metKey}
+                          style={{
+                            padding: "10px 12px",
+                            textAlign: "right",
+                            color: cfg.color,
+                            fontWeight: 800,
+                            whiteSpace: "nowrap",
+                            minWidth: "100px",
+                          }}
+                        >
+                          <div>{cfg.label}</div>
+                          <div style={{ fontSize: "9.5px", fontWeight: 600, color: "#64748b" }}>({cfg.unit})</div>
+                        </th>
+                      );
+                    })}
+                    <th style={{ padding: "10px 12px", textAlign: "center", minWidth: "80px" }}>Acción</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3607,11 +3916,15 @@ export default function CargaExternaSection({
                     .map((j, idx) => {
                       const p = competitiveProfiles.get(j.id) || {
                         dist: 10200,
+                        mMin: 113,
                         hsr: 650,
                         sprint: 180,
                         accDec: 85,
+                        accs: 45,
+                        decs: 40,
                         load: 850,
-                        mMin: 113,
+                        hmld: 820,
+                        sprintsCount: 15,
                         maxSpeed: 28.5,
                         category: "copiado_posicion",
                         isReal: false,
@@ -3675,87 +3988,63 @@ export default function CargaExternaSection({
                                 fontWeight: 800,
                                 whiteSpace: "nowrap",
                               }}
+                              title={p.detailText}
                             >
                               {p.badgeText}
                             </span>
                           </td>
 
                           {/* Partidos Analizados */}
-                          <td style={{ padding: "9px 10px", textAlign: "center" }}>
-                            <span style={{ fontSize: "11.5px", fontWeight: 700, color: p.isReal ? "#1e3a8a" : "#64748b" }}>
-                              {p.detailText}
-                            </span>
+                          <td style={{ padding: "9px 10px", textAlign: "center", fontSize: "11.5px", color: "#475569" }}>
+                            <div style={{ fontWeight: 700 }}>{p.matchesCount || 0} partidos</div>
+                            <div style={{ fontSize: "10px", color: "#94a3b8" }}>
+                              {p.fullMatchesCount || 0} de 90' {p.halfMatchesCount ? `| ${p.halfMatchesCount} de 45'` : ""}
+                            </div>
                           </td>
 
-                          {/* Distancia Total (m) */}
-                          <td style={{ padding: "9px 10px", textAlign: "right" }}>
-                            <strong style={{ fontSize: "12.5px", color: "#0f172a" }}>
-                              {p.dist ? p.dist.toLocaleString("es-ES") : "—"}
-                            </strong>
-                            <span style={{ fontSize: "11px", fontWeight: 800, color: p.asterisk ? "#ea580c" : "#64748b", marginLeft: "3px" }}>
-                              m {p.asterisk}
-                            </span>
-                          </td>
+                          {/* Columnas dinámicas según variables seleccionadas */}
+                          {profileSelectedMetrics.map((metKey) => {
+                            const cfg = PROFILE_AVAILABLE_METRICS[metKey];
+                            if (!cfg) return null;
+                            const val = p[metKey] !== undefined ? p[metKey] : 0;
+                            const isEstimated = p.category === "estimado_45";
+                            const isCopied = p.category === "copiado_posicion";
+                            const suffix = isEstimated ? "*" : isCopied ? "**" : "";
 
-                          {/* Intensidad (m/min) */}
-                          <td style={{ padding: "9px 10px", textAlign: "right" }}>
-                            <strong style={{ fontSize: "12px", color: "#0284c7" }}>
-                              {p.mMin || Math.round(p.dist / 90)}
-                            </strong>
-                            <span style={{ fontSize: "10px", color: "#64748b", marginLeft: "2px" }}>
-                              m/min {p.asterisk}
-                            </span>
-                          </td>
-
-                          {/* HSR (>21 km/h, m) */}
-                          <td style={{ padding: "9px 10px", textAlign: "right" }}>
-                            <strong style={{ fontSize: "12.5px", color: "#ea580c" }}>
-                              {p.hsr ? p.hsr.toLocaleString("es-ES") : "0"}
-                            </strong>
-                            <span style={{ fontSize: "11px", fontWeight: 800, color: p.asterisk ? "#ea580c" : "#64748b", marginLeft: "3px" }}>
-                              m {p.asterisk}
-                            </span>
-                          </td>
-
-                          {/* Sprint (>24 km/h, m) */}
-                          <td style={{ padding: "9px 10px", textAlign: "right" }}>
-                            <strong style={{ fontSize: "12.5px", color: "#dc2626" }}>
-                              {p.sprint ? p.sprint.toLocaleString("es-ES") : "0"}
-                            </strong>
-                            <span style={{ fontSize: "11px", fontWeight: 800, color: p.asterisk ? "#ea580c" : "#64748b", marginLeft: "3px" }}>
-                              m {p.asterisk}
-                            </span>
-                          </td>
-
-                          {/* Acc + Dec (>3 m/s²) */}
-                          <td style={{ padding: "9px 10px", textAlign: "right" }}>
-                            <strong style={{ fontSize: "12.5px", color: "#9333ea" }}>
-                              {p.accDec ?? "0"}
-                            </strong>
-                            {p.asterisk && (
-                              <span style={{ fontSize: "11px", fontWeight: 800, color: "#ea580c", marginLeft: "2px" }}>
-                                {p.asterisk}
-                              </span>
-                            )}
-                          </td>
-
-                          {/* Player Load (AU) */}
-                          <td style={{ padding: "9px 10px", textAlign: "right" }}>
-                            <strong style={{ fontSize: "12.5px", color: "#16a34a" }}>
-                              {p.load ? p.load.toLocaleString("es-ES") : "0"}
-                            </strong>
-                            <span style={{ fontSize: "10.5px", color: "#64748b", marginLeft: "2px" }}>
-                              AU {p.asterisk}
-                            </span>
-                          </td>
-
-                          {/* Vmax (km/h) */}
-                          <td style={{ padding: "9px 10px", textAlign: "right" }}>
-                            <strong style={{ fontSize: "12px", color: "#334155" }}>
-                              {p.maxSpeed ? p.maxSpeed.toFixed(1) : "—"}
-                            </strong>
-                            <span style={{ fontSize: "10px", color: "#64748b", marginLeft: "2px" }}>km/h</span>
-                          </td>
+                            return (
+                              <td
+                                key={metKey}
+                                style={{
+                                  padding: "9px 12px",
+                                  textAlign: "right",
+                                  fontWeight: 700,
+                                  whiteSpace: "nowrap",
+                                  fontSize: "12px",
+                                }}
+                              >
+                                <span style={{ color: cfg.color }}>
+                                  {typeof val === "number"
+                                    ? val % 1 !== 0
+                                      ? val.toFixed(1)
+                                      : val.toLocaleString()
+                                    : val}
+                                </span>
+                                {suffix && (
+                                  <span
+                                    style={{
+                                      marginLeft: "3px",
+                                      fontWeight: 900,
+                                      color: isEstimated ? "#d97706" : "#c2410c",
+                                      fontSize: "12.5px",
+                                    }}
+                                    title={isEstimated ? "Estimado 45x2* (No real)" : "Copiado de posición** (No real)"}
+                                  >
+                                    {suffix}
+                                  </span>
+                                )}
+                              </td>
+                            );
+                          })}
 
                           {/* Acciones */}
                           <td style={{ padding: "9px 12px", textAlign: "center" }}>
@@ -3794,25 +4083,29 @@ export default function CargaExternaSection({
                 </tbody>
               </table>
             </div>
+          </div>
 
-            {/* LEYENDA METODOLÓGICA AL PIE DE LA TABLA */}
-            <div
-              style={{
-                padding: "12px 18px",
-                background: "#f8fafc",
-                borderTop: "1px solid #e2e8f0",
-                display: "flex",
-                flexDirection: "column",
-                gap: "4px",
-                fontSize: "11px",
-                color: "#64748b",
-              }}
-            >
+          {/* LEYENDA METODOLÓGICA DE ASTERISCOS Y REFERENCIAS */}
+          <div
+            style={{
+              background: "#f8fafc",
+              borderRadius: "8px",
+              padding: "12px 16px",
+              border: "1px solid #e2e8f0",
+              fontSize: "11.5px",
+              color: "#64748b",
+              lineHeight: 1.6,
+            }}
+          >
+            <div style={{ fontWeight: 800, color: "#334155", marginBottom: "4px", display: "flex", alignItems: "center", gap: "6px" }}>
+              <span>ℹ️</span> Leyenda de Constancia Metodológica (Fórmula Científica de Perfil Competitivo)
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "8px", marginTop: "6px" }}>
               <div>
-                <strong style={{ color: "#c2410c" }}>* Perfil no real (Estimado 45 min × 2):</strong> Jugador que no ha disputado ningún partido completo de 90 min pero cuenta con al menos un tiempo de 45 min. Se proyecta duplicando su rendimiento de 45 min.
+                <strong style={{ color: "#d97706" }}>* Asterisco Simple (*):</strong> Perfil <em>no real</em>. El jugador no disputó 90 min completos en ningún partido analizado, pero sí jugó al menos una parte de 45 min. El valor se calcula proyectando <code>45 min × 2</code>.
               </div>
               <div>
-                <strong style={{ color: "#ea580c" }}>** Perfil no real (Copiado de su posición):</strong> Jugador con menos de 45 min disputados en total. Se le asigna el perfil promedio de los jugadores de su misma posición (DEF, MED, DEL, POR).
+                <strong style={{ color: "#c2410c" }}>** Doble Asterisco (**):</strong> Perfil <em>no real</em>. El jugador no alcanza 45 min en ninguna parte oficial. Se le asigna el perfil promedio de los jugadores de su misma posición táctica (DEF, MED, DEL, POR).
               </div>
               <div>
                 <strong style={{ color: "#15803d" }}>🟢 Perfiles 100% Reales:</strong> Calculados a partir de las tareas exclusivas de 1ª parte y 2ª parte de competición oficial. Si jugó varios partidos de 90 min, se toma la fórmula científica <code>(Máximo + Promedio) / 2</code>.
@@ -3821,6 +4114,8 @@ export default function CargaExternaSection({
           </div>
         </div>
       )}
+
+
 
             {/* ── SUB-PESTAÑA 3: RATIOS SEMANALES VS PARTIDO (% MATCH) ── */}
       {subTab === "ratios_semanales" && (
