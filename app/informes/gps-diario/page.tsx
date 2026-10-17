@@ -577,15 +577,34 @@ function InformeGpsDiarioContent() {
     return `Informe ${tipo} ${sesionStr} ${sujetoStr} ${fechaStr}`.replace(/\s+/g, " ").trim();
   };
 
+  const [isPrinting, setIsPrinting] = useState(false);
+
+  useEffect(() => {
+    const handleBeforePrint = () => setIsPrinting(true);
+    const handleAfterPrint = () => setIsPrinting(false);
+
+    window.addEventListener("beforeprint", handleBeforePrint);
+    window.addEventListener("afterprint", handleAfterPrint);
+
+    return () => {
+      window.removeEventListener("beforeprint", handleBeforePrint);
+      window.removeEventListener("afterprint", handleAfterPrint);
+    };
+  }, []);
+
   const handleExportPDF = () => {
     if (typeof window === "undefined") return;
     const exportName = getExportDocumentName();
     const prevTitle = document.title;
     document.title = exportName;
-    window.print();
+    setIsPrinting(true);
     setTimeout(() => {
-      document.title = prevTitle;
-    }, 1500);
+      window.print();
+      setTimeout(() => {
+        document.title = prevTitle;
+        setIsPrinting(false);
+      }, 1000);
+    }, 80);
   };
 
   useEffect(() => {
@@ -3065,28 +3084,29 @@ function InformeGpsDiarioContent() {
                 {subView === "equipo" && (
                   <div className="team-report-card">
                     {/* CABECERA ESTÁNDAR: ESCUDO Y CLUB A LA IZQ / TÍTULO ENMEDIO / DÍA Y MD A LA DERECHA */}
-                    <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: "16px", alignItems: "center", marginBottom: "10px", borderBottom: "2px solid #0f172a", paddingBottom: "10px" }}>
+                    <div className="team-header-grid" style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: "16px", alignItems: "center", marginBottom: "10px", borderBottom: "2px solid #0f172a", paddingBottom: "10px" }}>
                       {/* Arriba a la izquierda: Escudo y nombre del club */}
-                      <div style={{ justifySelf: "start", display: "flex", flexDirection: "column", alignItems: "center", gap: "2px", minWidth: "75px" }}>
+                      <div className="team-header-club-box" style={{ justifySelf: "start", display: "flex", flexDirection: "column", alignItems: "center", gap: "2px", minWidth: "75px" }}>
                         <img
                         src="/ce-europa.png"
                         alt="CE EUROPA"
+                        className="team-header-logo"
                         style={{ width: "46px", height: "54px", objectFit: "contain", background: "#ffffff", borderRadius: "6px", padding: "2px" }}
                       />
-                      <span style={{ fontSize: "11.5px", fontWeight: 800, color: "#0f172a", whiteSpace: "nowrap" }}>
+                      <span className="team-header-club-name" style={{ fontSize: "11.5px", fontWeight: 800, color: "#0f172a", whiteSpace: "nowrap" }}>
                         CE EUROPA
                       </span>
                       </div>
 
                       {/* Centro: Título */}
                       <div style={{ justifySelf: "center", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        <h2 style={{ fontSize: "23px", fontWeight: 900, color: "#0f172a", margin: 0, textTransform: "uppercase", whiteSpace: "normal", textAlign: "center", letterSpacing: "0.02em" }}>
+                        <h2 className="team-header-title" style={{ fontSize: "23px", fontWeight: 900, color: "#0f172a", margin: 0, textTransform: "uppercase", whiteSpace: "normal", textAlign: "center", letterSpacing: "0.02em" }}>
                           INFORME SESIÓN GPS EQUIPO
                         </h2>
                       </div>
 
                       {/* Arriba a la derecha: Día y MD pegados al margen derecho */}
-                      <div style={{ justifySelf: "end", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px" }}>
+                      <div className="team-header-meta" style={{ justifySelf: "end", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px" }}>
                         <div style={{ display: "flex", gap: "8px", alignItems: "center", justifyContent: "flex-end", whiteSpace: "nowrap" }}>
                           <div style={{ display: "inline-flex", alignItems: "center", gap: "3px" }}>
                             <span style={{ fontSize: "11px", fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: "0.2px" }}>Día:</span>
@@ -3119,18 +3139,20 @@ function InformeGpsDiarioContent() {
                     </div>
 
                     {/* Campo Limpio de Comentario General de la Sesión */}
-                      <div style={{ marginTop: "8px" }}>
+                      <div className={`team-comment-wrapper ${!equipoSessionComment || !equipoSessionComment.trim() ? "no-print" : ""}`} style={{ marginTop: "6px" }}>
                         <textarea
                           value={equipoSessionComment}
                           onChange={(e) => setEquipoSessionComment(e.target.value)}
                           placeholder="Comentario de la sesión..."
-                          rows={2}
+                          rows={1}
+                          className="team-report-textarea"
                           style={{
                             width: "100%",
-                            padding: "6px 0",
+                            padding: "4px 8px",
                             border: "none",
-                            background: "transparent",
-                            fontSize: "12px",
+                            borderLeft: "3px solid #0284c7",
+                            background: "#f8fafc",
+                            fontSize: "11px",
                             fontWeight: 500,
                             color: "#334155",
                             outline: "none",
@@ -3143,7 +3165,7 @@ function InformeGpsDiarioContent() {
                     {/* Contenido de gráficos de Equipo con variables previamente calculadas */}
 
                     {/* GRÁFICO 1 DE BARRAS DUAL-AXIS (EJE Y1 EN COLUMNA & Y2 EN PUNTO) */}
-                    <div style={{ background: "#ffffff", padding: "10px 12px", borderRadius: "10px", border: "1px solid #cbd5e1", marginBottom: "12px", boxShadow: "0 1px 4px rgba(0,0,0,0.03)" }}>
+                    <div className="team-chart-card" style={{ background: "#ffffff", padding: "10px 12px", borderRadius: "10px", border: "1px solid #cbd5e1", marginBottom: "12px", boxShadow: "0 1px 4px rgba(0,0,0,0.03)" }}>
                       {/* Controles de Selección de Métricas y Ordenación para Gráfico 1 (no print) */}
                       <div className="no-print" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px", flexWrap: "wrap", gap: "8px", background: "#f8fafc", padding: "6px 10px", borderRadius: "8px" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
@@ -3259,40 +3281,41 @@ function InformeGpsDiarioContent() {
                       </div>
 
                       {/* Render Recharts ComposedChart Dual-Axis */}
-                      <div style={{ width: "100%", height: 260 }}>
+                      <div className="team-chart-plot-container" style={{ width: "100%", height: isPrinting ? 98 : 260 }}>
                         <ResponsiveContainer width="100%" height="100%">
-                          <ComposedChart data={chart1Data} margin={{ top: 16, right: 0, left: 0, bottom: 25 }} barCategoryGap="2%">
+                          <ComposedChart data={chart1Data} margin={isPrinting ? { top: 8, right: 0, left: -15, bottom: 18 } : { top: 16, right: 0, left: 0, bottom: 25 }} barCategoryGap="2%">
                             <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
                             <XAxis
                               dataKey="name"
                               stroke="#0f172a"
                               interval={0}
-                              tick={{ fontSize: 8.5, fontWeight: 600, fill: "#0f172a" }}
+                              tick={{ fontSize: isPrinting ? 7 : 8.5, fontWeight: 600, fill: "#0f172a" }}
                               angle={-35}
                               textAnchor="end"
                             />
-                            <YAxis yAxisId="left" orientation="left" stroke="#0284c7" tick={{ fontSize: 8.5, fontWeight: 500, fill: "#0284c7" }} />
-                            <YAxis yAxisId="right" orientation="right" stroke="#dc2626" tick={{ fontSize: 8.5, fontWeight: 500, fill: "#dc2626" }} />
+                            <YAxis yAxisId="left" orientation="left" stroke="#0284c7" tick={{ fontSize: isPrinting ? 6.5 : 8.5, fontWeight: 500, fill: "#0284c7" }} />
+                            <YAxis yAxisId="right" orientation="right" stroke="#dc2626" tick={{ fontSize: isPrinting ? 6.5 : 8.5, fontWeight: 500, fill: "#dc2626" }} />
                             <Tooltip contentStyle={{ borderRadius: "6px", fontSize: "11px", fontWeight: 500 }} />
                             {/* Variable 1 (Y): Representada en Columna (Barra azul claro brillante con valor en blanco) */}
-                            <Bar yAxisId="left" dataKey="Y1" name={m1Left.label} fill="#0284c7" radius={[3, 3, 0, 0]} barSize={24}>
-                              <LabelList dataKey="Y1" position="insideBottom" dy={-4} style={{ fontSize: "7.5px", fontWeight: 500, fill: "#ffffff" }} formatter={(val: any) => typeof val === "number" ? (val > 100 ? Math.round(val) : val) : val} />
+                            <Bar yAxisId="left" dataKey="Y1" name={m1Left.label} fill="#0284c7" radius={[3, 3, 0, 0]} barSize={isPrinting ? 14 : 24}>
+                              <LabelList dataKey="Y1" position="insideBottom" dy={-4} style={{ fontSize: isPrinting ? "6px" : "7.5px", fontWeight: 500, fill: "#ffffff" }} formatter={(val: any) => typeof val === "number" ? (val > 100 ? Math.round(val) : val) : val} />
                             </Bar>
                             {/* Variable 2 (Y2): Representada en Punto rojo (Scatter/Dot) sobre la barra */}
                             <Scatter yAxisId="right" dataKey="Y2" name={m1Right.label} fill="#dc2626" shape="circle">
-                              <LabelList dataKey="Y2" position="top" style={{ fontSize: "8px", fontWeight: 500, fill: "#dc2626" }} formatter={(val: any) => typeof val === "number" ? (val > 100 ? Math.round(val) : val) : val} />
+                              <LabelList dataKey="Y2" position="top" style={{ fontSize: isPrinting ? "6.5px" : "8px", fontWeight: 500, fill: "#dc2626" }} formatter={(val: any) => typeof val === "number" ? (val > 100 ? Math.round(val) : val) : val} />
                             </Scatter>
                           </ComposedChart>
                         </ResponsiveContainer>
                       </div>
 
                       {/* Campo Limpio de Comentario debajo del Gráfico 1 */}
-                      <div style={{ marginTop: "4px" }}>
+                      <div className={`team-comment-wrapper ${!chart1Comment || !chart1Comment.trim() ? "no-print" : ""}`} style={{ marginTop: "4px" }}>
                         <textarea
                           value={chart1Comment}
                           onChange={(e) => setChart1Comment(e.target.value)}
                           placeholder="Añadir comentario explicativo para el Gráfico 1..."
                           rows={1}
+                          className="team-report-textarea"
                           style={{
                             width: "100%",
                             padding: "4px 8px",
@@ -3311,7 +3334,7 @@ function InformeGpsDiarioContent() {
                     </div>
 
                     {/* GRÁFICO 2 DE BARRAS DUAL-AXIS (EJE Y1 EN COLUMNA & Y2 EN PUNTO) */}
-                    <div style={{ background: "#ffffff", padding: "10px 12px", borderRadius: "10px", border: "1px solid #cbd5e1", marginBottom: "12px", boxShadow: "0 1px 4px rgba(0,0,0,0.03)" }}>
+                    <div className="team-chart-card" style={{ background: "#ffffff", padding: "10px 12px", borderRadius: "10px", border: "1px solid #cbd5e1", marginBottom: "12px", boxShadow: "0 1px 4px rgba(0,0,0,0.03)" }}>
                       {/* Controles de Selección de Métricas y Ordenación para Gráfico 2 (no print) */}
                       <div className="no-print" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px", flexWrap: "wrap", gap: "8px", background: "#f8fafc", padding: "6px 10px", borderRadius: "8px" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
@@ -3403,40 +3426,41 @@ function InformeGpsDiarioContent() {
                       </div>
 
                       {/* Render Recharts ComposedChart Dual-Axis */}
-                      <div style={{ width: "100%", height: 260 }}>
+                      <div className="team-chart-plot-container" style={{ width: "100%", height: isPrinting ? 98 : 260 }}>
                         <ResponsiveContainer width="100%" height="100%">
-                          <ComposedChart data={chart2Data} margin={{ top: 16, right: 0, left: 0, bottom: 25 }} barCategoryGap="2%">
+                          <ComposedChart data={chart2Data} margin={isPrinting ? { top: 8, right: 0, left: -15, bottom: 18 } : { top: 16, right: 0, left: 0, bottom: 25 }} barCategoryGap="2%">
                             <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
                             <XAxis
                               dataKey="name"
                               stroke="#0f172a"
                               interval={0}
-                              tick={{ fontSize: 8.5, fontWeight: 600, fill: "#0f172a" }}
+                              tick={{ fontSize: isPrinting ? 7 : 8.5, fontWeight: 600, fill: "#0f172a" }}
                               angle={-35}
                               textAnchor="end"
                             />
-                            <YAxis yAxisId="left" orientation="left" stroke="#0284c7" tick={{ fontSize: 8.5, fontWeight: 500, fill: "#0284c7" }} />
-                            <YAxis yAxisId="right" orientation="right" stroke="#dc2626" tick={{ fontSize: 8.5, fontWeight: 500, fill: "#dc2626" }} />
+                            <YAxis yAxisId="left" orientation="left" stroke="#0284c7" tick={{ fontSize: isPrinting ? 6.5 : 8.5, fontWeight: 500, fill: "#0284c7" }} />
+                            <YAxis yAxisId="right" orientation="right" stroke="#dc2626" tick={{ fontSize: isPrinting ? 6.5 : 8.5, fontWeight: 500, fill: "#dc2626" }} />
                             <Tooltip contentStyle={{ borderRadius: "6px", fontSize: "11px", fontWeight: 500 }} />
                             {/* Variable 1 (Y): Representada en Columna (Barra azul claro brillante con valor en blanco) */}
-                            <Bar yAxisId="left" dataKey="Y1" name={m2Left.label} fill="#0284c7" radius={[3, 3, 0, 0]} barSize={24}>
-                              <LabelList dataKey="Y1" position="insideBottom" dy={-4} style={{ fontSize: "7.5px", fontWeight: 500, fill: "#ffffff" }} formatter={(val: any) => typeof val === "number" ? (val > 100 ? Math.round(val) : val) : val} />
+                            <Bar yAxisId="left" dataKey="Y1" name={m2Left.label} fill="#0284c7" radius={[3, 3, 0, 0]} barSize={isPrinting ? 14 : 24}>
+                              <LabelList dataKey="Y1" position="insideBottom" dy={-4} style={{ fontSize: isPrinting ? "6px" : "7.5px", fontWeight: 500, fill: "#ffffff" }} formatter={(val: any) => typeof val === "number" ? (val > 100 ? Math.round(val) : val) : val} />
                             </Bar>
                             {/* Variable 2 (Y2): Representada en Punto rojo (Scatter/Dot) sobre la barra */}
                             <Scatter yAxisId="right" dataKey="Y2" name={m2Right.label} fill="#dc2626" shape="circle">
-                              <LabelList dataKey="Y2" position="top" style={{ fontSize: "8px", fontWeight: 500, fill: "#dc2626" }} formatter={(val: any) => typeof val === "number" ? (val > 100 ? Math.round(val) : val) : val} />
+                              <LabelList dataKey="Y2" position="top" style={{ fontSize: isPrinting ? "6.5px" : "8px", fontWeight: 500, fill: "#dc2626" }} formatter={(val: any) => typeof val === "number" ? (val > 100 ? Math.round(val) : val) : val} />
                             </Scatter>
                           </ComposedChart>
                         </ResponsiveContainer>
                       </div>
 
                       {/* Campo Limpio de Comentario debajo del Gráfico 2 */}
-                      <div style={{ marginTop: "4px" }}>
+                      <div className={`team-comment-wrapper ${!chart2Comment || !chart2Comment.trim() ? "no-print" : ""}`} style={{ marginTop: "4px" }}>
                         <textarea
                           value={chart2Comment}
                           onChange={(e) => setChart2Comment(e.target.value)}
                           placeholder="Añadir comentario explicativo para el Gráfico 2..."
                           rows={1}
+                          className="team-report-textarea"
                           style={{
                             width: "100%",
                             padding: "4px 8px",
@@ -3457,7 +3481,7 @@ function InformeGpsDiarioContent() {
                     {/* TABLA DE RENDIMIENTO GPS POR JUGADOR (EJE Y: VARIABLES, EJE X: JUGADORES QUE HAN PARTICIPADO) */}
                     <div className="team-gps-table-card" style={{ background: "#ffffff", padding: "10px 12px", borderRadius: "10px", border: "1px solid #cbd5e1", marginTop: "12px", boxShadow: "0 1px 4px rgba(0,0,0,0.03)", pageBreakInside: "avoid" }}>
                       {/* Cabecera de la tabla con título y selector interactivo de métricas */}
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", flexWrap: "wrap", gap: "8px" }}>
+                      <div className="team-table-title-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", flexWrap: "wrap", gap: "8px" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                           <h3 style={{ fontSize: "12.5px", fontWeight: 800, color: "#0f172a", margin: 0, textTransform: "uppercase", letterSpacing: "0.02em" }}>
                             📋 Resumen de Variables GPS por Jugador
@@ -3583,7 +3607,7 @@ function InformeGpsDiarioContent() {
                               <thead>
                                 <tr style={{ background: "#f8fafc", borderBottom: "2px solid #cbd5e1" }}>
                                   {/* Columna 1 (Sticky): Jugador (sin columna de posición) */}
-                                  <th style={{
+                                  <th className="team-table-player-col" style={{
                                     position: "sticky",
                                     left: 0,
                                     background: "#f8fafc",
@@ -3657,7 +3681,7 @@ function InformeGpsDiarioContent() {
                                   return (
                                     <tr key={j.id} style={{ borderBottom: "1px solid #e2e8f0" }}>
                                       {/* Celda 1 (Sticky): Nombre del jugador */}
-                                      <td style={{
+                                      <td className="team-table-player-col" style={{
                                         position: "sticky",
                                         left: 0,
                                         background: "#ffffff",
@@ -3714,9 +3738,9 @@ function InformeGpsDiarioContent() {
                                 })}
 
                                 {/* Fila Final: Media del Equipo */}
-                                <tr style={{ background: "#fff7ed", borderTop: "2px solid #cbd5e1", fontWeight: 900 }}>
+                                <tr className="team-gps-table-media-row" style={{ background: "#fff7ed", borderTop: "2px solid #cbd5e1", fontWeight: 900 }}>
                                   {/* Columna Sticky: Etiqueta Media Equipo */}
-                                  <td style={{
+                                  <td className="team-table-player-col" style={{
                                     position: "sticky",
                                     left: 0,
                                     background: "#fff7ed",
@@ -3766,12 +3790,13 @@ function InformeGpsDiarioContent() {
                       })()}
 
 {/* Campo Limpio de Comentario debajo de la Tabla */}
-                      <div style={{ marginTop: "6px" }}>
+                      <div className={`team-comment-wrapper ${!tableComment || !tableComment.trim() ? "no-print" : ""}`} style={{ marginTop: "4px" }}>
                         <textarea
                           value={tableComment}
                           onChange={(e) => setTableComment(e.target.value)}
                           placeholder="Añadir comentario explicativo para la tabla de variables..."
                           rows={1}
+                          className="team-report-textarea"
                           style={{
                             width: "100%",
                             padding: "4px 8px",
@@ -3860,22 +3885,198 @@ function InformeGpsDiarioContent() {
             padding: 6px 10px !important;
             page-break-inside: avoid !important;
           }
-          .team-gps-table-card {
+          @page {
+            size: A4 portrait !important;
+            margin: 4mm 5mm !important;
+          }
+          html, body {
+            background: #ffffff !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            width: 100% !important;
+            height: auto !important;
+          }
+          .gps-report-page {
+            padding: 0 !important;
+            margin: 0 !important;
+            max-width: 100% !important;
+            box-shadow: none !important;
+          }
+          .team-report-card {
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
             page-break-inside: avoid !important;
-            margin-top: 10px !important;
+            break-inside: avoid !important;
+            page-break-after: avoid !important;
+          }
+          .team-header-grid {
+            display: grid !important;
+            grid-template-columns: auto 1fr auto !important;
+            gap: 8px !important;
+            align-items: center !important;
+            margin-bottom: 2px !important;
+            padding-bottom: 2px !important;
+            border-bottom: 1.5px solid #0f172a !important;
+          }
+          .team-header-club-box {
+            min-width: unset !important;
+            gap: 1px !important;
+          }
+          .team-header-logo {
+            width: 22px !important;
+            height: 26px !important;
+            padding: 0 !important;
+          }
+          .team-header-club-name {
+            font-size: 8px !important;
+            font-weight: 800 !important;
+          }
+          .team-header-title {
+            font-size: 13px !important;
+            font-weight: 900 !important;
+            margin: 0 !important;
+            letter-spacing: 0.02em !important;
+            text-align: center !important;
+          }
+          .team-header-meta {
+            gap: 2px !important;
+          }
+          .team-header-meta span {
+            font-size: 8.5px !important;
+            font-weight: 800 !important;
+          }
+          .team-comment-wrapper {
+            margin-top: 1px !important;
+            margin-bottom: 2px !important;
+          }
+          .team-comment-wrapper textarea,
+          .team-report-textarea {
+            font-size: 7.5px !important;
+            line-height: 1.15 !important;
+            padding: 1.5px 4px !important;
+            border-left: 2px solid #0284c7 !important;
+            background: #f8fafc !important;
+            color: #0f172a !important;
+            width: 100% !important;
+            border-radius: 2px !important;
+            min-height: 12px !important;
+            height: auto !important;
+          }
+          .team-chart-card {
+            background: #ffffff !important;
+            padding: 2px 4px 2px 4px !important;
+            border: 1px solid #cbd5e1 !important;
+            border-radius: 4px !important;
+            margin-bottom: 3px !important;
+            box-shadow: none !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+          .team-chart-card .gps-chart-legend {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            font-size: 7.5px !important;
+            font-weight: 700 !important;
+            margin-top: 0 !important;
+            margin-bottom: 1px !important;
+            padding: 0 !important;
+            gap: 4px !important;
+          }
+          .team-chart-card .gps-chart-legend span {
+            font-size: 7.5px !important;
+            line-height: 1 !important;
+          }
+          .team-chart-plot-container {
+            height: 98px !important;
+            max-height: 98px !important;
+            width: 100% !important;
+            overflow: hidden !important;
+          }
+          .team-chart-plot-container .recharts-responsive-container,
+          .team-chart-plot-container .recharts-wrapper {
+            height: 98px !important;
+            max-height: 98px !important;
+            width: 100% !important;
+          }
+          .team-chart-plot-container svg.recharts-surface {
+            height: 98px !important;
+            max-height: 98px !important;
+            width: 100% !important;
+          }
+          .team-gps-table-card {
+            background: #ffffff !important;
+            padding: 2px 4px !important;
+            border: 1px solid #cbd5e1 !important;
+            border-radius: 4px !important;
+            margin-top: 2px !important;
+            box-shadow: none !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+          .team-table-title-row {
+            margin-bottom: 2px !important;
+          }
+          .team-table-title-row h3 {
+            font-size: 8px !important;
+            margin: 0 !important;
+          }
+          .team-table-title-row span {
+            font-size: 7px !important;
+            padding: 0 4px !important;
           }
           .team-gps-table-container {
             overflow: visible !important;
+            width: 100% !important;
+            border: 0.5px solid #cbd5e1 !important;
+            border-radius: 3px !important;
           }
           .team-gps-table {
-            font-size: 7.5px !important;
+            font-size: 7.2px !important;
             width: 100% !important;
+            table-layout: fixed !important;
+            border-collapse: collapse !important;
           }
-          .team-gps-table th,
-          .team-gps-table td {
+          .team-gps-table th {
+            padding: 2px 2px !important;
+            font-size: 7.2px !important;
+            font-weight: 800 !important;
+            line-height: 1.1 !important;
+            position: static !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
-            padding: 2px 3px !important;
+          }
+          .team-gps-table th.team-table-player-col,
+          .team-gps-table td.team-table-player-col {
+            width: 24% !important;
+            min-width: unset !important;
+            position: static !important;
+            text-align: left !important;
+            padding-left: 3px !important;
+            padding-right: 2px !important;
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+          }
+          .team-gps-table td {
+            padding: 1.5px 2px !important;
+            font-size: 7.2px !important;
+            line-height: 1.15 !important;
+            position: static !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          .team-gps-table-media-row td {
+            padding: 2px 2px !important;
+            font-size: 7.5px !important;
+            font-weight: 900 !important;
+            line-height: 1.15 !important;
+            position: static !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
         }
       `}</style>

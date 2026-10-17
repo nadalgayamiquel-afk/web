@@ -785,8 +785,10 @@ body {
 
   .team-report-card div[style*="height: 260"],
   .team-report-card div[style*="height: 215"],
-  .team-report-card div[style*="height: 210"] {
-    height: 250px !important;
+  .team-report-card div[style*="height: 210"],
+  .team-report-card .team-chart-plot-container {
+    height: 98px !important;
+    max-height: 98px !important;
   }
 
   .general-report-card h2 {
