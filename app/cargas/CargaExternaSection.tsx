@@ -358,6 +358,11 @@ export default function CargaExternaSection({
   const [acwrSortBy, setAcwrSortBy] = useState<"riesgo_first" | "acwr_desc" | "acwr_asc" | "nombre">("riesgo_first");
   const [acwrSearch, setAcwrSearch] = useState<string>("");
 
+  // ── ESTADOS PARA TABLAS PLEGABLES INDIVIDUALES POR JUGADOR ──
+  const [expandedPlayerIds, setExpandedPlayerIds] = useState<Record<string, boolean>>({});
+  const [playerTableFilterDays, setPlayerTableFilterDays] = useState<"all" | "active">("all");
+  const [playerTableOrder, setPlayerTableOrder] = useState<"desc" | "asc">("desc");
+
   // ── 2. ESTADOS PARA PERFIL COMPETITIVO ──
   const [profileSearch, setProfileSearch] = useState<string>("");
   const [profileNorm90, setProfileNorm90] = useState<boolean>(true); // normalizado a 90 min o media directa
@@ -839,6 +844,184 @@ export default function CargaExternaSection({
     if (acwrTimelineData.length === 0) return null;
     return acwrTimelineData[acwrTimelineData.length - 1];
   }, [acwrTimelineData]);
+
+  // ── CALENDARIO BASE Y MEDIAS DE EQUIPO PARA TABLAS PLEGABLES POR JUGADOR ──
+  const { playerCalendarDates, playerTeamDailyMap } = useMemo(() => {
+    const realGps = gpsRecords.filter((r) => !isRecordSimulado(r));
+    if (realGps.length === 0) return { playerCalendarDates: [] as string[], playerTeamDailyMap: new Map<string, any>() };
+
+    const distinctActiveDates = Array.from(new Set(realGps.map((r) => r.fecha).filter(Boolean))).sort();
+    if (distinctActiveDates.length === 0) return { playerCalendarDates: [] as string[], playerTeamDailyMap: new Map<string, any>() };
+
+    const minDateObj = new Date(distinctActiveDates[0] + "T12:00:00");
+    const maxDateObj = new Date(distinctActiveDates[distinctActiveDates.length - 1] + "T12:00:00");
+
+    const dates: string[] = [];
+    const cur = new Date(minDateObj);
+    while (cur <= maxDateObj) {
+      dates.push(cur.toISOString().split("T")[0]);
+      cur.setDate(cur.getDate() + 1);
+    }
+
+    const tMap = new Map<string, { teamAvg: number; count: number; rawMd: string; normMd: string; isMatch: boolean; hasSession: boolean }>();
+    dates.forEach((dStr) => {
+      const dayRecords = realGps.filter((r) => r.fecha === dStr);
+      const hasSession = dayRecords.length > 0;
+      let teamAvg = 0;
+      let rawMd = "OFF";
+      let isMatch = false;
+
+      if (hasSession) {
+        rawMd = dayRecords[0]?.match_day || dayRecords[0]?.md || (dayRecords[0]?.tipo_sesion === "PARTIDO" ? "MD" : "ENT");
+        isMatch = String(rawMd).toUpperCase() === "MD" || dayRecords[0]?.tipo_sesion === "PARTIDO";
+        const teamSum = dayRecords.reduce((acc, r) => acc + getGpsMetricValue(r, acwrVolumeMetric), 0);
+        teamAvg = Math.round(teamSum / dayRecords.length);
+      }
+
+      const normMd = hasSession ? normalizeMdType(rawMd, isMatch ? "PARTIDO" : undefined) : "OFF";
+      tMap.set(dStr, { teamAvg, count: dayRecords.length, rawMd, normMd, isMatch, hasSession });
+    });
+
+    return { playerCalendarDates: dates, playerTeamDailyMap: tMap };
+  }, [gpsRecords, acwrVolumeMetric]);
+
+  const togglePlayerAccordion = (id: string) => {
+    setExpandedPlayerIds((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const expandAllPlayerAccordions = () => {
+    const next: Record<string, boolean> = {};
+    filteredAcwrList.forEach((item) => {
+      const pid = item.jugador?.id;
+      if (pid) next[pid] = true;
+    });
+    setExpandedPlayerIds(next);
+  };
+
+  const collapseAllPlayerAccordions = () => {
+    setExpandedPlayerIds({});
+  };
+
+  const getPlayerDetailedTimeline = (playerId: string) => {
+    const realGps = gpsRecords.filter((r) => !isRecordSimulado(r));
+    if (playerCalendarDates.length === 0) return [];
+
+    const minDateObj = new Date(playerCalendarDates[0] + "T12:00:00");
+
+    const pDailyMap = new Map<string, { vol: number; hasSession: boolean; normMd: string; isMatch: boolean; record?: any }>();
+    playerCalendarDates.forEach((dStr) => {
+      const dayRecords = realGps.filter((r) => r.fecha === dStr);
+      const pRecord = dayRecords.find((r) => r.jugador_id === playerId);
+      const teamInfo = playerTeamDailyMap.get(dStr);
+      const hasSession = Boolean(pRecord);
+      const vol = pRecord ? Math.round(getGpsMetricValue(pRecord, acwrVolumeMetric)) : 0;
+      const rawMd = pRecord?.match_day || pRecord?.md || teamInfo?.rawMd || "OFF";
+      const isMatch = String(rawMd).toUpperCase() === "MD" || pRecord?.tipo_sesion === "PARTIDO";
+      const normMd = hasSession ? normalizeMdType(rawMd, isMatch ? "PARTIDO" : undefined) : "OFF";
+      pDailyMap.set(dStr, { vol, hasSession, normMd, isMatch, record: pRecord });
+    });
+
+    const mdHistoryMap = new Map<string, Array<{ fecha: string; volumen: number }>>();
+
+    const timeline = playerCalendarDates.map((dStr) => {
+      const pInfo = pDailyMap.get(dStr)!;
+      const teamInfo = playerTeamDailyMap.get(dStr);
+
+      let diffVsPrevSameMd: number | null = null;
+      let labelVsPrevSameMd = "—";
+      let diffVsLast5SameMd: number | null = null;
+      let labelVsLast5SameMd = "—";
+
+      if (pInfo.hasSession && pInfo.vol > 0 && pInfo.normMd !== "OFF") {
+        const hist = mdHistoryMap.get(pInfo.normMd) || [];
+        if (hist.length > 0) {
+          const prev = hist[hist.length - 1];
+          if (prev.volumen > 0) {
+            diffVsPrevSameMd = Math.round(((pInfo.vol - prev.volumen) / prev.volumen) * 1000) / 10;
+            labelVsPrevSameMd = (diffVsPrevSameMd >= 0 ? "+" : "") + diffVsPrevSameMd.toFixed(1) + "%";
+          }
+          const last5 = hist.slice(-5);
+          const sum5 = last5.reduce((acc, e) => acc + e.volumen, 0);
+          const avg5 = Math.round(sum5 / last5.length);
+          if (avg5 > 0) {
+            diffVsLast5SameMd = Math.round(((pInfo.vol - avg5) / avg5) * 1000) / 10;
+            labelVsLast5SameMd = (diffVsLast5SameMd >= 0 ? "+" : "") + diffVsLast5SameMd.toFixed(1) + "%";
+          }
+        } else {
+          labelVsPrevSameMd = "1º (Base)";
+          labelVsLast5SameMd = "1º (Base)";
+        }
+
+        if (!mdHistoryMap.has(pInfo.normMd)) mdHistoryMap.set(pInfo.normMd, []);
+        mdHistoryMap.get(pInfo.normMd)!.push({ fecha: dStr, volumen: pInfo.vol });
+      }
+
+      const dObj = new Date(dStr + "T12:00:00");
+      const acuteStart = new Date(dObj.getTime() - 6 * 24 * 3600 * 1000);
+      const chronicStart = new Date(dObj.getTime() - 27 * 24 * 3600 * 1000);
+
+      let acuteSum = 0;
+      let chronicSum = 0;
+      for (const [otherD, otherInfo] of pDailyMap.entries()) {
+        const otherObj = new Date(otherD + "T12:00:00");
+        if (otherObj >= chronicStart && otherObj <= dObj) chronicSum += otherInfo.vol;
+        if (otherObj >= acuteStart && otherObj <= dObj) acuteSum += otherInfo.vol;
+      }
+
+      const daysSpan = Math.max(7, Math.min(28, Math.round((dObj.getTime() - minDateObj.getTime()) / (24 * 3600 * 1000)) + 1));
+      const chronicWeekly = daysSpan >= 28 ? Math.round(chronicSum / 4) : Math.round((chronicSum / daysSpan) * 7);
+      const acwr = chronicWeekly > 0 ? Math.round((acuteSum / chronicWeekly) * 100) / 100 : 0;
+
+      let zone: "subentrenamiento" | "sweet_spot" | "precaucion" | "peligro" = "sweet_spot";
+      if (acwr < 0.8) zone = "subentrenamiento";
+      else if (acwr <= 1.3) zone = "sweet_spot";
+      else if (acwr <= 1.5) zone = "precaucion";
+      else zone = "peligro";
+
+      const teamAvg = teamInfo?.teamAvg || 0;
+      let diffVsTeam: number | null = null;
+      let labelVsTeam = "—";
+      if (pInfo.hasSession && pInfo.vol > 0 && teamAvg > 0) {
+        diffVsTeam = Math.round(((pInfo.vol - teamAvg) / teamAvg) * 1000) / 10;
+        labelVsTeam = (diffVsTeam >= 0 ? "+" : "") + diffVsTeam.toFixed(1) + "%";
+      }
+
+      const dayNames = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+      const dayName = dayNames[dObj.getDay()] || "";
+      const p = dStr.split("-");
+      const formattedDate = dayName + " " + p[2] + "/" + p[1];
+
+      return {
+        fecha: dStr,
+        formattedDate,
+        normMd: pInfo.normMd,
+        isMatch: pInfo.isMatch,
+        hasSession: pInfo.hasSession,
+        volumen: pInfo.vol,
+        teamAvg,
+        labelVsTeam,
+        diffVsTeam,
+        labelVsPrevSameMd,
+        diffVsPrevSameMd,
+        labelVsLast5SameMd,
+        diffVsLast5SameMd,
+        acuteSum,
+        chronicWeekly,
+        acwr,
+        zone,
+      };
+    });
+
+    let filtered = timeline;
+    if (playerTableFilterDays === "active") {
+      filtered = filtered.filter((r) => r.hasSession && r.volumen > 0 && r.normMd !== "OFF");
+    }
+
+    if (playerTableOrder === "desc") {
+      return [...filtered].reverse();
+    }
+    return filtered;
+  };
 
   // ── 4. CÁLCULO DE PERFIL COMPETITIVO (MATCH BENCHMARK) ──
   const competitiveProfiles = useMemo(() => {
@@ -2285,8 +2468,608 @@ export default function CargaExternaSection({
               </div>
             )}
           </div>
+
+          {/* ══════════════════════════════════════════════════════════════════ */}
+          {/* ── SECCIÓN PLEGABLE: TABLA DÍA A DÍA POR CADA JUGADOR (ACORDEÓN) ── */}
+          {/* ══════════════════════════════════════════════════════════════════ */}
+          <div
+            style={{
+              background: "#ffffff",
+              borderRadius: "10px",
+              border: "1px solid #cbd5e1",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+              overflow: "hidden",
+            }}
+          >
+            {/* Cabecera Principal de la Sección de Jugadores */}
+            <div
+              style={{
+                padding: "16px 20px",
+                background: "linear-gradient(to right, #f8fafc, #ffffff)",
+                borderBottom: "1px solid #e2e8f0",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: "12px",
+              }}
+            >
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span style={{ fontSize: "16px" }}>📋</span>
+                  <h3 style={{ margin: 0, fontSize: "14.5px", fontWeight: 800, color: "#0f172a" }}>
+                    Historial & Desglose Día a Día por Jugador ({filteredAcwrList.length})
+                  </h3>
+                </div>
+                <p style={{ margin: "3px 0 0 0", fontSize: "12px", color: "#64748b" }}>
+                  Tablas plegables individuales con volumen diario ({ACWR_METRIC_CONFIG[acwrVolumeMetric]?.label}), % vs mismo MatchDay, % vs 5 últimos, carga aguda, crónica y ratio ACWR.
+                </p>
+              </div>
+
+              {/* Acciones globales de la sección */}
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={expandAllPlayerAccordions}
+                  style={{
+                    padding: "5px 10px",
+                    borderRadius: "6px",
+                    border: "1px solid #cbd5e1",
+                    background: "#f8fafc",
+                    fontSize: "11.5px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    color: "#334155",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                >
+                  <span>📂</span> Expandir Todos
+                </button>
+
+                <button
+                  type="button"
+                  onClick={collapseAllPlayerAccordions}
+                  style={{
+                    padding: "5px 10px",
+                    borderRadius: "6px",
+                    border: "1px solid #cbd5e1",
+                    background: "#f8fafc",
+                    fontSize: "11.5px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    color: "#334155",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                >
+                  <span>📁</span> Plegar Todos
+                </button>
+
+                {/* Selector: Todos los días vs Solo activos */}
+                <div style={{ display: "flex", alignItems: "center", background: "#f1f5f9", padding: "2px", borderRadius: "6px", border: "1px solid #cbd5e1" }}>
+                  <button
+                    type="button"
+                    onClick={() => setPlayerTableFilterDays("all")}
+                    style={{
+                      padding: "3px 8px",
+                      borderRadius: "4px",
+                      border: "none",
+                      fontSize: "11px",
+                      fontWeight: playerTableFilterDays === "all" ? 800 : 600,
+                      background: playerTableFilterDays === "all" ? "#1e3a8a" : "transparent",
+                      color: playerTableFilterDays === "all" ? "#ffffff" : "#475569",
+                      cursor: "pointer",
+                    }}
+                    title="Muestra todos los días del calendario continuo sin saltarse días de descanso"
+                  >
+                    Días completos (con OFF)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPlayerTableFilterDays("active")}
+                    style={{
+                      padding: "3px 8px",
+                      borderRadius: "4px",
+                      border: "none",
+                      fontSize: "11px",
+                      fontWeight: playerTableFilterDays === "active" ? 800 : 600,
+                      background: playerTableFilterDays === "active" ? "#1e3a8a" : "transparent",
+                      color: playerTableFilterDays === "active" ? "#ffffff" : "#475569",
+                      cursor: "pointer",
+                    }}
+                    title="Muestra únicamente días con sesión de entrenamiento o partido"
+                  >
+                    Solo sesiones activas
+                  </button>
+                </div>
+
+                {/* Orden cronológico */}
+                <button
+                  type="button"
+                  onClick={() => setPlayerTableOrder((prev) => (prev === "desc" ? "asc" : "desc"))}
+                  style={{
+                    padding: "5px 10px",
+                    borderRadius: "6px",
+                    border: "1px solid #cbd5e1",
+                    background: "#ffffff",
+                    fontSize: "11.5px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    color: "#1e3a8a",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                  title="Cambiar orden cronológico"
+                >
+                  <span>{playerTableOrder === "desc" ? "⬇️ Más recientes primero" : "⬆️ Más antiguos primero"}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Lista de Jugadores (Acordeón Plegable) */}
+            <div style={{ padding: "14px 18px", display: "flex", flexDirection: "column", gap: "10px" }}>
+              {filteredAcwrList.length === 0 ? (
+                <div style={{ padding: "30px", textAlign: "center", color: "#94a3b8", fontSize: "13px" }}>
+                  No se encontraron jugadores que coincidan con los filtros actuales.
+                </div>
+              ) : (
+                filteredAcwrList.map((item) => {
+                  const j = item.jugador;
+                  const isExpanded = Boolean(expandedPlayerIds[j.id]);
+                  const playerTimeline = isExpanded ? getPlayerDetailedTimeline(j.id) : [];
+
+                  let badgeColor = "#64748b";
+                  let badgeBg = "#f1f5f9";
+                  let badgeText = "Sin datos";
+                  let zoneEmoji = "⚪";
+
+                  if (item.zone === "sweet_spot") {
+                    badgeColor = "#15803d";
+                    badgeBg = "#dcfce7";
+                    badgeText = "Sweet Spot";
+                    zoneEmoji = "🟢";
+                  } else if (item.zone === "subentrenamiento") {
+                    badgeColor = "#b45309";
+                    badgeBg = "#fef3c7";
+                    badgeText = "Subentrenamiento";
+                    zoneEmoji = "🟡";
+                  } else if (item.zone === "precaucion") {
+                    badgeColor = "#c2410c";
+                    badgeBg = "#ffedd5";
+                    badgeText = "Precaución";
+                    zoneEmoji = "🟠";
+                  } else if (item.zone === "peligro") {
+                    badgeColor = "#b91c1c";
+                    badgeBg = "#fee2e2";
+                    badgeText = "Peligro Spike";
+                    zoneEmoji = "🔴";
+                  }
+
+                  return (
+                    <div
+                      key={j.id}
+                      style={{
+                        borderRadius: "8px",
+                        border: isExpanded ? "1.5px solid #2563eb" : "1px solid #e2e8f0",
+                        boxShadow: isExpanded ? "0 4px 12px rgba(37,99,235,0.08)" : "0 1px 2px rgba(0,0,0,0.02)",
+                        overflow: "hidden",
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      {/* Cabecera Plegable del Jugador */}
+                      <div
+                        onClick={() => togglePlayerAccordion(j.id)}
+                        style={{
+                          padding: "12px 16px",
+                          background: isExpanded ? "#eff6ff" : "#f8fafc",
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          flexWrap: "wrap",
+                          gap: "12px",
+                          userSelect: "none",
+                        }}
+                      >
+                        {/* Izquierda: Chevron + Dorsal + Nombre + Posición */}
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              width: "22px",
+                              height: "22px",
+                              borderRadius: "4px",
+                              background: isExpanded ? "#2563eb" : "#e2e8f0",
+                              color: isExpanded ? "#ffffff" : "#475569",
+                              fontSize: "11px",
+                              fontWeight: 900,
+                              transition: "all 0.15s ease",
+                            }}
+                          >
+                            {isExpanded ? "▼" : "▶"}
+                          </span>
+
+                          <span
+                            style={{
+                              padding: "2px 7px",
+                              borderRadius: "4px",
+                              background: "#1e3a8a",
+                              color: "#ffffff",
+                              fontSize: "11.5px",
+                              fontWeight: 900,
+                            }}
+                          >
+                            #{j.dorsal || "—"}
+                          </span>
+
+                          <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
+                            <strong style={{ fontSize: "13.5px", fontWeight: 800, color: "#0f172a" }}>
+                              {j.apodo || j.nombre}
+                            </strong>
+                            <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 700 }}>
+                              ({j.posicion || "JUG"})
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Centro: Métricas Clave Resumidas */}
+                        <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+                          {/* Ratio ACWR */}
+                          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                            <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 700 }}>ACWR:</span>
+                            <span
+                              style={{
+                                padding: "3px 8px",
+                                borderRadius: "12px",
+                                background: badgeBg,
+                                color: badgeColor,
+                                fontSize: "11px",
+                                fontWeight: 800,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "4px",
+                              }}
+                            >
+                              <span>{zoneEmoji}</span>
+                              {item.acwr > 0 ? item.acwr.toFixed(2) : "—"} ({badgeText})
+                            </span>
+                          </div>
+
+                          {/* Carga Aguda */}
+                          <div style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "11.5px" }}>
+                            <span style={{ color: "#64748b", fontWeight: 700 }}>⚡ Aguda (7d):</span>
+                            <strong style={{ color: "#0369a1", fontWeight: 800 }}>
+                              {item.acuteLoad.toLocaleString()} {ACWR_METRIC_CONFIG[acwrVolumeMetric]?.unit}
+                            </strong>
+                          </div>
+
+                          {/* Carga Crónica */}
+                          <div style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "11.5px" }}>
+                            <span style={{ color: "#64748b", fontWeight: 700 }}>🛡️ Crónica (Sem):</span>
+                            <strong style={{ color: "#475569", fontWeight: 800 }}>
+                              {item.chronicWeekly.toLocaleString()} {ACWR_METRIC_CONFIG[acwrVolumeMetric]?.unit}
+                            </strong>
+                          </div>
+                        </div>
+
+                        {/* Derecha: Botón Acción + Toggle */}
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setAcwrViewMode("individual");
+                              setAcwrSelectedPlayerId(j.id);
+                              window.scrollTo({ top: 300, behavior: "smooth" });
+                            }}
+                            style={{
+                              padding: "4px 9px",
+                              borderRadius: "4px",
+                              border: "1px solid #cbd5e1",
+                              background: "#ffffff",
+                              fontSize: "11px",
+                              fontWeight: 700,
+                              cursor: "pointer",
+                              color: "#1e3a8a",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "4px",
+                            }}
+                            title="Cargar y visualizar este jugador en el gráfico principal de arriba"
+                          >
+                            <span>📊</span> Ver en Gráfico
+                          </button>
+
+                          <span
+                            style={{
+                              fontSize: "11.5px",
+                              color: isExpanded ? "#2563eb" : "#64748b",
+                              fontWeight: 800,
+                            }}
+                          >
+                            {isExpanded ? "Plegar tabla ▲" : "Desplegar tabla ▼"}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* CUERPO DESPLEGABLE: TABLA DETALLADA DÍA A DÍA */}
+                      {isExpanded && (
+                        <div style={{ padding: "12px 16px", background: "#ffffff", borderTop: "1px solid #e2e8f0" }}>
+                          <div style={{ overflowX: "auto" }}>
+                            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", color: "#0f172a" }}>
+                              <thead>
+                                <tr
+                                  style={{
+                                    background: "#f8fafc",
+                                    borderBottom: "2px solid #cbd5e1",
+                                    textAlign: "left",
+                                    color: "#475569",
+                                    fontSize: "10.5px",
+                                    textTransform: "uppercase",
+                                  }}
+                                >
+                                  <th style={{ padding: "8px 10px" }}>Fecha</th>
+                                  <th style={{ padding: "8px 10px", textAlign: "center" }}>Tipo / MD</th>
+                                  <th style={{ padding: "8px 10px", textAlign: "right" }}>
+                                    Volumen ({ACWR_METRIC_CONFIG[acwrVolumeMetric]?.unit})
+                                  </th>
+                                  <th style={{ padding: "8px 10px", textAlign: "right" }}>Media Equipo</th>
+                                  <th style={{ padding: "8px 10px", textAlign: "center" }}>Dif vs Equipo</th>
+                                  <th style={{ padding: "8px 10px", textAlign: "center" }}>Δ% vs Ant. Mismo MD</th>
+                                  <th style={{ padding: "8px 10px", textAlign: "center" }}>Δ% vs 5 Últ. Mismo MD</th>
+                                  <th style={{ padding: "8px 10px", textAlign: "right" }}>Carga Aguda (7d)</th>
+                                  <th style={{ padding: "8px 10px", textAlign: "right" }}>Carga Crónica (28d)</th>
+                                  <th style={{ padding: "8px 10px", textAlign: "center" }}>Ratio ACWR</th>
+                                  <th style={{ padding: "8px 10px", textAlign: "center" }}>Estado / Zona</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {playerTimeline.length === 0 ? (
+                                  <tr>
+                                    <td colSpan={11} style={{ padding: "20px", textAlign: "center", color: "#94a3b8" }}>
+                                      No hay registros disponibles para los filtros seleccionados.
+                                    </td>
+                                  </tr>
+                                ) : (
+                                  playerTimeline.map((row) => {
+                                    const isMatch = Boolean(row.isMatch);
+                                    const isOff = !row.hasSession || row.normMd === "OFF";
+
+                                    let rowBg = "#ffffff";
+                                    if (isMatch) rowBg = "#fff5f5";
+                                    else if (isOff) rowBg = "#fbfcfd";
+
+                                    let mdBadgeBg = "#e0f2fe";
+                                    let mdBadgeColor = "#0369a1";
+                                    let mdLabel = row.normMd;
+
+                                    if (isMatch) {
+                                      mdBadgeBg = "#dc2626";
+                                      mdBadgeColor = "#ffffff";
+                                      mdLabel = "⚽ MD";
+                                    } else if (row.normMd === "MD-1") {
+                                      mdBadgeBg = "#38bdf8";
+                                      mdBadgeColor = "#0c4a6e";
+                                    } else if (row.normMd === "MD+1" || row.normMd === "MD+2") {
+                                      mdBadgeBg = "#10b981";
+                                      mdBadgeColor = "#ffffff";
+                                    } else if (isOff) {
+                                      mdBadgeBg = "#f1f5f9";
+                                      mdBadgeColor = "#94a3b8";
+                                      mdLabel = "Descanso (OFF)";
+                                    }
+
+                                    let acwrRowBg = "#f1f5f9";
+                                    let acwrRowColor = "#64748b";
+                                    let acwrRowLabel = "—";
+
+                                    if (row.zone === "sweet_spot") {
+                                      acwrRowBg = "#dcfce7";
+                                      acwrRowColor = "#15803d";
+                                      acwrRowLabel = "Sweet Spot";
+                                    } else if (row.zone === "subentrenamiento") {
+                                      acwrRowBg = "#fef3c7";
+                                      acwrRowColor = "#b45309";
+                                      acwrRowLabel = "Subentrenamiento";
+                                    } else if (row.zone === "precaucion") {
+                                      acwrRowBg = "#ffedd5";
+                                      acwrRowColor = "#c2410c";
+                                      acwrRowLabel = "Precaución";
+                                    } else if (row.zone === "peligro") {
+                                      acwrRowBg = "#fee2e2";
+                                      acwrRowColor = "#b91c1c";
+                                      acwrRowLabel = "Peligro Spike";
+                                    }
+
+                                    return (
+                                      <tr
+                                        key={row.fecha}
+                                        style={{
+                                          background: rowBg,
+                                          borderBottom: "1px solid #f1f5f9",
+                                          borderLeft: isMatch ? "3px solid #ef4444" : "3px solid transparent",
+                                          opacity: isOff ? 0.75 : 1,
+                                        }}
+                                      >
+                                        {/* Fecha */}
+                                        <td style={{ padding: "7px 10px", whiteSpace: "nowrap" }}>
+                                          <span style={{ fontWeight: 800, color: isOff ? "#64748b" : "#0f172a" }}>
+                                            {row.formattedDate}
+                                          </span>
+                                          <div style={{ fontSize: "10px", color: "#94a3b8" }}>{row.fecha}</div>
+                                        </td>
+
+                                        {/* Tipo / MD */}
+                                        <td style={{ padding: "7px 10px", textAlign: "center" }}>
+                                          <span
+                                            style={{
+                                              padding: "2px 7px",
+                                              borderRadius: "4px",
+                                              background: mdBadgeBg,
+                                              color: mdBadgeColor,
+                                              fontSize: "10.5px",
+                                              fontWeight: 800,
+                                              whiteSpace: "nowrap",
+                                            }}
+                                          >
+                                            {mdLabel}
+                                          </span>
+                                        </td>
+
+                                        {/* Volumen Jugador */}
+                                        <td style={{ padding: "7px 10px", textAlign: "right" }}>
+                                          <strong style={{ fontSize: "12.5px", color: isOff ? "#94a3b8" : "#0f172a" }}>
+                                            {row.volumen > 0 ? row.volumen.toLocaleString() : "0"}
+                                          </strong>
+                                        </td>
+
+                                        {/* Media Equipo */}
+                                        <td style={{ padding: "7px 10px", textAlign: "right", color: "#64748b" }}>
+                                          {row.teamAvg > 0 ? row.teamAvg.toLocaleString() : "—"}
+                                        </td>
+
+                                        {/* Dif vs Equipo */}
+                                        <td style={{ padding: "7px 10px", textAlign: "center" }}>
+                                          {row.diffVsTeam !== null ? (
+                                            <span
+                                              style={{
+                                                fontWeight: 800,
+                                                fontSize: "11px",
+                                                color: row.diffVsTeam >= 0 ? "#15803d" : "#c2410c",
+                                              }}
+                                            >
+                                              {row.labelVsTeam}
+                                            </span>
+                                          ) : (
+                                            <span style={{ color: "#cbd5e1" }}>—</span>
+                                          )}
+                                        </td>
+
+                                        {/* Δ% vs Ant. Mismo MD */}
+                                        <td style={{ padding: "7px 10px", textAlign: "center" }}>
+                                          {row.labelVsPrevSameMd !== "—" ? (
+                                            <span
+                                              style={{
+                                                fontWeight: 800,
+                                                fontSize: "11px",
+                                                padding: "2px 6px",
+                                                borderRadius: "4px",
+                                                background:
+                                                  row.labelVsPrevSameMd === "1º (Base)"
+                                                    ? "#f1f5f9"
+                                                    : row.diffVsPrevSameMd && Math.abs(row.diffVsPrevSameMd) > 20
+                                                    ? "#fee2e2"
+                                                    : "#f0fdf4",
+                                                color:
+                                                  row.labelVsPrevSameMd === "1º (Base)"
+                                                    ? "#64748b"
+                                                    : row.diffVsPrevSameMd && Math.abs(row.diffVsPrevSameMd) > 20
+                                                    ? "#b91c1c"
+                                                    : row.diffVsPrevSameMd && row.diffVsPrevSameMd >= 0
+                                                    ? "#15803d"
+                                                    : "#2563eb",
+                                              }}
+                                            >
+                                              {row.labelVsPrevSameMd}
+                                            </span>
+                                          ) : (
+                                            <span style={{ color: "#cbd5e1" }}>—</span>
+                                          )}
+                                        </td>
+
+                                        {/* Δ% vs 5 Últ. Mismo MD */}
+                                        <td style={{ padding: "7px 10px", textAlign: "center" }}>
+                                          {row.labelVsLast5SameMd !== "—" ? (
+                                            <span
+                                              style={{
+                                                fontWeight: 800,
+                                                fontSize: "11px",
+                                                padding: "2px 6px",
+                                                borderRadius: "4px",
+                                                background:
+                                                  row.labelVsLast5SameMd === "1º (Base)"
+                                                    ? "#f1f5f9"
+                                                    : row.diffVsLast5SameMd && Math.abs(row.diffVsLast5SameMd) > 20
+                                                    ? "#ffedd5"
+                                                    : "#f0fdf4",
+                                                color:
+                                                  row.labelVsLast5SameMd === "1º (Base)"
+                                                    ? "#64748b"
+                                                    : row.diffVsLast5SameMd && Math.abs(row.diffVsLast5SameMd) > 20
+                                                    ? "#c2410c"
+                                                    : row.diffVsLast5SameMd && row.diffVsLast5SameMd >= 0
+                                                    ? "#15803d"
+                                                    : "#2563eb",
+                                              }}
+                                            >
+                                              {row.labelVsLast5SameMd}
+                                            </span>
+                                          ) : (
+                                            <span style={{ color: "#cbd5e1" }}>—</span>
+                                          )}
+                                        </td>
+
+                                        {/* Carga Aguda (7d) */}
+                                        <td style={{ padding: "7px 10px", textAlign: "right" }}>
+                                          <span style={{ fontWeight: 800, color: "#0369a1" }}>
+                                            {row.acuteSum.toLocaleString()}
+                                          </span>
+                                        </td>
+
+                                        {/* Carga Crónica (28d) */}
+                                        <td style={{ padding: "7px 10px", textAlign: "right" }}>
+                                          <span style={{ fontWeight: 700, color: "#475569" }}>
+                                            {row.chronicWeekly.toLocaleString()}
+                                          </span>
+                                        </td>
+
+                                        {/* Ratio ACWR */}
+                                        <td style={{ padding: "7px 10px", textAlign: "center" }}>
+                                          <strong style={{ fontSize: "12.5px", color: acwrRowColor }}>
+                                            {row.acwr > 0 ? row.acwr.toFixed(2) : "0.00"}
+                                          </strong>
+                                        </td>
+
+                                        {/* Estado / Zona */}
+                                        <td style={{ padding: "7px 10px", textAlign: "center" }}>
+                                          <span
+                                            style={{
+                                              padding: "2px 7px",
+                                              borderRadius: "10px",
+                                              background: acwrRowBg,
+                                              color: acwrRowColor,
+                                              fontSize: "10px",
+                                              fontWeight: 800,
+                                              whiteSpace: "nowrap",
+                                            }}
+                                          >
+                                            {acwrRowLabel}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
         </div>
       )}
+
 
       {/* ── SUB-PESTAÑA 2: PERFIL COMPETITIVO (PARTIDO 100%) ── */}
       {subTab === "perfil_competitivo" && (
