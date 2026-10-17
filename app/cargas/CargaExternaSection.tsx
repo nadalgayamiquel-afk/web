@@ -367,6 +367,8 @@ export default function CargaExternaSection({
 
   // ── 2. ESTADOS PARA PERFIL COMPETITIVO ──
   const [profileSearch, setProfileSearch] = useState<string>("");
+  const [profileFilterPos, setProfileFilterPos] = useState<string>("TODOS");
+  const [profileFilterCategory, setProfileFilterCategory] = useState<string>("TODOS");
   const [profileNorm90, setProfileNorm90] = useState<boolean>(true); // normalizado a 90 min o media directa
   const [customOverrides, setCustomOverrides] = useState<Record<string, any>>(() => {
     if (typeof window !== "undefined") {
@@ -1025,120 +1027,258 @@ export default function CargaExternaSection({
     return filtered;
   };
 
-  // ── 4. CÁLCULO DE PERFIL COMPETITIVO (MATCH BENCHMARK) ──
+  // ── 4. CÁLCULO DE PERFIL COMPETITIVO (BENCHMARK 100% MATCH METODOLÓGICO) ──
+  // Solo en tareas de primera y segunda parte (catalán o español):
+  // 1. Varios partidos 90 min: (Máximo + Promedio) / 2
+  // 2. 1 partido 90 min: ese único valor
+  // 3. -90 min pero al menos 45 min en uno: ese valor de 45 min × 2 (marcado con *)
+  // 4. <45 min: copiado de los jugadores de la misma posición (marcado con **)
   const competitiveProfiles = useMemo(() => {
-    const matchRecs = gpsRecords.filter((r) => {
-      // Excluir registros simulados del perfil competitivo
-      if (isRecordSimulado(r)) return false;
-      const tipo = (r.tipo_sesion || r.metricas?.tipo_sesion || "").toUpperCase();
-      const md = (r.match_day || r.metricas?.match_day || "").toUpperCase();
-      return tipo.includes("PARTIDO") || md === "MD" || r.es_partido === true;
-    });
-
-    const byPlayer = new Map<string, any[]>();
-    matchRecs.forEach((r) => {
-      if (!r.jugador_id) return;
-      if (!byPlayer.has(r.jugador_id)) byPlayer.set(r.jugador_id, []);
-      byPlayer.get(r.jugador_id)!.push(r);
-    });
-
-    const byPos = new Map<string, { dist: number[]; hsr: number[]; sprint: number[]; accDec: number[]; load: number[]; count: number }>();
-    jugadores.forEach((j) => {
-      const pRecs = byPlayer.get(j.id) || [];
-      if (pRecs.length > 0) {
-        const posKey = (j.posicion || "JUGADOR").toUpperCase();
-        if (!byPos.has(posKey)) byPos.set(posKey, { dist: [], hsr: [], sprint: [], accDec: [], load: [], count: 0 });
-        const entry = byPos.get(posKey)!;
-        pRecs.forEach((r) => {
-          const d = Number(r.metricas?.["Distance(m)"] || r.distancia_total || 0);
-          const h = Number(r.metricas?.["HSR Abs (m)"] || r.metricas?.hsr || r.distancia_z4 || 0);
-          const s = Number(r.metricas?.["Sprint (m)"] || r.metricas?.sprint_m || (r.num_sprints ? r.num_sprints * 15 : 0));
-          const ad = Number(r.metricas?.["Accs Count"] || r.aceleraciones || 0) + Number(r.metricas?.["Decs Count"] || r.desaceleraciones || 0);
-          const pl = Number(r.metricas?.["Player Load"] || r.player_load || 0);
-          if (d > 0) entry.dist.push(d);
-          if (h > 0) entry.hsr.push(h);
-          if (s > 0) entry.sprint.push(s);
-          if (ad > 0) entry.accDec.push(ad);
-          if (pl > 0) entry.load.push(pl);
-          entry.count++;
-        });
-      }
-    });
-
-    const getPosAvg = (pos: string | null, metric: "dist" | "hsr" | "sprint" | "accDec" | "load", defVal: number): number => {
-      const posKey = (pos || "").toUpperCase();
-      const entry = byPos.get(posKey);
-      if (entry && entry[metric].length > 0) {
-        const sum = entry[metric].reduce((a, b) => a + b, 0);
-        return Math.round(sum / entry[metric].length);
-      }
-      return defVal;
+    const isMatchHalfTask = (taskName?: string): boolean => {
+      if (!taskName) return false;
+      const n = String(taskName).trim().toUpperCase();
+      if (n.includes("PREPARTIDO") || n.includes("CALENTAMIENTO") || n.includes("ACTIVACI")) return false;
+      if (n.includes("PRIMERA PART") || n.includes("PRIMERA PARTE") || n.includes("1ª PART") || n.includes("1A PART")) return true;
+      if (n.includes("SEGONA PART") || n.includes("SEGUNDA PARTE") || n.includes("2ª PART") || n.includes("2A PART")) return true;
+      return false;
     };
 
+    const realGps = gpsRecords.filter((r) => !isRecordSimulado(r));
+    const playerMatchesMap = new Map<string, any[]>();
+
+    realGps.forEach((r) => {
+      if (!r.jugador_id) return;
+      const isMatch = String(r.tipo_sesion || r.metricas?.tipo_sesion || "").toUpperCase().includes("PARTIDO") ||
+                      String(r.match_day || r.metricas?.match_day || "").toUpperCase() === "MD" ||
+                      r.es_partido === true;
+
+      const tareas = r.metricas?.tareas;
+      let matchParts: any[] = [];
+
+      if (Array.isArray(tareas) && tareas.length > 0) {
+        matchParts = tareas.filter((t: any) => isMatchHalfTask(t.nombre || t.name || t.tarea));
+      }
+
+      // Si no tiene array de tareas desglosadas pero es un partido registrado, usamos el registro global
+      if (matchParts.length === 0 && isMatch) {
+        const dur = Number(r.duracion || r.metricas?.["Duration(min)"] || r.minutos_totales || 90);
+        const dist = Number(r.metricas?.["Distance(m)"] || r.distancia_total || 0);
+        const hsr = Number(r.metricas?.["HSR Abs (m)"] || r.metricas?.hsr || r.distancia_z4 || 0);
+        const sprint = Number(r.metricas?.["Sprint (m)"] || r.metricas?.sprint_m || (r.num_sprints ? r.num_sprints * 15 : 0));
+        const acc = Number(r.metricas?.["Accs Count"] || r.aceleraciones || 0);
+        const dec = Number(r.metricas?.["Decs Count"] || r.desaceleraciones || 0);
+        const load = Number(r.metricas?.["Player Load"] || r.player_load || 0);
+        const maxSpd = Number(r.metricas?.["MAX Speed(km/h)"] || r.max_speed || 0);
+
+        if (dist > 0) {
+          if (!playerMatchesMap.has(r.jugador_id)) playerMatchesMap.set(r.jugador_id, []);
+          playerMatchesMap.get(r.jugador_id)!.push({
+            fecha: r.fecha,
+            minutos: dur,
+            dist,
+            hsr,
+            sprint,
+            accDec: acc + dec,
+            load,
+            maxSpeed: maxSpd,
+            parts: [{ nombre: "Partido Completo", minutos: dur, dist, hsr, sprint, accDec: acc + dec, load, maxSpeed: maxSpd }],
+          });
+        }
+        return;
+      }
+
+      if (matchParts.length === 0) return;
+
+      if (!playerMatchesMap.has(r.jugador_id)) playerMatchesMap.set(r.jugador_id, []);
+
+      const totalMinutes = matchParts.reduce((acc, t) => acc + Number(t.Tiempo || t.duracion_min || t.Duration || 0), 0);
+      const totalDist = matchParts.reduce((acc, t) => acc + Number(t["Distance(m)"] || t.distancia_total || 0), 0);
+      const totalHsr = matchParts.reduce((acc, t) => acc + Number(t.hsr || t["HSR Abs (m)"] || t.distancia_z4 || 0), 0);
+      const totalSprint = matchParts.reduce((acc, t) => acc + Number(t["+ 24 km/h (Distancia)"] || t["+28 km/h (Distancia)"] || t.distancia_z5 || t.sprint || 0), 0);
+      const totalAcc = matchParts.reduce((acc, t) => acc + Number(t["Accs Count"] || t["Acc + 3 m/s2 (Num)"] || t.aceleraciones || 0), 0);
+      const totalDec = matchParts.reduce((acc, t) => acc + Number(t["Decs Count"] || t["Dec + 3 m/s2 (Num)"] || t.desaceleraciones || 0), 0);
+      const totalLoad = matchParts.reduce((acc, t) => acc + Number(t["Player Load"] || t.player_load || 0), 0);
+      const maxSpeed = Math.max(...matchParts.map((t) => Number(t["MAX Speed(km/h)"] || t["Vel Max"] || t.max_speed || 0)));
+
+      const parts = matchParts.map((t) => ({
+        nombre: t.nombre || t.name || t.tarea || "Parte",
+        minutos: Number(t.Tiempo || t.duracion_min || t.Duration || 0),
+        dist: Number(t["Distance(m)"] || t.distancia_total || 0),
+        hsr: Number(t.hsr || t["HSR Abs (m)"] || t.distancia_z4 || 0),
+        sprint: Number(t["+ 24 km/h (Distancia)"] || t["+28 km/h (Distancia)"] || t.distancia_z5 || t.sprint || 0),
+        accDec: Number(t["Accs Count"] || t["Acc + 3 m/s2 (Num)"] || 0) + Number(t["Decs Count"] || t["Dec + 3 m/s2 (Num)"] || 0),
+        load: Number(t["Player Load"] || t.player_load || 0),
+        maxSpeed: Number(t["MAX Speed(km/h)"] || t["Vel Max"] || 0),
+      }));
+
+      playerMatchesMap.get(r.jugador_id)!.push({
+        fecha: r.fecha,
+        minutos: Math.round(totalMinutes * 10) / 10,
+        dist: totalDist,
+        hsr: totalHsr,
+        sprint: totalSprint,
+        accDec: totalAcc + totalDec,
+        load: totalLoad,
+        maxSpeed,
+        parts,
+      });
+    });
+
     const profiles = new Map<string, any>();
+    const posPool = new Map<string, any[]>();
+
+    // PASO 1: Calcular perfiles reales o estimados
     jugadores.forEach((j) => {
-      const pRecs = byPlayer.get(j.id) || [];
+      const matches = playerMatchesMap.get(j.id) || [];
+      const fullMatches = matches.filter((m) => m.minutos >= 80);
+      const pos = (j.posicion || "MED").toUpperCase();
       const overrides = customOverrides[j.id] || {};
 
-      let matchesCount = pRecs.length;
-      let rawDist = 0, rawHsr = 0, rawSprint = 0, rawAcc = 0, rawDec = 0, rawLoad = 0, rawSpeed = 0, rawDur = 0;
+      let category: "real_varios" | "real_uno" | "estimado_45" | "copiado_posicion" = "copiado_posicion";
+      let isReal = true;
+      let badgeText = "";
+      let asterisk = "";
+      let detailText = "";
+      let profile: any = { dist: 0, hsr: 0, sprint: 0, accDec: 0, load: 0, maxSpeed: 0, mMin: 0 };
 
-      if (pRecs.length > 0) {
-        pRecs.forEach((r) => {
-          rawDist += Number(r.metricas?.["Distance(m)"] || r.distancia_total || 0);
-          rawHsr += Number(r.metricas?.["HSR Abs (m)"] || r.metricas?.hsr || r.distancia_z4 || 0);
-          rawSprint += Number(r.metricas?.["Sprint (m)"] || r.metricas?.sprint_m || (r.num_sprints ? r.num_sprints * 15 : 0));
-          rawAcc += Number(r.metricas?.["Accs Count"] || r.aceleraciones || 0);
-          rawDec += Number(r.metricas?.["Decs Count"] || r.desaceleraciones || 0);
-          rawLoad += Number(r.metricas?.["Player Load"] || r.player_load || 0);
-          rawSpeed = Math.max(rawSpeed, Number(r.metricas?.["MAX Speed(km/h)"] || r.max_speed || 0));
-          rawDur += Number(r.duracion || r.metricas?.["Duration(min)"] || 90);
+      if (fullMatches.length >= 2) {
+        // CASO 1: Varios partidos 90 min -> (Máximo + Promedio) / 2
+        category = "real_varios";
+        badgeText = "Real ((Máx+Prom)/2)";
+        asterisk = "";
+        detailText = `${matches.length} part. (${fullMatches.length} de 90')`;
+        const metrics: Array<"dist" | "hsr" | "sprint" | "accDec" | "load"> = ["dist", "hsr", "sprint", "accDec", "load"];
+        metrics.forEach((k) => {
+          const vals = fullMatches.map((m) => m[k]);
+          const maxV = Math.max(...vals);
+          const avgV = vals.reduce((a, b) => a + b, 0) / vals.length;
+          profile[k] = Math.round((maxV + avgV) / 2);
         });
-
-        const avgDur = rawDur / pRecs.length;
-        const normFactor = profileNorm90 && avgDur > 0 ? (90 / avgDur) : 1;
-
-        const dist = Math.round((rawDist / pRecs.length) * normFactor);
-        const hsr = Math.round((rawHsr / pRecs.length) * normFactor);
-        const sprint = Math.round((rawSprint / pRecs.length) * normFactor);
-        const accDec = Math.round(((rawAcc + rawDec) / pRecs.length) * normFactor);
-        const load = Math.round((rawLoad / pRecs.length) * normFactor);
-        const mMin = avgDur > 0 ? Math.round(rawDist / rawDur) : 105;
-
-        profiles.set(j.id, {
-          isFallback: false,
-          matchesCount,
-          dist: overrides.dist ?? dist,
-          hsr: overrides.hsr ?? hsr,
-          sprint: overrides.sprint ?? sprint,
-          accDec: overrides.accDec ?? accDec,
-          load: overrides.load ?? load,
-          mMin: overrides.mMin ?? mMin,
-          maxSpeed: rawSpeed,
-        });
+        profile.maxSpeed = Math.round(Math.max(...fullMatches.map((m) => m.maxSpeed)) * 10) / 10;
+        profile.mMin = Math.round(profile.dist / 90);
+        isReal = true;
+      } else if (fullMatches.length === 1) {
+        // CASO 2: Solo 1 partido 90 min -> coger ese valor como perfil
+        category = "real_uno";
+        badgeText = "Real (1 part. 90')";
+        asterisk = "";
+        detailText = `${matches.length} part. (1 de 90')`;
+        const m = fullMatches[0];
+        profile = {
+          dist: Math.round(m.dist),
+          hsr: Math.round(m.hsr),
+          sprint: Math.round(m.sprint),
+          accDec: Math.round(m.accDec),
+          load: Math.round(m.load),
+          maxSpeed: Math.round(m.maxSpeed * 10) / 10,
+          mMin: Math.round(m.dist / (m.minutos || 90)),
+        };
+        isReal = true;
       } else {
-        const fallbackDist = getPosAvg(j.posicion, "dist", 10200);
-        const fallbackHsr = getPosAvg(j.posicion, "hsr", 720);
-        const fallbackSprint = getPosAvg(j.posicion, "sprint", 190);
-        const fallbackAccDec = getPosAvg(j.posicion, "accDec", 75);
-        const fallbackLoad = getPosAvg(j.posicion, "load", 780);
-
-        profiles.set(j.id, {
-          isFallback: true,
-          matchesCount: 0,
-          dist: overrides.dist ?? fallbackDist,
-          hsr: overrides.hsr ?? fallbackHsr,
-          sprint: overrides.sprint ?? fallbackSprint,
-          accDec: overrides.accDec ?? fallbackAccDec,
-          load: overrides.load ?? fallbackLoad,
-          mMin: 110,
-          maxSpeed: 30.5,
+        // CASO 3 & 4: Buscar si tiene alguna parte o partido con >= 40-45 min
+        const partsOver45: any[] = [];
+        matches.forEach((m) => {
+          m.parts.forEach((p: any) => {
+            if (p.minutos >= 40) partsOver45.push(p);
+          });
+          if (m.minutos >= 45 && partsOver45.length === 0) {
+            partsOver45.push(m);
+          }
         });
+
+        if (partsOver45.length > 0) {
+          // CASO 3: -90 min pero al menos 45 min en uno -> ese 45 min × 2 (*)
+          category = "estimado_45";
+          badgeText = "Estimado (45' × 2)*";
+          asterisk = "*";
+          partsOver45.sort((a, b) => b.dist - a.dist);
+          const best = partsOver45[0];
+          detailText = `1 tiempo (${Math.round(best.minutos)}' × 2)*`;
+          profile = {
+            dist: Math.round(best.dist * 2),
+            hsr: Math.round(best.hsr * 2),
+            sprint: Math.round(best.sprint * 2),
+            accDec: Math.round(best.accDec * 2),
+            load: Math.round(best.load * 2),
+            maxSpeed: Math.round(best.maxSpeed * 10) / 10,
+            mMin: Math.round((best.dist * 2) / 90),
+          };
+          isReal = false;
+        } else {
+          // CASO 4: No tiene ni 45 min -> copiado por posición (**)
+          category = "copiado_posicion";
+          badgeText = "Copiado Posición**";
+          asterisk = "**";
+          const maxM = matches.length > 0 ? Math.max(...matches.map((m) => m.minutos)) : 0;
+          detailText = maxM > 0 ? `Máx ${Math.round(maxM)}' (<45')**` : "Sin partidos (0')**";
+          isReal = false;
+        }
+      }
+
+      // Guardar en el pool posicional si es real
+      if (isReal && profile.dist > 0) {
+        if (!posPool.has(pos)) posPool.set(pos, []);
+        posPool.get(pos)!.push(profile);
+      }
+
+      profiles.set(j.id, {
+        jugador: j,
+        category,
+        isReal,
+        badgeText,
+        asterisk,
+        detailText,
+        matchesCount: matches.length,
+        dist: overrides.dist ?? profile.dist,
+        hsr: overrides.hsr ?? profile.hsr,
+        sprint: overrides.sprint ?? profile.sprint,
+        accDec: overrides.accDec ?? profile.accDec,
+        load: overrides.load ?? profile.load,
+        maxSpeed: overrides.maxSpeed ?? profile.maxSpeed,
+        mMin: overrides.mMin ?? profile.mMin,
+        isFallback: !isReal,
+      });
+    });
+
+    // PASO 2: Rellenar jugadores de Caso 4 copiando el promedio de su misma posición
+    profiles.forEach((p, jId) => {
+      if (p.category === "copiado_posicion") {
+        const pos = (p.jugador.posicion || "MED").toUpperCase();
+        const overrides = customOverrides[jId] || {};
+        let pool = posPool.get(pos);
+
+        if (!pool || pool.length === 0) {
+          // Si no hay jugadores de esa posición específica, ampliar categoría
+          if (pos.includes("DEF") || pos.includes("LAT") || pos.includes("CEN")) pool = posPool.get("DEF") || [];
+          else if (pos.includes("MED") || pos.includes("PIV") || pos.includes("INT")) pool = posPool.get("MED") || [];
+          else if (pos.includes("DEL") || pos.includes("EXT") || pos.includes("PUN")) pool = posPool.get("DEL") || [];
+          if (!pool || pool.length === 0) {
+            pool = Array.from(posPool.values()).flat();
+          }
+        }
+
+        if (pool && pool.length > 0) {
+          const metrics: Array<"dist" | "hsr" | "sprint" | "accDec" | "load" | "mMin"> = ["dist", "hsr", "sprint", "accDec", "load", "mMin"];
+          metrics.forEach((k) => {
+            const vals = pool!.map((x) => x[k]);
+            p[k] = overrides[k] ?? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+          });
+          p.maxSpeed = overrides.maxSpeed ?? Math.round(Math.max(...pool.map((x) => x.maxSpeed)) * 10) / 10;
+        } else {
+          // Fallback por defecto si no hay ningún partido registrado
+          p.dist = overrides.dist ?? 10200;
+          p.hsr = overrides.hsr ?? 650;
+          p.sprint = overrides.sprint ?? 180;
+          p.accDec = overrides.accDec ?? 85;
+          p.load = overrides.load ?? 850;
+          p.mMin = overrides.mMin ?? 113;
+          p.maxSpeed = overrides.maxSpeed ?? 28.5;
+        }
       }
     });
 
     return profiles;
-  }, [gpsRecords, jugadores, profileNorm90, customOverrides]);
+  }, [gpsRecords, jugadores, customOverrides]);
 
   // ── 5. CÁLCULO DE RATIOS SEMANALES (% MATCH DEMANDS) ──
   const activeWeek = availableWeeks[selectedWeekIdx] || availableWeeks[0];
@@ -3275,151 +3415,378 @@ export default function CargaExternaSection({
       {/* ── SUB-PESTAÑA 2: PERFIL COMPETITIVO (PARTIDO 100%) ── */}
       {subTab === "perfil_competitivo" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+          {/* BANNER METODOLÓGICO SUPERIOR */}
           <div
             style={{
-              background: "#fff7ed",
+              background: "linear-gradient(to right, #fff7ed, #ffffff)",
               borderRadius: "10px",
-              padding: "12px 18px",
+              padding: "16px 20px",
               border: "1px solid #fed7aa",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              flexWrap: "wrap",
-              gap: "10px",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
             }}
           >
-            <div>
-              <h4 style={{ margin: 0, fontSize: "13.5px", fontWeight: 900, color: "#c2410c" }}>
-                🏆 Perfil Competitivo Individual (Benchmark 100% Match)
-              </h4>
-              <p style={{ margin: "2px 0 0 0", fontSize: "11.5px", color: "#7c2d12" }}>
-                Calcula automáticamente la demanda media de 1 partido entero de competición por jugador (a partir de partidos jugados o media de posición).
-              </p>
-            </div>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: "12px" }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span style={{ fontSize: "18px" }}>🏆</span>
+                  <h4 style={{ margin: 0, fontSize: "15px", fontWeight: 900, color: "#c2410c" }}>
+                    Perfil Competitivo Individual (Benchmark 100% Match)
+                  </h4>
+                </div>
+                <p style={{ margin: "4px 0 0 0", fontSize: "12px", color: "#7c2d12", lineHeight: 1.5, maxWidth: "900px" }}>
+                  <strong>Metodología Oficial:</strong> Calculado exclusivamente sobre las tareas de <strong>1ª parte y 2ª parte</strong> (en catalán o español).
+                  <br />
+                  • <strong>Varios partidos de 90 min:</strong> Perfil = <code>(Máximo + Promedio) / 2</code> (100% Real).
+                  <br />
+                  • <strong>1 único partido de 90 min:</strong> Perfil = ese valor directo (100% Real).
+                  <br />
+                  • <strong>&lt;90 min pero con 45 min en uno:</strong> Perfil = <code>45 min × 2</code> (marcado con asterisco <code>*</code>).
+                  <br />
+                  • <strong>&lt;45 min en todos los partidos:</strong> Perfil = promedio de los jugadores de su misma posición (marcado con doble asterisco <code>**</code>).
+                </p>
+              </div>
 
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <label style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "12px", fontWeight: 700, color: "#9a3412", cursor: "pointer" }}>
+              {/* Controles de Búsqueda y Filtros */}
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                <select
+                  value={profileFilterPos}
+                  onChange={(e) => setProfileFilterPos(e.target.value)}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: "6px",
+                    border: "1px solid #fed7aa",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    background: "#ffffff",
+                    color: "#9a3412",
+                    outline: "none",
+                  }}
+                >
+                  <option value="TODOS">Todas las Posiciones</option>
+                  <option value="DEF">Defensas</option>
+                  <option value="MED">Centrocampistas</option>
+                  <option value="DEL">Delanteros</option>
+                  <option value="POR">Porteros</option>
+                </select>
+
+                <select
+                  value={profileFilterCategory}
+                  onChange={(e) => setProfileFilterCategory(e.target.value)}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: "6px",
+                    border: "1px solid #fed7aa",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    background: "#ffffff",
+                    color: "#9a3412",
+                    outline: "none",
+                  }}
+                >
+                  <option value="TODOS">Todos los Métodos</option>
+                  <option value="REALS">Solo 100% Reales (90 min)</option>
+                  <option value="ESTIMADOS">Solo Estimados (45' × 2)*</option>
+                  <option value="COPIADOS">Solo Copiados Posición**</option>
+                </select>
+
                 <input
-                  type="checkbox"
-                  checked={profileNorm90}
-                  onChange={(e) => setProfileNorm90(e.target.checked)}
+                  type="text"
+                  placeholder="Buscar jugador..."
+                  value={profileSearch}
+                  onChange={(e) => setProfileSearch(e.target.value)}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: "6px",
+                    border: "1px solid #fed7aa",
+                    fontSize: "12px",
+                    outline: "none",
+                    width: "150px",
+                    background: "#ffffff",
+                  }}
                 />
-                <span>Normalizar a 90 minutos (m/min × 90)</span>
-              </label>
-
-              <input
-                type="text"
-                placeholder="Buscar jugador..."
-                value={profileSearch}
-                onChange={(e) => setProfileSearch(e.target.value)}
-                style={{
-                  padding: "5px 10px",
-                  borderRadius: "6px",
-                  border: "1px solid #fed7aa",
-                  fontSize: "12px",
-                  outline: "none",
-                  width: "140px",
-                  background: "#ffffff",
-                }}
-              />
+              </div>
             </div>
           </div>
 
-          <div style={{ background: "#ffffff", borderRadius: "10px", border: "1px solid #cbd5e1", overflow: "hidden" }}>
+          {/* KPI CARDS RESUMEN DE LA PLANTILLA */}
+          {(() => {
+            const allProfilesList = jugadores.map((j) => competitiveProfiles.get(j.id)).filter(Boolean);
+            const countRealVarios = allProfilesList.filter((p) => p.category === "real_varios").length;
+            const countRealUno = allProfilesList.filter((p) => p.category === "real_uno").length;
+            const countEstimados = allProfilesList.filter((p) => p.category === "estimado_45").length;
+            const countCopiados = allProfilesList.filter((p) => p.category === "copiado_posicion").length;
+
+            return (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: "12px" }}>
+                <div style={{ background: "#ffffff", padding: "12px 16px", borderRadius: "8px", border: "1px solid #cbd5e1", borderLeft: "4px solid #16a34a" }}>
+                  <span style={{ fontSize: "11px", fontWeight: 800, color: "#15803d", textTransform: "uppercase" }}>
+                    🟢 Real (Varios 90 min)
+                  </span>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: "6px", marginTop: "2px" }}>
+                    <strong style={{ fontSize: "22px", fontWeight: 900, color: "#0f172a" }}>{countRealVarios}</strong>
+                    <span style={{ fontSize: "11px", color: "#64748b" }}>jugadores (Máx + Prom) / 2</span>
+                  </div>
+                </div>
+
+                <div style={{ background: "#ffffff", padding: "12px 16px", borderRadius: "8px", border: "1px solid #cbd5e1", borderLeft: "4px solid #0284c7" }}>
+                  <span style={{ fontSize: "11px", fontWeight: 800, color: "#0369a1", textTransform: "uppercase" }}>
+                    🟢 Real (1 partido 90 min)
+                  </span>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: "6px", marginTop: "2px" }}>
+                    <strong style={{ fontSize: "22px", fontWeight: 900, color: "#0f172a" }}>{countRealUno}</strong>
+                    <span style={{ fontSize: "11px", color: "#64748b" }}>jugadores (valor directo)</span>
+                  </div>
+                </div>
+
+                <div style={{ background: "#ffffff", padding: "12px 16px", borderRadius: "8px", border: "1px solid #cbd5e1", borderLeft: "4px solid #f59e0b" }}>
+                  <span style={{ fontSize: "11px", fontWeight: 800, color: "#b45309", textTransform: "uppercase" }}>
+                    🟡 Estimado (45 min × 2)*
+                  </span>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: "6px", marginTop: "2px" }}>
+                    <strong style={{ fontSize: "22px", fontWeight: 900, color: "#0f172a" }}>{countEstimados}</strong>
+                    <span style={{ fontSize: "11px", color: "#64748b" }}>jugadores proyectados *</span>
+                  </div>
+                </div>
+
+                <div style={{ background: "#ffffff", padding: "12px 16px", borderRadius: "8px", border: "1px solid #cbd5e1", borderLeft: "4px solid #ea580c" }}>
+                  <span style={{ fontSize: "11px", fontWeight: 800, color: "#c2410c", textTransform: "uppercase" }}>
+                    🟠 Copiado Posición**
+                  </span>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: "6px", marginTop: "2px" }}>
+                    <strong style={{ fontSize: "22px", fontWeight: 900, color: "#0f172a" }}>{countCopiados}</strong>
+                    <span style={{ fontSize: "11px", color: "#64748b" }}>jugadores &lt;45 min **</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* TABLA DE PERFILES COMPETITIVOS CON LAS 5 VARIABLES CLAVE */}
+          <div style={{ background: "#ffffff", borderRadius: "10px", border: "1px solid #cbd5e1", overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12.5px", color: "#0f172a" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", color: "#0f172a" }}>
                 <thead>
                   <tr style={{ background: "#f8fafc", borderBottom: "2px solid #cbd5e1", textAlign: "left", color: "#475569", fontSize: "11px", textTransform: "uppercase" }}>
                     <th style={{ padding: "10px 12px" }}>Jugador</th>
-                    <th style={{ padding: "10px 8px", textAlign: "center" }}>Partidos Analizados</th>
+                    <th style={{ padding: "10px 10px", textAlign: "center" }}>Origen / Método</th>
+                    <th style={{ padding: "10px 10px", textAlign: "center" }}>Partidos Analizados</th>
                     <th style={{ padding: "10px 10px", textAlign: "right" }}>Distancia Total (m)</th>
                     <th style={{ padding: "10px 10px", textAlign: "right" }}>Intensidad (m/min)</th>
-                    <th style={{ padding: "10px 10px", textAlign: "right" }}>HSR (&gt;18 km/h)</th>
-                    <th style={{ padding: "10px 10px", textAlign: "right" }}>Sprint (&gt;25 km/h)</th>
-                    <th style={{ padding: "10px 10px", textAlign: "right" }}>Acc + Dec Totales</th>
+                    <th style={{ padding: "10px 10px", textAlign: "right" }}>HSR (&gt;21 km/h)</th>
+                    <th style={{ padding: "10px 10px", textAlign: "right" }}>Sprint (&gt;24 km/h)</th>
+                    <th style={{ padding: "10px 10px", textAlign: "right" }}>Acc + Dec (&gt;3 m/s²)</th>
                     <th style={{ padding: "10px 10px", textAlign: "right" }}>Player Load (AU)</th>
-                    <th style={{ padding: "10px 12px", textAlign: "center" }}>Origen Benchmark</th>
+                    <th style={{ padding: "10px 10px", textAlign: "right" }}>Vmax (km/h)</th>
+                    <th style={{ padding: "10px 12px", textAlign: "center" }}>Acción</th>
                   </tr>
                 </thead>
                 <tbody>
                   {jugadores
                     .filter((j) => {
-                      if (!profileSearch) return true;
-                      const name = (j.apodo || j.nombre || "").toLowerCase();
-                      return name.includes(profileSearch.toLowerCase());
+                      if (profileSearch) {
+                        const name = (j.apodo || j.nombre || "").toLowerCase();
+                        const dorsalStr = String(j.dorsal || "");
+                        if (!name.includes(profileSearch.toLowerCase()) && !dorsalStr.includes(profileSearch)) return false;
+                      }
+                      if (profileFilterPos !== "TODOS") {
+                        const pos = (j.posicion || "").toUpperCase();
+                        if (profileFilterPos === "DEF" && !pos.includes("DEF") && !pos.includes("LAT") && !pos.includes("CEN")) return false;
+                        if (profileFilterPos === "MED" && !pos.includes("MED") && !pos.includes("PIV") && !pos.includes("INT")) return false;
+                        if (profileFilterPos === "DEL" && !pos.includes("DEL") && !pos.includes("EXT") && !pos.includes("PUN")) return false;
+                        if (profileFilterPos === "POR" && !pos.includes("POR")) return false;
+                      }
+                      if (profileFilterCategory !== "TODOS") {
+                        const p = competitiveProfiles.get(j.id);
+                        if (!p) return false;
+                        if (profileFilterCategory === "REALS" && !p.isReal) return false;
+                        if (profileFilterCategory === "ESTIMADOS" && p.category !== "estimado_45") return false;
+                        if (profileFilterCategory === "COPIADOS" && p.category !== "copiado_posicion") return false;
+                      }
+                      return true;
                     })
                     .map((j, idx) => {
                       const p = competitiveProfiles.get(j.id) || {
-                        dist: 10000,
-                        hsr: 700,
-                        sprint: 200,
-                        accDec: 70,
-                        load: 800,
-                        mMin: 110,
-                        matchesCount: 0,
-                        isFallback: true,
+                        dist: 10200,
+                        hsr: 650,
+                        sprint: 180,
+                        accDec: 85,
+                        load: 850,
+                        mMin: 113,
+                        maxSpeed: 28.5,
+                        category: "copiado_posicion",
+                        isReal: false,
+                        badgeText: "Copiado Posición**",
+                        asterisk: "**",
+                        detailText: "Sin partidos (0')**",
                       };
 
+                      let badgeBg = "#dcfce7";
+                      let badgeColor = "#15803d";
+                      if (p.category === "estimado_45") {
+                        badgeBg = "#fef3c7";
+                        badgeColor = "#b45309";
+                      } else if (p.category === "copiado_posicion") {
+                        badgeBg = "#ffedd5";
+                        badgeColor = "#c2410c";
+                      } else if (p.category === "real_uno") {
+                        badgeBg = "#e0f2fe";
+                        badgeColor = "#0369a1";
+                      }
+
                       return (
-                        <tr key={j.id || idx} style={{ borderBottom: "1px solid #f1f5f9", background: idx % 2 === 0 ? "#ffffff" : "#fcfcfd" }}>
-                          <td style={{ padding: "10px 12px" }}>
+                        <tr key={j.id || idx} style={{ borderBottom: "1px solid #f1f5f9", background: idx % 2 === 0 ? "#ffffff" : "#fbfcfd" }}>
+                          {/* Jugador */}
+                          <td style={{ padding: "9px 12px" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                               {renderDisponibilidadBadge && renderDisponibilidadBadge(j)}
+                              <span
+                                style={{
+                                  padding: "2px 6px",
+                                  borderRadius: "4px",
+                                  background: "#1e3a8a",
+                                  color: "#ffffff",
+                                  fontSize: "11px",
+                                  fontWeight: 900,
+                                }}
+                              >
+                                #{j.dorsal || "—"}
+                              </span>
                               <div style={{ display: "flex", flexDirection: "column" }}>
-                                <span style={{ fontWeight: 800, color: "#0f172a" }}>
-                                  {j.dorsal ? "#" + j.dorsal + " " : ""}{j.apodo || j.nombre}
-                                </span>
-                                <span style={{ fontSize: "10.5px", color: "#64748b" }}>
-                                  {j.posicion || "Jugador"}
+                                <strong style={{ fontSize: "12.5px", color: "#0f172a" }}>
+                                  {j.apodo || j.nombre}
+                                </strong>
+                                <span style={{ fontSize: "10px", color: "#64748b", fontWeight: 700 }}>
+                                  {j.posicion || "JUG"}
                                 </span>
                               </div>
                             </div>
                           </td>
 
-                          <td style={{ padding: "10px 8px", textAlign: "center" }}>
-                            <span style={{ fontWeight: 800, color: p.matchesCount > 0 ? "#1e3a8a" : "#94a3b8" }}>
-                              {p.matchesCount} {p.matchesCount === 1 ? "partido" : "partidos"}
+                          {/* Origen / Método */}
+                          <td style={{ padding: "9px 10px", textAlign: "center" }}>
+                            <span
+                              style={{
+                                display: "inline-block",
+                                padding: "3px 8px",
+                                borderRadius: "6px",
+                                background: badgeBg,
+                                color: badgeColor,
+                                fontSize: "11px",
+                                fontWeight: 800,
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {p.badgeText}
                             </span>
                           </td>
 
-                          <td style={{ padding: "10px 10px", textAlign: "right" }}>
-                            <strong style={{ color: "#0f172a" }}>{p.dist.toLocaleString("es-ES")}</strong>
-                            <small style={{ fontSize: "10.5px", color: "#64748b", marginLeft: "2px" }}>m</small>
+                          {/* Partidos Analizados */}
+                          <td style={{ padding: "9px 10px", textAlign: "center" }}>
+                            <span style={{ fontSize: "11.5px", fontWeight: 700, color: p.isReal ? "#1e3a8a" : "#64748b" }}>
+                              {p.detailText}
+                            </span>
                           </td>
 
-                          <td style={{ padding: "10px 10px", textAlign: "right" }}>
-                            <strong style={{ color: "#0284c7" }}>{p.mMin}</strong>
-                            <small style={{ fontSize: "10.5px", color: "#64748b", marginLeft: "2px" }}>m/min</small>
+                          {/* Distancia Total (m) */}
+                          <td style={{ padding: "9px 10px", textAlign: "right" }}>
+                            <strong style={{ fontSize: "12.5px", color: "#0f172a" }}>
+                              {p.dist ? p.dist.toLocaleString("es-ES") : "—"}
+                            </strong>
+                            <span style={{ fontSize: "11px", fontWeight: 800, color: p.asterisk ? "#ea580c" : "#64748b", marginLeft: "3px" }}>
+                              m {p.asterisk}
+                            </span>
                           </td>
 
-                          <td style={{ padding: "10px 10px", textAlign: "right" }}>
-                            <strong style={{ color: "#ea580c" }}>{p.hsr.toLocaleString("es-ES")}</strong>
-                            <small style={{ fontSize: "10.5px", color: "#64748b", marginLeft: "2px" }}>m</small>
+                          {/* Intensidad (m/min) */}
+                          <td style={{ padding: "9px 10px", textAlign: "right" }}>
+                            <strong style={{ fontSize: "12px", color: "#0284c7" }}>
+                              {p.mMin || Math.round(p.dist / 90)}
+                            </strong>
+                            <span style={{ fontSize: "10px", color: "#64748b", marginLeft: "2px" }}>
+                              m/min {p.asterisk}
+                            </span>
                           </td>
 
-                          <td style={{ padding: "10px 10px", textAlign: "right" }}>
-                            <strong style={{ color: "#dc2626" }}>{p.sprint.toLocaleString("es-ES")}</strong>
-                            <small style={{ fontSize: "10.5px", color: "#64748b", marginLeft: "2px" }}>m</small>
+                          {/* HSR (>21 km/h, m) */}
+                          <td style={{ padding: "9px 10px", textAlign: "right" }}>
+                            <strong style={{ fontSize: "12.5px", color: "#ea580c" }}>
+                              {p.hsr ? p.hsr.toLocaleString("es-ES") : "0"}
+                            </strong>
+                            <span style={{ fontSize: "11px", fontWeight: 800, color: p.asterisk ? "#ea580c" : "#64748b", marginLeft: "3px" }}>
+                              m {p.asterisk}
+                            </span>
                           </td>
 
-                          <td style={{ padding: "10px 10px", textAlign: "right" }}>
-                            <strong style={{ color: "#9333ea" }}>{p.accDec}</strong>
+                          {/* Sprint (>24 km/h, m) */}
+                          <td style={{ padding: "9px 10px", textAlign: "right" }}>
+                            <strong style={{ fontSize: "12.5px", color: "#dc2626" }}>
+                              {p.sprint ? p.sprint.toLocaleString("es-ES") : "0"}
+                            </strong>
+                            <span style={{ fontSize: "11px", fontWeight: 800, color: p.asterisk ? "#ea580c" : "#64748b", marginLeft: "3px" }}>
+                              m {p.asterisk}
+                            </span>
                           </td>
 
-                          <td style={{ padding: "10px 10px", textAlign: "right" }}>
-                            <strong style={{ color: "#16a34a" }}>{p.load}</strong>
-                          </td>
-
-                          <td style={{ padding: "10px 12px", textAlign: "center" }}>
-                            {p.isFallback ? (
-                              <span style={{ fontSize: "10.5px", fontWeight: 700, padding: "2px 7px", borderRadius: "4px", background: "#fef3c7", color: "#b45309" }}>
-                                Media Posición
-                              </span>
-                            ) : (
-                              <span style={{ fontSize: "10.5px", fontWeight: 700, padding: "2px 7px", borderRadius: "4px", background: "#dcfce7", color: "#15803d" }}>
-                                Partidos Reales
+                          {/* Acc + Dec (>3 m/s²) */}
+                          <td style={{ padding: "9px 10px", textAlign: "right" }}>
+                            <strong style={{ fontSize: "12.5px", color: "#9333ea" }}>
+                              {p.accDec ?? "0"}
+                            </strong>
+                            {p.asterisk && (
+                              <span style={{ fontSize: "11px", fontWeight: 800, color: "#ea580c", marginLeft: "2px" }}>
+                                {p.asterisk}
                               </span>
                             )}
+                          </td>
+
+                          {/* Player Load (AU) */}
+                          <td style={{ padding: "9px 10px", textAlign: "right" }}>
+                            <strong style={{ fontSize: "12.5px", color: "#16a34a" }}>
+                              {p.load ? p.load.toLocaleString("es-ES") : "0"}
+                            </strong>
+                            <span style={{ fontSize: "10.5px", color: "#64748b", marginLeft: "2px" }}>
+                              AU {p.asterisk}
+                            </span>
+                          </td>
+
+                          {/* Vmax (km/h) */}
+                          <td style={{ padding: "9px 10px", textAlign: "right" }}>
+                            <strong style={{ fontSize: "12px", color: "#334155" }}>
+                              {p.maxSpeed ? p.maxSpeed.toFixed(1) : "—"}
+                            </strong>
+                            <span style={{ fontSize: "10px", color: "#64748b", marginLeft: "2px" }}>km/h</span>
+                          </td>
+
+                          {/* Acciones */}
+                          <td style={{ padding: "9px 12px", textAlign: "center" }}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const currentDist = p.dist;
+                                const input = window.prompt(`Editar Distancia Competitiva para ${j.apodo || j.nombre} (m):`, String(currentDist));
+                                if (input && !isNaN(Number(input))) {
+                                  const newDist = Number(input);
+                                  const updated = { ...customOverrides, [j.id]: { ...(customOverrides[j.id] || {}), dist: newDist } };
+                                  setCustomOverrides(updated);
+                                  if (typeof window !== "undefined") {
+                                    localStorage.setItem("gps_competitive_profile_overrides", JSON.stringify(updated));
+                                  }
+                                }
+                              }}
+                              style={{
+                                padding: "3px 8px",
+                                borderRadius: "4px",
+                                border: "1px solid #cbd5e1",
+                                background: "#f8fafc",
+                                fontSize: "11px",
+                                fontWeight: 700,
+                                cursor: "pointer",
+                                color: "#1e3a8a",
+                              }}
+                              title="Ajustar benchmark manualmente"
+                            >
+                              ✏️ Ajustar
+                            </button>
                           </td>
                         </tr>
                       );
@@ -3427,11 +3794,35 @@ export default function CargaExternaSection({
                 </tbody>
               </table>
             </div>
+
+            {/* LEYENDA METODOLÓGICA AL PIE DE LA TABLA */}
+            <div
+              style={{
+                padding: "12px 18px",
+                background: "#f8fafc",
+                borderTop: "1px solid #e2e8f0",
+                display: "flex",
+                flexDirection: "column",
+                gap: "4px",
+                fontSize: "11px",
+                color: "#64748b",
+              }}
+            >
+              <div>
+                <strong style={{ color: "#c2410c" }}>* Perfil no real (Estimado 45 min × 2):</strong> Jugador que no ha disputado ningún partido completo de 90 min pero cuenta con al menos un tiempo de 45 min. Se proyecta duplicando su rendimiento de 45 min.
+              </div>
+              <div>
+                <strong style={{ color: "#ea580c" }}>** Perfil no real (Copiado de su posición):</strong> Jugador con menos de 45 min disputados en total. Se le asigna el perfil promedio de los jugadores de su misma posición (DEF, MED, DEL, POR).
+              </div>
+              <div>
+                <strong style={{ color: "#15803d" }}>🟢 Perfiles 100% Reales:</strong> Calculados a partir de las tareas exclusivas de 1ª parte y 2ª parte de competición oficial. Si jugó varios partidos de 90 min, se toma la fórmula científica <code>(Máximo + Promedio) / 2</code>.
+              </div>
+            </div>
           </div>
         </div>
       )}
 
-      {/* ── SUB-PESTAÑA 3: RATIOS SEMANALES VS PARTIDO (% MATCH) ── */}
+            {/* ── SUB-PESTAÑA 3: RATIOS SEMANALES VS PARTIDO (% MATCH) ── */}
       {subTab === "ratios_semanales" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div
