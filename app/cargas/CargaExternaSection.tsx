@@ -1385,6 +1385,27 @@ export default function CargaExternaSection({
         const overrides = customOverrides[j.id] || {};
         const pos = (j.posicion || "JUG").toUpperCase();
 
+        // Si es Portero (Nil, Lucas, etc.), no tienen GPS de partido ni se les copia de jugadores de campo
+        if (pos.includes("POR")) {
+          p.category = "sin_perfil";
+          p.isReal = false;
+          p.badgeText = "Sin perfil";
+          p.shortBadgeText = "S/P";
+          p.asterisk = "";
+          p.detailText = "Portero sin datos GPS oficiales (Sin perfil competitivo)";
+          availableFavVariables.forEach((v) => {
+            p.values[v.key] = overrides[v.key] ?? null;
+          });
+          p.dist = overrides["Distance(m)"] ?? overrides.dist ?? 0;
+          p.hsr = overrides["Distance +21 (m)"] ?? overrides.hsr ?? 0;
+          p.sprint = overrides["Sprint (m)"] ?? overrides.sprint ?? 0;
+          p.accDec = overrides["Acc+Dec"] ?? overrides.accDec ?? 0;
+          p.load = overrides["Player Load"] ?? overrides.load ?? 0;
+          p.mMin = overrides["Distancia / Min"] ?? overrides.mMin ?? 0;
+          p.maxSpeed = overrides["MAX Speed(km/h)"] ?? overrides.maxSpeed ?? 0;
+          return;
+        }
+
         let pool = positionProfilesMap.get(pos);
         if (!pool || pool.length === 0) {
           if (pos.includes("DEF") || pos.includes("LAT") || pos.includes("CEN")) {
@@ -3845,6 +3866,9 @@ export default function CargaExternaSection({
                       } else if (p.category === "copiado_posicion") {
                         badgeBg = "#fff7ed";
                         badgeColor = "#9a3412";
+                      } else if (p.category === "sin_perfil") {
+                        badgeBg = "#f8fafc";
+                        badgeColor = "#94a3b8";
                       }
 
                       return (
@@ -4009,6 +4033,9 @@ export default function CargaExternaSection({
               </span>
               <span>
                 <strong style={{ color: "#9a3412" }}>Pos.**:</strong> &lt;45', promedio de misma posición (No real).
+              </span>
+              <span>
+                <strong style={{ color: "#94a3b8" }}>S/P:</strong> Sin perfil competitivo (porteros sin partidos GPS).
               </span>
             </div>
             <div style={{ fontStyle: "italic", color: "#94a3b8", fontSize: "10px" }}>
