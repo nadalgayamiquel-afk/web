@@ -38,6 +38,57 @@ export interface CargaExternaSectionProps {
 
 export type ExternaSubTab = "velocidad" | "acwr" | "perfil_competitivo" | "ratios_semanales" | "preguntas_clave" | "sesiones_bbdd";
 
+
+function getCompactMetricHeader(key: string, rawLabel?: string): string {
+  const k = (key || "").toLowerCase();
+  const l = (rawLabel || "").toLowerCase();
+
+  // 1. Distancia Total -> DT
+  if (k === "distance(m)" || l.includes("distancia total") || (k.includes("distance") && !k.includes("+") && !k.includes("/"))) {
+    return "DT";
+  }
+
+  // 2. Distancia 19,8 / HSR -> HSR
+  if (
+    k === "distance +21 (m)" ||
+    k === "hsr abs (m)" ||
+    k.includes("19,8") ||
+    k.includes("19.8") ||
+    l.includes("19,8") ||
+    l.includes("19.8") ||
+    l.includes("hsr") ||
+    k === "hsr"
+  ) {
+    return "HSR";
+  }
+
+  // 3. Aceleraciones y Desaceleraciones -> Acc-Dec
+  if (
+    key === "Acc+Dec" ||
+    l.includes("aceleraciones + desaceleraciones") ||
+    (l.includes("aceleraciones") && l.includes("desaceleraciones"))
+  ) {
+    return "Acc-Dec";
+  }
+
+  // 4. Distancia / Min -> m/min
+  if (k.includes("distancia / min") || k.includes("distancia/min") || l.includes("distancia por minuto")) {
+    return "m/min";
+  }
+
+  // 5. MAX Speed -> Vmax
+  if (k.includes("max speed") || l.includes("velocidad máxima") || l.includes("velocidad maxima")) {
+    return "Vmax";
+  }
+
+  // 6. Sprints Count -> Sprints
+  if (k.includes("sprints count") || l.includes("sprints")) {
+    return "Sprints";
+  }
+
+  return rawLabel || key;
+}
+
 function isRecordSimulado(record: any): boolean {
   if (!record) return false;
   if (record.es_simulado === true) return true;
@@ -1081,7 +1132,7 @@ export default function CargaExternaSection({
   // Solo en tareas de primera y segunda parte (catalán o español):
   // 1. Varios partidos 90 min: (Máximo + Promedio) / 2
   // 2. 1 partido 90 min: ese único valor
-  // 3. -90 min pero al menos 45 min en uno: ese valor de 45 min × 2 (marcado con *)
+  // 3. -90 min pero al menos 45 min en una parte: esa parte de 45 min × 2 (marcado con *)
   // 4. <45 min: copiado de los jugadores de la misma posición (marcado con **)
   const competitiveProfiles = useMemo(() => {
     const isMatchHalfTask = (taskName?: string): boolean => {
@@ -1095,7 +1146,15 @@ export default function CargaExternaSection({
 
     const isRateOrPeak = (key: string): boolean => {
       const k = key.toLowerCase();
-      return k.includes("/min") || k.includes("m/min") || k.includes("speed") || k.includes("velocidad") || k.includes("max");
+      return (
+        k.includes("min") || // "Distancia / Min", "m/min"
+        k.includes("speed") ||
+        k.includes("velocidad") ||
+        k.includes("max") ||
+        k.includes("ratio") ||
+        k.includes("porcentaje") ||
+        k.includes("%")
+      );
     };
 
     const realGps = gpsRecords.filter((r) => !isRecordSimulado(r));
@@ -1128,14 +1187,9 @@ export default function CargaExternaSection({
           playerMatchesMap.get(r.jugador_id)!.push({
             fecha: r.fecha,
             minutos: dur,
-            values: valObj,
             dist,
-            hsr: calculateGpsMetricValue(r, "Distance +21 (m)", derivedVariables) || calculateGpsMetricValue(r, "HSR Abs (m)", derivedVariables),
-            sprint: calculateGpsMetricValue(r, "Sprint (m)", derivedVariables) || calculateGpsMetricValue(r, "+ 24 km/h (Distancia)", derivedVariables),
-            accDec: calculateGpsMetricValue(r, "Acc+Dec", derivedVariables),
-            load: calculateGpsMetricValue(r, "Player Load", derivedVariables),
-            mMin: calculateGpsMetricValue(r, "Distancia / Min", derivedVariables),
-            maxSpeed: calculateGpsMetricValue(r, "MAX Speed(km/h)", derivedVariables),
+            values: valObj,
+            parts: [{ nombre: "Partido", minutos: dur, dist, rawTask: r.metricas || r }],
           });
         }
         return;
@@ -1147,36 +1201,23 @@ export default function CargaExternaSection({
 
       const totalMinutes = matchParts.reduce((acc, t) => acc + Number(t.Tiempo || t.duracion_min || t.Duration || 0), 0);
       const totalDist = matchParts.reduce((acc, t) => acc + calculateGpsMetricValue(t, "Distance(m)", derivedVariables), 0);
-      const valObj: Record<string, number> = {};
 
-      availableFavVariables.forEach((v) => {
-        if (v.key === "Distancia / Min" || v.key.toLowerCase().includes("m/min")) {
-          valObj[v.key] = totalMinutes > 0 ? Math.round((totalDist / totalMinutes) * 10) / 10 : 0;
-        } else if (isRateOrPeak(v.key)) {
-          valObj[v.key] = Math.max(...matchParts.map((t) => calculateGpsMetricValue(t, v.key, derivedVariables)));
-        } else {
-          valObj[v.key] = Math.round(matchParts.reduce((acc, t) => acc + calculateGpsMetricValue(t, v.key, derivedVariables), 0));
-        }
+      const parts = matchParts.map((t) => {
+        const pMin = Number(t.Tiempo || t.duracion_min || t.Duration || 0);
+        const pDist = calculateGpsMetricValue(t, "Distance(m)", derivedVariables);
+        return {
+          nombre: t.nombre || t.name || t.tarea || "Parte",
+          minutos: pMin,
+          dist: pDist,
+          rawTask: t,
+        };
       });
-
-      const hsrVal = valObj["Distance +21 (m)"] || matchParts.reduce((acc, t) => acc + calculateGpsMetricValue(t, "Distance +21 (m)", derivedVariables), 0);
-      const sprintVal = matchParts.reduce((acc, t) => acc + calculateGpsMetricValue(t, "Sprint (m)", derivedVariables), 0);
-      const accDecVal = valObj["Acc+Dec"] || matchParts.reduce((acc, t) => acc + calculateGpsMetricValue(t, "Acc+Dec", derivedVariables), 0);
-      const loadVal = valObj["Player Load"] || matchParts.reduce((acc, t) => acc + calculateGpsMetricValue(t, "Player Load", derivedVariables), 0);
-      const mMinVal = valObj["Distancia / Min"] || (totalMinutes > 0 ? Math.round((totalDist / totalMinutes) * 10) / 10 : 0);
-      const maxSpdVal = valObj["MAX Speed(km/h)"] || Math.max(...matchParts.map((t) => calculateGpsMetricValue(t, "MAX Speed(km/h)", derivedVariables)));
 
       playerMatchesMap.get(r.jugador_id)!.push({
         fecha: r.fecha,
         minutos: Math.round(totalMinutes * 10) / 10,
-        values: valObj,
         dist: totalDist,
-        hsr: hsrVal,
-        sprint: sprintVal,
-        accDec: accDecVal,
-        load: loadVal,
-        mMin: mMinVal,
-        maxSpeed: isFinite(maxSpdVal) ? maxSpdVal : 0,
+        parts,
       });
     });
 
@@ -1190,7 +1231,18 @@ export default function CargaExternaSection({
       const pos = (j.posicion || "JUG").toUpperCase();
 
       const fullMatches = matches.filter((m) => m.minutos >= 80);
-      const halfMatches = matches.filter((m) => m.minutos >= 40 && m.minutos < 80);
+
+      // Extraer todas las partes individuales de ~45 min (entre 38 y 65 min)
+      const halfParts: any[] = [];
+      matches.forEach((m) => {
+        if (Array.isArray(m.parts)) {
+          m.parts.forEach((p: any) => {
+            if (p.minutos >= 38 && p.minutos <= 65) {
+              halfParts.push(p);
+            }
+          });
+        }
+      });
 
       const p: any = {
         jugadorId: j.id,
@@ -1199,7 +1251,7 @@ export default function CargaExternaSection({
         posicion: j.posicion,
         matchesCount: matches.length,
         fullMatchesCount: fullMatches.length,
-        halfMatchesCount: halfMatches.length,
+        halfMatchesCount: halfParts.length,
         values: {},
       };
 
@@ -1208,20 +1260,30 @@ export default function CargaExternaSection({
         p.category = "real_varios";
         p.isReal = true;
         p.badgeText = "90' (Máx+Prom)/2";
+        p.shortBadgeText = "90'";
         p.asterisk = "";
-        p.detailText = `${fullMatches.length} partidos 90' completos (Fórmula: Máx+Prom/2)`;
+        p.detailText = `${fullMatches.length} partidos de 90' oficiales ((Máx+Prom)/2)`;
 
         availableFavVariables.forEach((v) => {
-          const vals = fullMatches.map((m) => m.values[v.key] ?? 0);
-          const maxVal = Math.max(...vals);
-          const avgVal = vals.reduce((a, b) => a + b, 0) / vals.length;
+          const vList = fullMatches.map((m) => {
+            if (v.key === "Distancia / Min" || v.key.toLowerCase().includes("m/min")) {
+              return m.minutos > 0 ? m.dist / m.minutos : 0;
+            }
+            if (isRateOrPeak(v.key)) {
+              return Math.max(...m.parts.map((part: any) => calculateGpsMetricValue(part.rawTask, v.key, derivedVariables)));
+            }
+            return m.parts.reduce((acc: number, part: any) => acc + calculateGpsMetricValue(part.rawTask, v.key, derivedVariables), 0);
+          });
+
+          const maxVal = Math.max(...vList);
+          const avgVal = vList.reduce((a, b) => a + b, 0) / vList.length;
           const finalVal = overrides[v.key] ?? (isRateOrPeak(v.key) ? Math.round(((maxVal + avgVal) / 2) * 10) / 10 : Math.round((maxVal + avgVal) / 2));
           p.values[v.key] = finalVal;
         });
 
-        // Aliases para compatibilidad con otras pestañas
+        // Aliases para compatibilidad
         p.dist = p.values["Distance(m)"] || 10200;
-        p.hsr = p.values["Distance +21 (m)"] || 650;
+        p.hsr = p.values["Distance +21 (m)"] || p.values["HSR Abs (m)"] || 650;
         p.sprint = p.values["Sprint (m)"] || 180;
         p.accDec = p.values["Acc+Dec"] || 85;
         p.load = p.values["Player Load"] || 850;
@@ -1238,17 +1300,25 @@ export default function CargaExternaSection({
         p.category = "real_uno";
         p.isReal = true;
         p.badgeText = "90' (1 partido)";
+        p.shortBadgeText = "90'";
         p.asterisk = "";
         p.detailText = `1 partido de 90' (${fullMatches[0].fecha})`;
 
         const m = fullMatches[0];
         availableFavVariables.forEach((v) => {
-          const raw = m.values[v.key] ?? 0;
+          let raw: number;
+          if (v.key === "Distancia / Min" || v.key.toLowerCase().includes("m/min")) {
+            raw = m.minutos > 0 ? Math.round((m.dist / m.minutos) * 10) / 10 : 0;
+          } else if (isRateOrPeak(v.key)) {
+            raw = Math.max(...m.parts.map((part: any) => calculateGpsMetricValue(part.rawTask, v.key, derivedVariables)));
+          } else {
+            raw = m.parts.reduce((acc: number, part: any) => acc + calculateGpsMetricValue(part.rawTask, v.key, derivedVariables), 0);
+          }
           p.values[v.key] = overrides[v.key] ?? (isRateOrPeak(v.key) ? Math.round(raw * 10) / 10 : Math.round(raw));
         });
 
         p.dist = p.values["Distance(m)"] || 10200;
-        p.hsr = p.values["Distance +21 (m)"] || 650;
+        p.hsr = p.values["Distance +21 (m)"] || p.values["HSR Abs (m)"] || 650;
         p.sprint = p.values["Sprint (m)"] || 180;
         p.accDec = p.values["Acc+Dec"] || 85;
         p.load = p.values["Player Load"] || 850;
@@ -1260,26 +1330,33 @@ export default function CargaExternaSection({
 
         if (!positionProfilesMap.has(pos)) positionProfilesMap.set(pos, []);
         positionProfilesMap.get(pos)!.push(p);
-      } else if (halfMatches.length > 0) {
-        // CASO 3: <90 min pero al menos 45 min en uno -> 45 min x 2 (*)
+      } else if (halfParts.length > 0) {
+        // CASO 3: <90 min pero al menos 45 min en una parte -> ESE 45 min x 2 (*)
         p.category = "estimado_45";
         p.isReal = false;
         p.badgeText = "45' x 2 *";
+        p.shortBadgeText = "45'*";
         p.asterisk = "*";
-        const bestHalf = [...halfMatches].sort((a, b) => (b.minutos || 0) - (a.minutos || 0))[0];
-        p.detailText = `Estimado: ${bestHalf.minutos}' x 2 (No real *)`;
+        const best45 = [...halfParts].sort((a, b) => (b.minutos || 0) - (a.minutos || 0))[0];
+        p.detailText = `Estimado: parte ${best45.nombre || "1ª parte"} (${best45.minutos}') x 2 (No real *)`;
 
         availableFavVariables.forEach((v) => {
-          const raw = bestHalf.values[v.key] ?? 0;
-          if (isRateOrPeak(v.key)) {
+          if (v.key === "Distancia / Min" || v.key.toLowerCase().includes("m/min")) {
+            // Intensidad se mantiene directa, NUNCA se multiplica por 2
+            p.values[v.key] = overrides[v.key] ?? (best45.minutos > 0 ? Math.round((best45.dist / best45.minutos) * 10) / 10 : 0);
+          } else if (isRateOrPeak(v.key)) {
+            // Vmax y picos de velocidad se mantienen directos
+            const raw = calculateGpsMetricValue(best45.rawTask, v.key, derivedVariables);
             p.values[v.key] = overrides[v.key] ?? Math.round(raw * 10) / 10;
           } else {
+            // Métricas de volumen (Distancia, HSR, Acc, Dec, Load) se multiplican exactamente x 2
+            const raw = calculateGpsMetricValue(best45.rawTask, v.key, derivedVariables);
             p.values[v.key] = overrides[v.key] ?? Math.round(raw * 2);
           }
         });
 
-        p.dist = p.values["Distance(m)"] || 10200;
-        p.hsr = p.values["Distance +21 (m)"] || 650;
+        p.dist = p.values["Distance(m)"] || Math.round(best45.dist * 2);
+        p.hsr = p.values["Distance +21 (m)"] || p.values["HSR Abs (m)"] || 650;
         p.sprint = p.values["Sprint (m)"] || 180;
         p.accDec = p.values["Acc+Dec"] || 85;
         p.load = p.values["Player Load"] || 850;
@@ -1293,8 +1370,9 @@ export default function CargaExternaSection({
         p.category = "copiado_posicion";
         p.isReal = false;
         p.badgeText = "Posición **";
+        p.shortBadgeText = "Pos.**";
         p.asterisk = "**";
-        p.detailText = "Sin minutos (<45'). Copiado de compañeros de posición (No real **)";
+        p.detailText = "Sin minutos suficientes (<45'). Copiado de compañeros de posición (No real **)";
         p.minutesMatch = 90;
         profiles.set(j.id, p);
       }
@@ -1333,7 +1411,7 @@ export default function CargaExternaSection({
         });
 
         p.dist = p.values["Distance(m)"] || 10200;
-        p.hsr = p.values["Distance +21 (m)"] || 650;
+        p.hsr = p.values["Distance +21 (m)"] || p.values["HSR Abs (m)"] || 650;
         p.sprint = p.values["Sprint (m)"] || 180;
         p.accDec = p.values["Acc+Dec"] || 85;
         p.load = p.values["Player Load"] || 850;
@@ -3479,50 +3557,45 @@ export default function CargaExternaSection({
 
       {/* ── SUB-PESTAÑA 2: PERFIL COMPETITIVO (PARTIDO 100%) ── */}
       {subTab === "perfil_competitivo" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-          {/* BARRA SUPERIOR DISCRETA Y ELEGANTE */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+          {/* BARRA SUPERIOR DISCRETA */}
           <div
             style={{
               background: "#ffffff",
               borderRadius: "8px",
-              padding: "12px 16px",
+              padding: "10px 14px",
               border: "1px solid #e2e8f0",
               boxShadow: "0 1px 2px rgba(0,0,0,0.02)",
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
               flexWrap: "wrap",
-              gap: "12px",
+              gap: "10px",
             }}
           >
-            {/* Título discreto y contexto */}
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <h4 style={{ margin: 0, fontSize: "14px", fontWeight: 800, color: "#0f172a" }}>
-                  Perfil Competitivo Individual (100% Match)
-                </h4>
-                <span
-                  style={{
-                    background: "#f1f5f9",
-                    color: "#475569",
-                    fontSize: "10.5px",
-                    fontWeight: 700,
-                    padding: "2px 6px",
-                    borderRadius: "4px",
-                  }}
-                >
-                  1ª y 2ª parte (Cat / Esp)
-                </span>
-              </div>
-              <div style={{ fontSize: "11px", color: "#64748b", marginTop: "2px" }}>
-                Fórmula científica (Máx+Prom)/2 en 90 min • Proyección 45' x 2 (*) • Posición (**)
-              </div>
+            {/* Título discreto */}
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <strong style={{ fontSize: "13.5px", color: "#0f172a" }}>
+                Perfil Competitivo (100% Match)
+              </strong>
+              <span
+                style={{
+                  background: "#f1f5f9",
+                  color: "#475569",
+                  fontSize: "10px",
+                  fontWeight: 700,
+                  padding: "2px 5px",
+                  borderRadius: "4px",
+                }}
+              >
+                1ª y 2ª parte
+              </span>
             </div>
 
             {/* Selector de columnas favoritas y Filtros */}
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
               {/* Buscador compacto */}
-              <div style={{ position: "relative", minWidth: "180px" }}>
+              <div style={{ position: "relative", minWidth: "160px" }}>
                 <input
                   type="text"
                   placeholder="Buscar jugador..."
@@ -3530,15 +3603,15 @@ export default function CargaExternaSection({
                   onChange={(e) => setProfileSearch(e.target.value)}
                   style={{
                     width: "100%",
-                    padding: "4px 8px 4px 24px",
-                    borderRadius: "6px",
+                    padding: "4px 8px 4px 22px",
+                    borderRadius: "5px",
                     border: "1px solid #cbd5e1",
-                    fontSize: "11.5px",
+                    fontSize: "11px",
                     outline: "none",
                     background: "#ffffff",
                   }}
                 />
-                <span style={{ position: "absolute", left: "7px", top: "5px", fontSize: "11px", color: "#94a3b8" }}>🔍</span>
+                <span style={{ position: "absolute", left: "6px", top: "4px", fontSize: "10px", color: "#94a3b8" }}>🔍</span>
               </div>
 
               {/* Filtro Posición */}
@@ -3546,17 +3619,17 @@ export default function CargaExternaSection({
                 value={profileFilterPos}
                 onChange={(e) => setProfileFilterPos(e.target.value)}
                 style={{
-                  padding: "4px 8px",
-                  borderRadius: "6px",
+                  padding: "4px 6px",
+                  borderRadius: "5px",
                   border: "1px solid #cbd5e1",
                   background: "#ffffff",
-                  fontSize: "11.5px",
+                  fontSize: "11px",
                   fontWeight: 600,
                   color: "#334155",
                   cursor: "pointer",
                 }}
               >
-                <option value="TODOS">Posición: Todas</option>
+                <option value="TODOS">Pos: Todas</option>
                 <option value="DEF">Defensas</option>
                 <option value="MED">Centrocampistas</option>
                 <option value="DEL">Delanteros</option>
@@ -3568,23 +3641,23 @@ export default function CargaExternaSection({
                 value={profileFilterCategory}
                 onChange={(e) => setProfileFilterCategory(e.target.value)}
                 style={{
-                  padding: "4px 8px",
-                  borderRadius: "6px",
+                  padding: "4px 6px",
+                  borderRadius: "5px",
                   border: "1px solid #cbd5e1",
                   background: "#ffffff",
-                  fontSize: "11.5px",
+                  fontSize: "11px",
                   fontWeight: 600,
                   color: "#334155",
                   cursor: "pointer",
                 }}
               >
                 <option value="TODOS">Método: Todos</option>
-                <option value="REALS">🟢 Reales (90')</option>
-                <option value="ESTIMADOS">🟡 Estimados (*)</option>
-                <option value="COPIADOS">🟠 Copiados (**)</option>
+                <option value="REALS">90' Oficiales</option>
+                <option value="ESTIMADOS">Estimados (*)</option>
+                <option value="COPIADOS">Copiados (**)</option>
               </select>
 
-              {/* Botón Discreto para Personalizar Variables Favoritas */}
+              {/* Botón Discreto para Variables */}
               <div style={{ position: "relative" }}>
                 <button
                   type="button"
@@ -3592,120 +3665,78 @@ export default function CargaExternaSection({
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
-                    gap: "5px",
-                    padding: "4px 10px",
-                    borderRadius: "6px",
+                    gap: "4px",
+                    padding: "4px 8px",
+                    borderRadius: "5px",
                     border: showColumnPicker ? "1px solid #1e3a8a" : "1px solid #cbd5e1",
                     background: showColumnPicker ? "#f1f5f9" : "#ffffff",
                     color: "#1e3a8a",
-                    fontSize: "11.5px",
+                    fontSize: "11px",
                     fontWeight: 700,
                     cursor: "pointer",
-                    boxShadow: "0 1px 2px rgba(0,0,0,0.02)",
                   }}
-                  title="Configurar qué variables favoritas mostrar en la tabla"
+                  title="Configurar columnas visibles"
                 >
-                  <span>⭐</span>
-                  <span>Variables ({selectedProfileKeys.length})</span>
-                  <span style={{ fontSize: "9px" }}>{showColumnPicker ? "▲" : "▼"}</span>
+                  <span>⭐ Variables ({selectedProfileKeys.length})</span>
+                  <span style={{ fontSize: "8px" }}>{showColumnPicker ? "▲" : "▼"}</span>
                 </button>
 
-                {/* Popover / Menú desplegable discreto de variables favoritas */}
                 {showColumnPicker && (
                   <div
                     style={{
                       position: "absolute",
                       right: 0,
-                      top: "calc(100% + 6px)",
+                      top: "calc(100% + 4px)",
                       zIndex: 50,
                       background: "#ffffff",
                       border: "1px solid #cbd5e1",
-                      borderRadius: "8px",
-                      boxShadow: "0 8px 20px rgba(0,0,0,0.08)",
-                      padding: "12px",
-                      width: "300px",
+                      borderRadius: "6px",
+                      boxShadow: "0 6px 16px rgba(0,0,0,0.08)",
+                      padding: "10px",
+                      width: "260px",
                       display: "flex",
                       flexDirection: "column",
-                      gap: "10px",
+                      gap: "8px",
                     }}
                   >
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #f1f5f9", paddingBottom: "6px" }}>
-                      <strong style={{ fontSize: "12px", color: "#0f172a" }}>Tus Variables Favoritas</strong>
-                      <span style={{ fontSize: "10px", color: "#64748b" }}>{selectedProfileKeys.length} visibles</span>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #f1f5f9", paddingBottom: "4px" }}>
+                      <strong style={{ fontSize: "11.5px", color: "#0f172a" }}>Tus Variables Favoritas</strong>
+                      <span style={{ fontSize: "9.5px", color: "#64748b" }}>{selectedProfileKeys.length} visibles</span>
                     </div>
 
-                    {/* Presets discretos */}
                     <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
                       <button
                         type="button"
                         onClick={() => handleSetPresetColumns(["Distance(m)", "Distancia / Min", "Distance +21 (m)", "Acc+Dec", "Player Load"])}
-                        style={{
-                          padding: "2px 6px",
-                          borderRadius: "4px",
-                          border: "1px solid #e2e8f0",
-                          background: "#f8fafc",
-                          fontSize: "10.5px",
-                          color: "#334155",
-                          cursor: "pointer",
-                          fontWeight: 600,
-                        }}
+                        style={{ padding: "2px 5px", borderRadius: "3px", border: "1px solid #e2e8f0", background: "#f8fafc", fontSize: "10px", color: "#334155", cursor: "pointer", fontWeight: 600 }}
                       >
                         Top 5
                       </button>
                       <button
                         type="button"
                         onClick={() => handleSetPresetColumns(availableFavVariables.map((v) => v.key))}
-                        style={{
-                          padding: "2px 6px",
-                          borderRadius: "4px",
-                          border: "1px solid #e2e8f0",
-                          background: "#f8fafc",
-                          fontSize: "10.5px",
-                          color: "#334155",
-                          cursor: "pointer",
-                          fontWeight: 600,
-                        }}
+                        style={{ padding: "2px 5px", borderRadius: "3px", border: "1px solid #e2e8f0", background: "#f8fafc", fontSize: "10px", color: "#334155", cursor: "pointer", fontWeight: 600 }}
                       >
-                        Todas ({availableFavVariables.length})
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleSetPresetColumns(["Distance(m)", "Distancia / Min", "Distance +21 (m)", "MAX Speed(km/h)"])}
-                        style={{
-                          padding: "2px 6px",
-                          borderRadius: "4px",
-                          border: "1px solid #e2e8f0",
-                          background: "#f8fafc",
-                          fontSize: "10.5px",
-                          color: "#334155",
-                          cursor: "pointer",
-                          fontWeight: 600,
-                        }}
-                      >
-                        Intensidad
+                        Todas
                       </button>
                     </div>
 
-                    {/* Lista con checkboxes discretos */}
-                    <div style={{ maxHeight: "220px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "4px" }}>
+                    <div style={{ maxHeight: "200px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "3px" }}>
                       {availableFavVariables.map((v) => {
                         const isChecked = selectedProfileKeys.includes(v.key);
-                        const displayLabel =
-                          v.key === "Acc+Dec" || v.label.includes("Aceleraciones + Desaceleraciones")
-                            ? "Acc-Dec"
-                            : v.label;
+                        const displayLabel = getCompactMetricHeader(v.key, v.label);
                         return (
                           <label
                             key={v.key}
                             style={{
                               display: "flex",
                               alignItems: "center",
-                              gap: "8px",
-                              padding: "4px 6px",
-                              borderRadius: "4px",
+                              gap: "6px",
+                              padding: "3px 4px",
+                              borderRadius: "3px",
                               background: isChecked ? "#f8fafc" : "transparent",
                               cursor: "pointer",
-                              fontSize: "11.5px",
+                              fontSize: "11px",
                               color: isChecked ? "#0f172a" : "#64748b",
                             }}
                           >
@@ -3721,22 +3752,13 @@ export default function CargaExternaSection({
                       })}
                     </div>
 
-                    <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "6px", display: "flex", justifyContent: "flex-end" }}>
+                    <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "4px", display: "flex", justifyContent: "flex-end" }}>
                       <button
                         type="button"
                         onClick={() => setShowColumnPicker(false)}
-                        style={{
-                          padding: "3px 8px",
-                          borderRadius: "4px",
-                          background: "#0f172a",
-                          color: "#ffffff",
-                          fontSize: "10.5px",
-                          fontWeight: 700,
-                          border: "none",
-                          cursor: "pointer",
-                        }}
+                        style={{ padding: "2px 6px", borderRadius: "3px", background: "#0f172a", color: "#ffffff", fontSize: "10px", fontWeight: 700, border: "none", cursor: "pointer" }}
                       >
-                        Listo
+                        Cerrar
                       </button>
                     </div>
                   </div>
@@ -3748,22 +3770,19 @@ export default function CargaExternaSection({
           {/* TABLA DE PERFILES COMPETITIVOS DISCRETA Y ELEGANTE */}
           <div style={{ background: "#ffffff", borderRadius: "8px", border: "1px solid #cbd5e1", overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}>
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", color: "#0f172a" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11.5px", color: "#0f172a" }}>
                 <thead>
-                  <tr style={{ background: "#f8fafc", borderBottom: "1.5px solid #cbd5e1", textAlign: "left", color: "#475569", fontSize: "11px", textTransform: "uppercase" }}>
-                    <th style={{ padding: "8px 12px", minWidth: "150px" }}>Jugador</th>
-                    <th style={{ padding: "8px 8px", textAlign: "center", minWidth: "115px" }}>Método</th>
-                    <th style={{ padding: "8px 8px", textAlign: "center", minWidth: "90px" }}>Partidos</th>
+                  <tr style={{ background: "#f8fafc", borderBottom: "1.5px solid #cbd5e1", textAlign: "left", color: "#475569", fontSize: "10.5px", textTransform: "uppercase" }}>
+                    <th style={{ padding: "8px 10px", minWidth: "140px" }}>Jugador</th>
+                    <th style={{ padding: "8px 4px", textAlign: "center", width: "50px", minWidth: "50px", fontSize: "9.5px", letterSpacing: "0.2px" }}>
+                      MÉT.
+                    </th>
+                    <th style={{ padding: "8px 6px", textAlign: "center", minWidth: "75px", fontSize: "10px" }}>
+                      Partidos
+                    </th>
                     {selectedProfileKeys.map((key) => {
                       const v = availableFavVariables.find((item) => item.key === key);
-                      let label = v ? v.label : key;
-                      if (
-                        key === "Acc+Dec" ||
-                        label.includes("Aceleraciones + Desaceleraciones") ||
-                        (label.toLowerCase().includes("aceleraciones") && label.toLowerCase().includes("desaceleraciones"))
-                      ) {
-                        label = "Acc-Dec";
-                      }
+                      const label = getCompactMetricHeader(key, v ? v.label : key);
                       return (
                         <th
                           key={key}
@@ -3773,14 +3792,14 @@ export default function CargaExternaSection({
                             color: "#334155",
                             fontWeight: 800,
                             whiteSpace: "nowrap",
-                            minWidth: "85px",
+                            minWidth: "75px",
                           }}
                         >
                           {label}
                         </th>
                       );
                     })}
-                    <th style={{ padding: "8px 10px", textAlign: "center", minWidth: "60px" }}>Ajuste</th>
+                    <th style={{ padding: "8px 8px", textAlign: "center", width: "40px", minWidth: "40px" }}>Edit</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3812,76 +3831,74 @@ export default function CargaExternaSection({
                         values: {},
                         category: "copiado_posicion",
                         isReal: false,
+                        shortBadgeText: "Pos.**",
                         badgeText: "Posición **",
                         asterisk: "**",
                         matchesCount: 0,
                       };
 
-                      let badgeBg = "#f0fdf4";
-                      let badgeColor = "#166534";
+                      let badgeBg = "#f1f5f9";
+                      let badgeColor = "#334155";
                       if (p.category === "estimado_45") {
                         badgeBg = "#fefce8";
                         badgeColor = "#854d0e";
                       } else if (p.category === "copiado_posicion") {
                         badgeBg = "#fff7ed";
                         badgeColor = "#9a3412";
-                      } else if (p.category === "real_uno") {
-                        badgeBg = "#f0fdf4";
-                        badgeColor = "#15803d";
                       }
 
                       return (
                         <tr key={j.id || idx} style={{ borderBottom: "1px solid #f1f5f9", background: idx % 2 === 0 ? "#ffffff" : "#fbfcfd" }}>
                           {/* Jugador */}
-                          <td style={{ padding: "8px 12px" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <td style={{ padding: "7px 10px" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                               {renderDisponibilidadBadge && renderDisponibilidadBadge(j)}
                               <span
                                 style={{
-                                  padding: "1px 5px",
-                                  borderRadius: "4px",
+                                  padding: "1px 4px",
+                                  borderRadius: "3px",
                                   background: "#1e3a8a",
                                   color: "#ffffff",
-                                  fontSize: "10.5px",
+                                  fontSize: "10px",
                                   fontWeight: 900,
                                 }}
                               >
                                 #{j.dorsal || "—"}
                               </span>
                               <div style={{ display: "flex", flexDirection: "column" }}>
-                                <strong style={{ fontSize: "12px", color: "#0f172a" }}>
+                                <strong style={{ fontSize: "11.5px", color: "#0f172a" }}>
                                   {j.apodo || j.nombre}
                                 </strong>
-                                <span style={{ fontSize: "9.5px", color: "#64748b", fontWeight: 600 }}>
+                                <span style={{ fontSize: "9px", color: "#64748b", fontWeight: 600 }}>
                                   {j.posicion || "JUG"}
                                 </span>
                               </div>
                             </div>
                           </td>
 
-                          {/* Método */}
-                          <td style={{ padding: "8px 8px", textAlign: "center" }}>
+                          {/* Método (Ultra discreto y pequeño) */}
+                          <td style={{ padding: "6px 4px", textAlign: "center" }}>
                             <span
                               style={{
                                 display: "inline-block",
-                                padding: "2px 6px",
-                                borderRadius: "4px",
+                                padding: "1px 4px",
+                                borderRadius: "3px",
                                 background: badgeBg,
                                 color: badgeColor,
-                                fontSize: "10.5px",
+                                fontSize: "9px",
                                 fontWeight: 700,
                                 whiteSpace: "nowrap",
                               }}
                               title={p.detailText}
                             >
-                              {p.badgeText}
+                              {p.shortBadgeText || "—"}
                             </span>
                           </td>
 
                           {/* Partidos */}
-                          <td style={{ padding: "8px 8px", textAlign: "center", fontSize: "11px", color: "#475569" }}>
+                          <td style={{ padding: "6px 6px", textAlign: "center", fontSize: "10.5px", color: "#475569" }}>
                             <span style={{ fontWeight: 700 }}>{p.matchesCount || 0}</span>
-                            <span style={{ fontSize: "9.5px", color: "#94a3b8", marginLeft: "2px" }}>
+                            <span style={{ fontSize: "9px", color: "#94a3b8", marginLeft: "2px" }}>
                               ({p.fullMatchesCount || 0} / 90')
                             </span>
                           </td>
@@ -3897,7 +3914,7 @@ export default function CargaExternaSection({
                               <td
                                 key={key}
                                 style={{
-                                  padding: "8px 10px",
+                                  padding: "7px 10px",
                                   textAlign: "right",
                                   fontWeight: 700,
                                   whiteSpace: "nowrap",
@@ -3920,7 +3937,7 @@ export default function CargaExternaSection({
                                       marginLeft: "2px",
                                       fontWeight: 800,
                                       color: isEstimated ? "#b45309" : "#c2410c",
-                                      fontSize: "11px",
+                                      fontSize: "10.5px",
                                     }}
                                     title={isEstimated ? "Estimado 45' x 2 (No real *)" : "Copiado de posición (No real **)"}
                                   >
@@ -3932,12 +3949,12 @@ export default function CargaExternaSection({
                           })}
 
                           {/* Acciones */}
-                          <td style={{ padding: "8px 10px", textAlign: "center" }}>
+                          <td style={{ padding: "6px 6px", textAlign: "center" }}>
                             <button
                               type="button"
                               onClick={() => {
                                 const currentDist = p.dist;
-                                const input = window.prompt(`Editar Distancia Competitiva para ${j.apodo || j.nombre} (m):`, String(currentDist));
+                                const input = window.prompt(`Editar DT para ${j.apodo || j.nombre} (m):`, String(currentDist));
                                 if (input && !isNaN(Number(input))) {
                                   const newDist = Number(input);
                                   const updated = { ...customOverrides, [j.id]: { ...(customOverrides[j.id] || {}), "Distance(m)": newDist, dist: newDist } };
@@ -3948,11 +3965,11 @@ export default function CargaExternaSection({
                                 }
                               }}
                               style={{
-                                padding: "2px 6px",
-                                borderRadius: "4px",
+                                padding: "1px 4px",
+                                borderRadius: "3px",
                                 border: "1px solid #cbd5e1",
                                 background: "#f8fafc",
-                                fontSize: "10.5px",
+                                fontSize: "10px",
                                 fontWeight: 600,
                                 cursor: "pointer",
                                 color: "#475569",
@@ -3973,29 +3990,29 @@ export default function CargaExternaSection({
           {/* LEYENDA DISCRETA DE ASTERISCOS */}
           <div
             style={{
-              fontSize: "11px",
+              fontSize: "10.5px",
               color: "#64748b",
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
               flexWrap: "wrap",
               gap: "8px",
-              padding: "4px 2px",
+              padding: "2px 2px",
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
               <span>
-                <strong style={{ color: "#166534" }}>🟢 Reales:</strong> Partido oficial 90' completo ((Máx+Prom)/2 si varios).
+                <strong>90':</strong> Partido oficial 90' completo ((Máx+Prom)/2 si varios).
               </span>
               <span>
-                <strong style={{ color: "#854d0e" }}>* Estimado:</strong> &ge;45' proyectado a 90' (No real).
+                <strong style={{ color: "#854d0e" }}>45'*:</strong> Parte oficial de 45' proyectada a 90' (No real).
               </span>
               <span>
-                <strong style={{ color: "#9a3412" }}>** Copiado:</strong> &lt;45' promedio misma posición (No real).
+                <strong style={{ color: "#9a3412" }}>Pos.**:</strong> &lt;45', promedio de misma posición (No real).
               </span>
             </div>
-            <div style={{ fontStyle: "italic", color: "#94a3b8" }}>
-              Tareas filtradas: 1ª parte y 2ª parte de partido
+            <div style={{ fontStyle: "italic", color: "#94a3b8", fontSize: "10px" }}>
+              Filtrado exclusivo: 1ª parte y 2ª parte de partido oficial
             </div>
           </div>
         </div>
