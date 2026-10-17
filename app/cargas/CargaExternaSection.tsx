@@ -47,6 +47,29 @@ function isRecordSimulado(record: any): boolean {
   );
 }
 
+function normalizeMdType(rawMd?: string, tipoSesion?: string): string {
+  const t = String(tipoSesion || "").trim().toUpperCase();
+  const m = String(rawMd || "").trim().toUpperCase();
+
+  if (t === "PARTIDO" || m === "MD" || m === "PARTIDO") return "MD";
+  if (!m || m === "OFF" || m === "DESCANSO" || m === "LIBRE") return "OFF";
+
+  const minusMatch = m.match(/(?:MD\s*-\s*(\d+)|-\s*(\d+)\s*MD)/i);
+  if (minusMatch) {
+    const num = minusMatch[1] || minusMatch[2];
+    return `MD-${num}`;
+  }
+
+  const plusMatch = m.match(/(?:MD\s*\+\s*(\d+)|\+\s*(\d+)\s*MD)/i);
+  if (plusMatch) {
+    const num = plusMatch[1] || plusMatch[2];
+    return `MD+${num}`;
+  }
+
+  if (m.includes("MD")) return m;
+  return m || "ENT";
+}
+
 export const ACWR_METRIC_CONFIG: Record<
   string,
   { label: string; unit: string; color: string; short: string; desc: string }
@@ -121,12 +144,12 @@ function CustomAcwrTooltip({ active, payload }: any) {
       style={{
         background: "#0f172a",
         color: "#f8fafc",
-        padding: "12px 15px",
+        padding: "12px 16px",
         borderRadius: "10px",
         fontSize: "12px",
         boxShadow: "0 6px 18px rgba(0,0,0,0.35)",
         border: isMatch ? "1.5px solid #ef4444" : "1px solid #334155",
-        minWidth: "240px",
+        minWidth: "260px",
       }}
     >
       {/* Cabecera del Tooltip */}
@@ -142,7 +165,7 @@ function CustomAcwrTooltip({ active, payload }: any) {
           </span>
         ) : (
           <span style={{ fontSize: "10px", background: "#0284c7", color: "#ffffff", padding: "2px 7px", borderRadius: "4px", fontWeight: 800 }}>
-            🏋️ {data.md || "ENTRENO"}
+            🏋️ {data.normMd || data.md || "ENTRENO"}
           </span>
         )}
       </div>
@@ -156,26 +179,51 @@ function CustomAcwrTooltip({ active, payload }: any) {
           </strong>
         </div>
 
-        {/* Porcentaje de cambio de sesión a otra */}
-        {data.hasSession && (
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#1e293b", padding: "4px 8px", borderRadius: "6px" }}>
-            <span style={{ color: "#cbd5e1", fontSize: "11px", fontWeight: 700 }}>
-              Δ% vs Sesión Ant:
+        {/* Comparativa por tipo MD */}
+        {data.hasSession && data.normMd !== "OFF" && (
+          <div style={{ marginTop: "4px", background: "#1e293b", padding: "6px 8px", borderRadius: "6px", display: "flex", flexDirection: "column", gap: "3px" }}>
+            <span style={{ color: "#38bdf8", fontSize: "10.5px", fontWeight: 800, textTransform: "uppercase" }}>
+              📊 Comparativa Tipo {data.normMd}:
             </span>
-            <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-              <strong style={{
-                fontSize: "12.5px",
-                color: data.pctChange === null ? "#94a3b8" :
-                       data.pctChange > 30 ? "#f87171" :
-                       data.pctChange > 0 ? "#4ade80" : "#60a5fa"
-              }}>
-                {data.changeLabel}
-              </strong>
-              {data.prevActiveDate && (
-                <span style={{ fontSize: "9.5px", color: "#64748b" }}>
-                  (vs {data.prevActiveDate.split("-").slice(1).join("/")})
-                </span>
-              )}
+            
+            {/* vs Anterior del mismo MD */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ color: "#94a3b8", fontSize: "11px" }}>vs Ant. {data.normMd}:</span>
+              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                <strong style={{
+                  fontSize: "12px",
+                  color: data.diffVsPrevSameMd === null ? "#94a3b8" :
+                         data.diffVsPrevSameMd > 30 ? "#f87171" :
+                         data.diffVsPrevSameMd > 0 ? "#4ade80" : "#60a5fa"
+                }}>
+                  {data.labelVsPrevSameMd}
+                </strong>
+                {data.prevSameMdDate && (
+                  <span style={{ fontSize: "9.5px", color: "#64748b" }}>
+                    ({data.prevSameMdDate.split("-").slice(1).join("/")})
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* vs 5 Últimos del mismo MD */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ color: "#94a3b8", fontSize: "11px" }}>vs 5 Últimos {data.normMd}:</span>
+              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                <strong style={{
+                  fontSize: "12px",
+                  color: data.diffVsLast5SameMd === null ? "#94a3b8" :
+                         data.diffVsLast5SameMd > 30 ? "#f87171" :
+                         data.diffVsLast5SameMd > 0 ? "#facc15" : "#cbd5e1"
+                }}>
+                  {data.labelVsLast5SameMd}
+                </strong>
+                {data.last5Avg !== null && (
+                  <span style={{ fontSize: "9.5px", color: "#64748b" }}>
+                    (μ: {Number(data.last5Avg).toLocaleString()})
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -216,30 +264,64 @@ function CustomAcwrTooltip({ active, payload }: any) {
   );
 }
 
-
 const CustomXAxisTick = ({ x, y, payload }: any) => {
   const parts = String(payload.value || "").split("\n");
   const dateStr = parts[0] || "";
   const mdStr = parts[1] || "";
+  const prevMdStr = parts[2] || "—";
+  const last5Str = parts[3] || "—";
   const isMatch = mdStr.toUpperCase() === "MD";
   const isOff = mdStr.toUpperCase() === "OFF";
 
   return (
     <g transform={`translate(${x},${y})`}>
-      <text x={0} y={0} dy={12} textAnchor="middle" fill="#475569" fontSize={10.5} fontWeight={700}>
+      {/* Línea 1: Fecha (DD/MM) */}
+      <text x={0} y={0} dy={12} textAnchor="middle" fill="#334155" fontSize={11} fontWeight={800}>
         {dateStr}
       </text>
+
+      {/* Línea 2: Tipo de MD */}
       <text
         x={0}
         y={0}
         dy={25}
         textAnchor="middle"
         fill={isMatch ? "#dc2626" : isOff ? "#94a3b8" : "#0284c7"}
-        fontSize={10}
-        fontWeight={800}
+        fontSize={10.5}
+        fontWeight={900}
       >
         {isMatch ? "⚽ MD" : mdStr}
       </text>
+
+      {/* Línea 3: % vs Anterior mismo tipo MD */}
+      {!isOff && prevMdStr !== "—" ? (
+        <text
+          x={0}
+          y={0}
+          dy={38}
+          textAnchor="middle"
+          fill={prevMdStr === "1º (Base)" ? "#64748b" : prevMdStr.startsWith("+") ? "#15803d" : "#2563eb"}
+          fontSize={9.5}
+          fontWeight={800}
+        >
+          {prevMdStr}
+        </text>
+      ) : null}
+
+      {/* Línea 4: % vs 5 últimos mismo tipo MD */}
+      {!isOff && last5Str !== "—" && last5Str !== "1º (Base)" ? (
+        <text
+          x={0}
+          y={0}
+          dy={50}
+          textAnchor="middle"
+          fill={last5Str.startsWith("+") ? "#b45309" : "#475569"}
+          fontSize={9}
+          fontWeight={700}
+        >
+          5u: {last5Str}
+        </text>
+      ) : null}
     </g>
   );
 };
@@ -611,19 +693,19 @@ export default function CargaExternaSection({
     }
 
     // Mapa de volumen y metadatos por fecha
-    const dailyMap = new Map<string, { volumen: number; count: number; md: string; isMatch: boolean; hasSession: boolean }>();
+    const dailyMap = new Map<string, { volumen: number; count: number; rawMd: string; normMd: string; isMatch: boolean; hasSession: boolean }>();
 
     allCalendarDates.forEach((dStr) => {
       const dayRecords = realGps.filter((r) => r.fecha === dStr);
       const hasSession = dayRecords.length > 0;
 
       let vol = 0;
-      let md = "OFF";
+      let rawMd = "OFF";
       let isMatch = false;
 
       if (hasSession) {
-        md = dayRecords[0]?.match_day || dayRecords[0]?.md || (dayRecords[0]?.tipo_sesion === "PARTIDO" ? "MD" : "ENT");
-        isMatch = md.toUpperCase() === "MD" || dayRecords[0]?.tipo_sesion === "PARTIDO";
+        rawMd = dayRecords[0]?.match_day || dayRecords[0]?.md || (dayRecords[0]?.tipo_sesion === "PARTIDO" ? "MD" : "ENT");
+        isMatch = String(rawMd).toUpperCase() === "MD" || dayRecords[0]?.tipo_sesion === "PARTIDO";
 
         if (acwrViewMode === "equipo") {
           const teamSum = dayRecords.reduce((acc, r) => acc + getGpsMetricValue(r, acwrVolumeMetric), 0);
@@ -635,33 +717,58 @@ export default function CargaExternaSection({
         }
       }
 
-      dailyMap.set(dStr, { volumen: vol, count: dayRecords.length, md, isMatch, hasSession });
+      const normMd = hasSession ? normalizeMdType(rawMd, isMatch ? "PARTIDO" : undefined) : "OFF";
+      dailyMap.set(dStr, { volumen: vol, count: dayRecords.length, rawMd, normMd, isMatch, hasSession });
     });
 
-    // Calcular variación porcentual de sesión activa a otra sesión activa
-    let prevActiveVol: number | null = null;
-    let prevActiveDate: string | null = null;
+    // Historial por tipo MD para calcular variación vs anterior y vs 5 últimos
+    const mdHistoryMap = new Map<string, Array<{ fecha: string; volumen: number }>>();
 
     const fullList = allCalendarDates.map((dStr) => {
       const info = dailyMap.get(dStr)!;
 
-      let pctChange: number | null = null;
-      let changeLabel = "—";
-      let localPrevDate: string | null = null;
+      let diffVsPrevSameMd: number | null = null;
+      let labelVsPrevSameMd = "—";
+      let prevSameMdDate: string | null = null;
+      let prevSameMdVol: number | null = null;
 
-      if (info.hasSession && info.volumen > 0) {
-        if (prevActiveVol !== null && prevActiveVol > 0) {
-          pctChange = Math.round(((info.volumen - prevActiveVol) / prevActiveVol) * 1000) / 10;
-          changeLabel = (pctChange >= 0 ? "+" : "") + pctChange.toFixed(1) + "%";
-          localPrevDate = prevActiveDate;
+      let diffVsLast5SameMd: number | null = null;
+      let labelVsLast5SameMd = "—";
+      let last5Avg: number | null = null;
+      let last5Count = 0;
+
+      if (info.hasSession && info.volumen > 0 && info.normMd !== "OFF") {
+        const history = mdHistoryMap.get(info.normMd) || [];
+        if (history.length > 0) {
+          // 1. Vs anterior del mismo tipo MD
+          const prevEntry = history[history.length - 1];
+          prevSameMdDate = prevEntry.fecha;
+          prevSameMdVol = prevEntry.volumen;
+          if (prevEntry.volumen > 0) {
+            diffVsPrevSameMd = Math.round(((info.volumen - prevEntry.volumen) / prevEntry.volumen) * 1000) / 10;
+            labelVsPrevSameMd = (diffVsPrevSameMd >= 0 ? "+" : "") + diffVsPrevSameMd.toFixed(1) + "%";
+          }
+
+          // 2. Vs últimos 5 del mismo tipo MD
+          const last5 = history.slice(-5);
+          last5Count = last5.length;
+          const sum5 = last5.reduce((acc, e) => acc + e.volumen, 0);
+          last5Avg = Math.round(sum5 / last5Count);
+          if (last5Avg > 0) {
+            diffVsLast5SameMd = Math.round(((info.volumen - last5Avg) / last5Avg) * 1000) / 10;
+            labelVsLast5SameMd = (diffVsLast5SameMd >= 0 ? "+" : "") + diffVsLast5SameMd.toFixed(1) + "%";
+          }
         } else {
-          changeLabel = "Base";
+          labelVsPrevSameMd = "1º (Base)";
+          labelVsLast5SameMd = "1º (Base)";
         }
-        prevActiveVol = info.volumen;
-        prevActiveDate = dStr;
+
+        // Agregar al historial de este tipo MD
+        if (!mdHistoryMap.has(info.normMd)) mdHistoryMap.set(info.normMd, []);
+        mdHistoryMap.get(info.normMd)!.push({ fecha: dStr, volumen: info.volumen });
       }
 
-      // Carga Aguda (7d) y Crónica (28d) sobre el calendario completo (los días OFF con 0 computan naturalmente)
+      // Carga Aguda (7d) y Crónica (28d) sobre el calendario completo
       const dObj = new Date(dStr + "T12:00:00");
       const acuteStart = new Date(dObj.getTime() - 6 * 24 * 3600 * 1000);
       const chronicStart = new Date(dObj.getTime() - 27 * 24 * 3600 * 1000);
@@ -691,19 +798,25 @@ export default function CargaExternaSection({
 
       const parts = dStr.split("-");
       const dateLabel = `${parts[2]}/${parts[1]}`;
-      const fullLabel = `${dateLabel}\n${info.md}`;
+      const fullLabel = `${dateLabel}\n${info.normMd}\n${labelVsPrevSameMd}\n${labelVsLast5SameMd}`;
 
       return {
         fecha: dStr,
         dateLabel,
         fullLabel,
-        md: info.md,
+        md: info.normMd,
+        normMd: info.normMd,
         isMatch: info.isMatch,
         hasSession: info.hasSession,
         volumen: info.volumen,
-        pctChange,
-        changeLabel,
-        prevActiveDate: localPrevDate,
+        diffVsPrevSameMd,
+        labelVsPrevSameMd,
+        prevSameMdDate,
+        prevSameMdVol,
+        diffVsLast5SameMd,
+        labelVsLast5SameMd,
+        last5Avg,
+        last5Count,
         aguda7d: acuteSum,
         cronicaSemanal: chronicWeekly,
         acwr,
@@ -722,7 +835,6 @@ export default function CargaExternaSection({
     return fullList;
   }, [gpsRecords, acwrViewMode, acwrSelectedPlayerId, acwrVolumeMetric, acwrTimeRange, jugadores]);
 
-  // Resumen actual del timeline (último punto)
   const currentTimelinePoint = useMemo(() => {
     if (acwrTimelineData.length === 0) return null;
     return acwrTimelineData[acwrTimelineData.length - 1];
@@ -1725,7 +1837,7 @@ export default function CargaExternaSection({
                       tick={<CustomXAxisTick />}
                       tickLine={false}
                       axisLine={{ stroke: "#cbd5e1" }}
-                      height={40}
+                      height={58}
                     />
                     
                     {/* Eje Y1 (Izquierdo): Volumen Diario y Cargas */}
@@ -1786,33 +1898,6 @@ export default function CargaExternaSection({
                       radius={[5, 5, 0, 0]}
                       maxBarSize={44}
                     >
-                      <LabelList
-                        dataKey="changeLabel"
-                        position="top"
-                        content={(props: any) => {
-                          const { x, y, width, value, index } = props;
-                          const entry = acwrTimelineData[index];
-                          if (!entry || !entry.hasSession || !value || value === "—") return null;
-                          const isBase = value === "Base";
-                          const isPos = entry.pctChange !== null && entry.pctChange > 0;
-                          const isSpike = entry.pctChange !== null && entry.pctChange > 30;
-
-                          const labelColor = isBase ? "#64748b" : isSpike ? "#dc2626" : isPos ? "#15803d" : "#2563eb";
-
-                          return (
-                            <text
-                              x={x + width / 2}
-                              y={Math.max(10, y - 7)}
-                              textAnchor="middle"
-                              fill={labelColor}
-                              fontSize={9.5}
-                              fontWeight={800}
-                            >
-                              {value}
-                            </text>
-                          );
-                        }}
-                      />
                       {acwrTimelineData.map((entry, index) => {
                         const isMatch = Boolean(entry.isMatch);
                         const isOff = !entry.hasSession;
@@ -1891,6 +1976,154 @@ export default function CargaExternaSection({
                     />
                   </ComposedChart>
                 </ResponsiveContainer>
+              </div>
+            )}
+
+            {/* ── FRANJA DE VARIACIÓN PORCENTUAL DEBAJO DEL GRÁFICO (vs Anterior Tipo MD & vs 5 Últimos Tipo MD) ── */}
+            {acwrTimelineData.length > 0 && (
+              <div
+                style={{
+                  marginTop: "16px",
+                  paddingTop: "14px",
+                  borderTop: "1px solid #e2e8f0",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "10px",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span style={{ fontSize: "12.5px", fontWeight: 800, color: "#0f172a" }}>
+                      📊 Porcentajes de Cambio por Tipo de Sesión (MD):
+                    </span>
+                    <span style={{ fontSize: "11px", color: "#64748b" }}>
+                      Comparativa metodológica frente a sesiones del mismo tipo ({ACWR_METRIC_CONFIG[acwrVolumeMetric]?.label})
+                    </span>
+                  </div>
+
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px", fontSize: "10.5px" }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", color: "#15803d", fontWeight: 700 }}>
+                      <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#22c55e" }} />
+                      Incremento Moderado (&le;20%)
+                    </span>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", color: "#b91c1c", fontWeight: 700 }}>
+                      <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#ef4444" }} />
+                      Pico / Spike (&gt;30%)
+                    </span>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", color: "#2563eb", fontWeight: 700 }}>
+                      <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#3b82f6" }} />
+                      Descarga (&lt;0%)
+                    </span>
+                  </div>
+                </div>
+
+                {/* Tabla Horizontal Alineada con cada Día */}
+                <div style={{ overflowX: "auto", borderRadius: "8px", border: "1px solid #cbd5e1", background: "#f8fafc" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px", textAlign: "center" }}>
+                    <thead>
+                      <tr style={{ background: "#f1f5f9", borderBottom: "1.5px solid #cbd5e1" }}>
+                        <th style={{ padding: "8px 10px", textAlign: "left", fontWeight: 800, color: "#334155", minWidth: "160px", background: "#e2e8f0" }}>
+                          Métrica / Fecha
+                        </th>
+                        {acwrTimelineData.map((d) => (
+                          <th key={d.fecha} style={{ padding: "8px 6px", fontWeight: 800, color: d.isMatch ? "#b91c1c" : !d.hasSession ? "#94a3b8" : "#0f172a", minWidth: "72px" }}>
+                            <div>{d.dateLabel}</div>
+                            <div style={{ fontSize: "10px", color: d.isMatch ? "#dc2626" : !d.hasSession ? "#94a3b8" : "#0284c7" }}>
+                              {d.isMatch ? "⚽ MD" : d.md}
+                            </div>
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {/* Fila 1: Volumen */}
+                      <tr style={{ borderBottom: "1px solid #e2e8f0", background: "#ffffff" }}>
+                        <td style={{ padding: "7px 10px", textAlign: "left", fontWeight: 700, color: "#475569", background: "#f8fafc" }}>
+                          Volumen ({ACWR_METRIC_CONFIG[acwrVolumeMetric]?.unit})
+                        </td>
+                        {acwrTimelineData.map((d) => (
+                          <td key={d.fecha} style={{ padding: "7px 6px", fontWeight: 800, color: !d.hasSession ? "#cbd5e1" : "#0f172a" }}>
+                            {d.hasSession ? Number(d.volumen).toLocaleString() : "0 (OFF)"}
+                          </td>
+                        ))}
+                      </tr>
+
+                      {/* Fila 2: Δ% vs Anterior Mismo Tipo MD */}
+                      <tr style={{ borderBottom: "1px solid #e2e8f0", background: "#ffffff" }}>
+                        <td style={{ padding: "7px 10px", textAlign: "left", fontWeight: 800, color: "#0369a1", background: "#f8fafc" }}>
+                          Δ% vs Ant. Mismo MD
+                        </td>
+                        {acwrTimelineData.map((d) => {
+                          if (!d.hasSession || d.labelVsPrevSameMd === "—") {
+                            return (
+                              <td key={d.fecha} style={{ padding: "7px 6px", color: "#cbd5e1" }}>
+                                —
+                              </td>
+                            );
+                          }
+                          const isBase = d.labelVsPrevSameMd === "1º (Base)";
+                          const isSpike = d.diffVsPrevSameMd !== null && d.diffVsPrevSameMd > 30;
+                          const isPos = d.diffVsPrevSameMd !== null && d.diffVsPrevSameMd > 0;
+                          return (
+                            <td key={d.fecha} style={{ padding: "7px 6px" }}>
+                              <span
+                                style={{
+                                  display: "inline-block",
+                                  padding: "2px 5px",
+                                  borderRadius: "4px",
+                                  fontSize: "10px",
+                                  fontWeight: 800,
+                                  background: isBase ? "#f1f5f9" : isSpike ? "#fee2e2" : isPos ? "#dcfce7" : "#eff6ff",
+                                  color: isBase ? "#64748b" : isSpike ? "#b91c1c" : isPos ? "#15803d" : "#2563eb",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {d.labelVsPrevSameMd}
+                              </span>
+                            </td>
+                          );
+                        })}
+                      </tr>
+
+                      {/* Fila 3: Δ% vs 5 Últimos Mismo Tipo MD */}
+                      <tr style={{ background: "#ffffff" }}>
+                        <td style={{ padding: "7px 10px", textAlign: "left", fontWeight: 800, color: "#b45309", background: "#f8fafc" }}>
+                          Δ% vs 5 Últimos MD
+                        </td>
+                        {acwrTimelineData.map((d) => {
+                          if (!d.hasSession || d.labelVsLast5SameMd === "—") {
+                            return (
+                              <td key={d.fecha} style={{ padding: "7px 6px", color: "#cbd5e1" }}>
+                                —
+                              </td>
+                            );
+                          }
+                          const isBase = d.labelVsLast5SameMd === "1º (Base)";
+                          const isSpike = d.diffVsLast5SameMd !== null && d.diffVsLast5SameMd > 30;
+                          const isPos = d.diffVsLast5SameMd !== null && d.diffVsLast5SameMd > 0;
+                          return (
+                            <td key={d.fecha} style={{ padding: "7px 6px" }}>
+                              <span
+                                style={{
+                                  display: "inline-block",
+                                  padding: "2px 5px",
+                                  borderRadius: "4px",
+                                  fontSize: "10px",
+                                  fontWeight: 800,
+                                  background: isBase ? "#f1f5f9" : isSpike ? "#fef3c7" : isPos ? "#fef9c3" : "#f1f5f9",
+                                  color: isBase ? "#64748b" : isSpike ? "#b45309" : isPos ? "#854d0e" : "#475569",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {d.labelVsLast5SameMd}
+                              </span>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </div>
