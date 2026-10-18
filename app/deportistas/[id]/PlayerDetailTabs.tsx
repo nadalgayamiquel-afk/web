@@ -90,6 +90,7 @@ type Props = {
   initialPlayerTargetRatios?: Record<string, number>;
   initialPlayerCompVariables?: string[];
   initialBenchmarkOverrides?: Record<string, number>;
+  initialPlayerHsriVariableKey?: string;
 };
 
 function fieldValue(value: string | number | null | undefined) {
@@ -1029,6 +1030,7 @@ export default function PlayerDetailTabs({
   initialPlayerTargetRatios,
   initialPlayerCompVariables,
   initialBenchmarkOverrides,
+  initialPlayerHsriVariableKey,
 }: Props) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<
@@ -1099,7 +1101,7 @@ export default function PlayerDetailTabs({
 
   // Local state for GPS Profile Mode (Promedio | Máximos | Competitivo)
   // ── PERFIL COMPETITIVO INDIVIDUAL OFICIAL (MOTOR REACTIVO 100% MATCH) ──
-  const { favoriteVariables, derivedVariables } = useFavoriteGpsVariables();
+  const { favoriteVariables, derivedVariables, allVariables } = useFavoriteGpsVariables();
 
   // Lista de métricas favoritas activas del usuario (excluyendo Duration(min))
   const availableFavVariables = useMemo(() => {
@@ -1213,15 +1215,55 @@ export default function PlayerDetailTabs({
   const [isSavingRatios, setIsSavingRatios] = useState(false);
   const [ratiosSavedMessage, setRatiosSavedMessage] = useState(false);
 
-  // Función explícita para guardar los ratios individuales en servidor y localmente
+  // Variable HSRI Individualizada asignada a este deportista
+  const [hsriVariableKey, setHsriVariableKey] = useState<string>(() => {
+    if (initialPlayerHsriVariableKey) {
+      return initialPlayerHsriVariableKey;
+    }
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem(`player_hsri_var_${jugador.id}`);
+        if (stored) return stored;
+      } catch {}
+    }
+    return "Distance +21 (m)";
+  });
+
+  const handleAssignHsriVariable = async (newVarKey: string) => {
+    setHsriVariableKey(newVarKey);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem(`player_hsri_var_${jugador.id}`, newVarKey);
+      } catch {}
+    }
+    setIsSavingRatios(true);
+    try {
+      await savePlayerProfileConfigServer(jugador.id, {
+        ratios: playerTargetRatios,
+        variables: playerCompVariables,
+        hsriVariableKey: newVarKey,
+        benchmarkOverrides: compProfileOverrides[jugador.id] || {},
+      });
+      setRatiosSavedMessage(true);
+      setTimeout(() => setRatiosSavedMessage(false), 3000);
+    } catch (e) {
+      console.error("Error asignando HSRI:", e);
+    } finally {
+      setIsSavingRatios(false);
+    }
+  };
+
+  // Función explícita para guardar los ratios individuales y variable HSRI en Supabase
   const handleSavePlayerRatios = async (
     customRatios?: Record<string, number>,
     customVars?: string[],
-    customOverrides?: Record<string, number>
+    customOverrides?: Record<string, number>,
+    customHsri?: string
   ) => {
     const ratiosToSave = customRatios || playerTargetRatios;
     const varsToSave = customVars || playerCompVariables;
     const overridesToSave = customOverrides || compProfileOverrides[jugador.id] || {};
+    const hsriToSave = customHsri || hsriVariableKey;
 
     setIsSavingRatios(true);
 
@@ -1230,17 +1272,21 @@ export default function PlayerDetailTabs({
         localStorage.setItem(`player_target_ratios_${jugador.id}`, JSON.stringify(ratiosToSave));
         localStorage.setItem(`player_comp_vars_${jugador.id}`, JSON.stringify(varsToSave));
         localStorage.setItem(`player_comp_profile_overrides_${jugador.id}`, JSON.stringify(overridesToSave));
+        localStorage.setItem(`player_hsri_var_${jugador.id}`, hsriToSave);
       } catch (e) {}
     }
 
     try {
-      await savePlayerProfileConfigServer(jugador.id, {
+      const res = await savePlayerProfileConfigServer(jugador.id, {
         ratios: ratiosToSave,
         variables: varsToSave,
+        hsriVariableKey: hsriToSave,
         benchmarkOverrides: overridesToSave,
       });
-      setRatiosSavedMessage(true);
-      setTimeout(() => setRatiosSavedMessage(false), 3000);
+      if (res?.success) {
+        setRatiosSavedMessage(true);
+        setTimeout(() => setRatiosSavedMessage(false), 3000);
+      }
     } catch (e) {
       console.error("Error guardando ratios:", e);
     } finally {
@@ -1261,6 +1307,7 @@ export default function PlayerDetailTabs({
     savePlayerProfileConfigServer(jugador.id, {
       ratios: updated,
       variables: playerCompVariables,
+      hsriVariableKey,
       benchmarkOverrides: compProfileOverrides[jugador.id] || {},
     }).catch(() => {});
   };
@@ -1278,6 +1325,7 @@ export default function PlayerDetailTabs({
     savePlayerProfileConfigServer(jugador.id, {
       ratios: updated,
       variables: playerCompVariables,
+      hsriVariableKey,
       benchmarkOverrides: compProfileOverrides[jugador.id] || {},
     }).catch(() => {});
   };
@@ -2606,6 +2654,117 @@ export default function PlayerDetailTabs({
                   gap: "12px",
                 }}
               >
+                {/* ── ASIGNACIÓN DE VARIABLE HSRI INDIVIDUALIZADA PARA ESTE DEPORTISTA ── */}
+                <div
+                  style={{
+                    background: "linear-gradient(135deg, #faf5ff 0%, #fdf4ff 100%)",
+                    border: "1px solid #e9d5ff",
+                    borderRadius: "8px",
+                    padding: "8px 12px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    flexWrap: "wrap",
+                    gap: "8px",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span style={{ fontSize: "16px" }}>⚡</span>
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        <strong style={{ fontSize: "11.5px", color: "#6b21a8" }}>
+                          Variable HSRI Individualizada:
+                        </strong>
+                        <span
+                          style={{
+                            fontSize: "10.5px",
+                            fontWeight: 800,
+                            background: "#7e22ce",
+                            color: "#ffffff",
+                            padding: "2px 7px",
+                            borderRadius: "4px",
+                          }}
+                        >
+                          {allVariables.find((v) => v.key === hsriVariableKey)?.label || derivedVariables.find((d) => d.id === hsriVariableKey)?.label || hsriVariableKey}
+                        </span>
+                      </div>
+                      <p style={{ margin: "2px 0 0", fontSize: "10px", color: "#7e22ce" }}>
+                        Métrica de carrera a alta intensidad específica para {jugador.apodo || jugador.nombre}. Puedes asignarle cualquiera de las variables GPS o tus variables derivadas creadas.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <label style={{ fontSize: "10.5px", fontWeight: 800, color: "#6b21a8" }}>
+                      Asignar variable:
+                    </label>
+                    <select
+                      value={hsriVariableKey}
+                      onChange={(e) => handleAssignHsriVariable(e.target.value)}
+                      style={{
+                        padding: "3px 8px",
+                        borderRadius: "5px",
+                        border: "1.5px solid #c084fc",
+                        background: "#ffffff",
+                        color: "#581c87",
+                        fontSize: "11px",
+                        fontWeight: 700,
+                        outline: "none",
+                        cursor: "pointer",
+                        maxWidth: "240px",
+                      }}
+                    >
+                      {derivedVariables.length > 0 && (
+                        <optgroup label="⭐ Tus Variables Derivadas Creadas">
+                          {derivedVariables.map((d) => (
+                            <option key={d.id} value={d.id}>
+                              ⭐ {d.label} ({d.unit})
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      <optgroup label="Velocidad e Intensidad (GPS)">
+                        {allVariables
+                          .filter((v) => !v.esDerivada && (v.categoria === "Velocidad e Intensidad" || v.key.includes("Distance +") || v.key.includes("km/h")))
+                          .map((v) => (
+                            <option key={v.key} value={v.key}>
+                              {v.label} ({v.unit})
+                            </option>
+                          ))}
+                      </optgroup>
+                      <optgroup label="Otras Variables GPS">
+                        {allVariables
+                          .filter((v) => !v.esDerivada && v.categoria !== "Velocidad e Intensidad" && !v.key.includes("Distance +") && !v.key.includes("km/h"))
+                          .map((v) => (
+                            <option key={v.key} value={v.key}>
+                              {v.label} ({v.unit})
+                            </option>
+                          ))}
+                      </optgroup>
+                    </select>
+
+                    {!playerCompVariables.includes(hsriVariableKey) && (
+                      <button
+                        type="button"
+                        onClick={() => handleAddVariable(hsriVariableKey)}
+                        style={{
+                          padding: "3px 8px",
+                          borderRadius: "5px",
+                          border: "1px solid #a855f7",
+                          background: "#9333ea",
+                          color: "#ffffff",
+                          fontSize: "10px",
+                          fontWeight: 800,
+                          cursor: "pointer",
+                        }}
+                        title="Añadir esta variable HSRI a la fila de variables del perfil"
+                      >
+                        + Añadir a Fila
+                      </button>
+                    )}
+                  </div>
+                </div>
+
                 {/* ── FILA SUPERIOR: TÍTULO, MÉTODO, ESTADO EN LÍNEA Y CONTROLES ── */}
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "10px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
@@ -2686,7 +2845,7 @@ export default function PlayerDetailTabs({
                       title={`Guardar permanentemente en la base de datos los ratios de ${jugador.apodo || jugador.nombre} para cada variable`}
                     >
                       <span>
-                        {ratiosSavedMessage ? "✓ Ratios Guardados" : isSavingRatios ? "Guardando..." : "💾 Guardar Ratios"}
+                        {ratiosSavedMessage ? "✓ Guardado en Supabase" : isSavingRatios ? "Guardando en Supabase..." : "💾 Guardar Ratios en Supabase"}
                       </span>
                     </button>
 

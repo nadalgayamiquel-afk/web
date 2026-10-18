@@ -124,6 +124,7 @@ export default async function JugadorPage({ params }: PageProps) {
           initialPlayerTargetRatios={playerProfileConfig?.ratios}
           initialPlayerCompVariables={playerProfileConfig?.variables}
           initialBenchmarkOverrides={playerProfileConfig?.benchmarkOverrides}
+          initialPlayerHsriVariableKey={playerProfileConfig?.hsriVariableKey}
         />
       </section>
     </main>

@@ -4076,12 +4076,27 @@ export async function saveGpsFavoritesServer(
 export type PlayerProfileConfig = {
   ratios: Record<string, number>;
   variables?: string[];
+  hsriVariableKey?: string;
   benchmarkOverrides?: Record<string, number>;
   updatedAt?: string;
 };
 
 export async function getPlayerProfileConfigServer(jugadorId: string): Promise<PlayerProfileConfig | null> {
   try {
+    // 1. Prioridad: Supabase (tabla db_testing con test_type_id = "player_profile_config")
+    const supabase = getServerSupabase();
+    const { data: dbRow, error } = await supabase
+      .from("db_testing")
+      .select("data")
+      .eq("id", jugadorId)
+      .eq("test_type_id", "player_profile_config")
+      .maybeSingle();
+
+    if (dbRow && dbRow.data && typeof dbRow.data === "object") {
+      return dbRow.data as PlayerProfileConfig;
+    }
+
+    // 2. Fallback: Archivo JSON local
     const path = require("path");
     const filePath = path.join(process.cwd(), "public", "player_ratios_config.json");
     if (fs.existsSync(filePath)) {
@@ -4096,7 +4111,7 @@ export async function getPlayerProfileConfigServer(jugadorId: string): Promise<P
       return (config as any).playerRatiosConfig[jugadorId];
     }
   } catch (e) {
-    console.error("Error reading player profile config:", e);
+    console.error("Error reading player profile config from Supabase:", e);
   }
   return null;
 }
@@ -4106,41 +4121,62 @@ export async function savePlayerProfileConfigServer(
   payload: {
     ratios: Record<string, number>;
     variables?: string[];
+    hsriVariableKey?: string;
     benchmarkOverrides?: Record<string, number>;
   }
-): Promise<{ success: boolean }> {
+): Promise<{ success: boolean; error?: string }> {
   try {
-    const path = require("path");
-    const filePath = path.join(process.cwd(), "public", "player_ratios_config.json");
-    let allConfigs: Record<string, PlayerProfileConfig> = {};
-    if (fs.existsSync(filePath)) {
-      try {
-        const raw = fs.readFileSync(filePath, "utf8");
-        allConfigs = JSON.parse(raw) || {};
-      } catch (err) {}
-    }
-
-    allConfigs[jugadorId] = {
+    const dataToSave: PlayerProfileConfig = {
       ratios: payload.ratios,
       variables: payload.variables,
+      hsriVariableKey: payload.hsriVariableKey,
       benchmarkOverrides: payload.benchmarkOverrides,
       updatedAt: new Date().toISOString(),
     };
 
-    fs.writeFileSync(filePath, JSON.stringify(allConfigs, null, 2), "utf8");
+    // 1. Guardar de forma permanente en Supabase (tabla db_testing)
+    const supabase = getServerSupabase();
+    const { error: sbError } = await supabase.from("db_testing").upsert({
+      id: jugadorId,
+      name: `player_config_${jugadorId}`,
+      test_type_id: "player_profile_config",
+      structure: "CONFIG",
+      data: dataToSave,
+    });
 
+    if (sbError) {
+      console.error("Error guardando player_profile_config en Supabase db_testing:", sbError.message);
+    }
+
+    // 2. Guardar también en archivo local como respaldo rápido
+    try {
+      const path = require("path");
+      const filePath = path.join(process.cwd(), "public", "player_ratios_config.json");
+      let allConfigs: Record<string, PlayerProfileConfig> = {};
+      if (fs.existsSync(filePath)) {
+        try {
+          const raw = fs.readFileSync(filePath, "utf8");
+          allConfigs = JSON.parse(raw) || {};
+        } catch (err) {}
+      }
+      allConfigs[jugadorId] = dataToSave;
+      fs.writeFileSync(filePath, JSON.stringify(allConfigs, null, 2), "utf8");
+    } catch (e) {}
+
+    // 3. Sincronizar en club_config si está disponible
     try {
       const config = await getClubConfig();
       if (config) {
-        (config as any).playerRatiosConfig = allConfigs;
+        if (!(config as any).playerRatiosConfig) (config as any).playerRatiosConfig = {};
+        (config as any).playerRatiosConfig[jugadorId] = dataToSave;
         await saveClubConfig(config);
       }
     } catch (e) {}
 
-    return { success: true };
-  } catch (e) {
+    return { success: !sbError, error: sbError?.message };
+  } catch (e: any) {
     console.error("Error saving player profile config:", e);
-    return { success: false };
+    return { success: false, error: e?.message };
   }
 }
 
