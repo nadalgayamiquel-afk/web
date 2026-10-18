@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
-import { archiveJugadorFromForm, saveJugador, getFullExcelBBDDRows, getTestingDatasets, getAllGpsDatos, getActiveJugadores } from "../../actions";
+import { archiveJugadorFromForm, saveJugador, getFullExcelBBDDRows, getTestingDatasets, getAllGpsDatos, getActiveJugadores, getPlayerProfileConfigServer } from "../../actions";
 import PlayerDetailTabs from "./PlayerDetailTabs";
 
 type PageProps = { params: Promise<{ id: string }> };
@@ -73,6 +73,13 @@ export default async function JugadorPage({ params }: PageProps) {
     console.error("Error fetching all jugadores for player report:", e);
   }
 
+  let playerProfileConfig = null;
+  try {
+    playerProfileConfig = await getPlayerProfileConfigServer(jugador.id);
+  } catch (e) {
+    console.error("Error fetching player profile config:", e);
+  }
+
   return (
     <main className="athlete-detail-page">
       <div className="athlete-detail-topbar">
@@ -114,6 +121,9 @@ export default async function JugadorPage({ params }: PageProps) {
           initialTestingData={initialTestingData}
           allGpsRecords={allGpsRecords}
           allJugadores={allJugadores}
+          initialPlayerTargetRatios={playerProfileConfig?.ratios}
+          initialPlayerCompVariables={playerProfileConfig?.variables}
+          initialBenchmarkOverrides={playerProfileConfig?.benchmarkOverrides}
         />
       </section>
     </main>

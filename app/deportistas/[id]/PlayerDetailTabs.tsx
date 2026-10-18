@@ -25,7 +25,7 @@ import {
   Legend,
 } from "recharts";
 
-import { checkDuplicateJugadorNombre, addLesion, getFullExcelBBDDRows } from "../../actions";
+import { checkDuplicateJugadorNombre, addLesion, getFullExcelBBDDRows, savePlayerProfileConfigServer } from "../../actions";
 import {
   CONTEXTOS_OPTIONS,
   CONTACTO_OPTIONS,
@@ -87,6 +87,9 @@ type Props = {
   initialTestingData?: any[];
   allGpsRecords?: any[];
   allJugadores?: any[];
+  initialPlayerTargetRatios?: Record<string, number>;
+  initialPlayerCompVariables?: string[];
+  initialBenchmarkOverrides?: Record<string, number>;
 };
 
 function fieldValue(value: string | number | null | undefined) {
@@ -1015,7 +1018,18 @@ function loadRealReportDataForPlayer(
   return { evEquipo, dispJugador, evJugador };
 }
 
-export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJugadorAction, initialBBDDRows = [], initialTestingData = [], allGpsRecords = [], allJugadores = [] }: Props) {
+export default function PlayerDetailTabs({
+  jugador,
+  saveJugadorAction,
+  archiveJugadorAction,
+  initialBBDDRows = [],
+  initialTestingData = [],
+  allGpsRecords = [],
+  allJugadores = [],
+  initialPlayerTargetRatios,
+  initialPlayerCompVariables,
+  initialBenchmarkOverrides,
+}: Props) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<
     "general" | "report" | "cualitativa" | "fisicos_tests" | "lesiones"
@@ -1108,6 +1122,9 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
 
   // Variables activas en la fila del perfil competitivo de este jugador (según las favoritas del usuario)
   const [playerCompVariables, setPlayerCompVariables] = useState<string[]>(() => {
+    if (initialPlayerCompVariables && initialPlayerCompVariables.length > 0) {
+      return initialPlayerCompVariables;
+    }
     if (typeof window !== "undefined") {
       try {
         const stored = localStorage.getItem(`player_comp_vars_${jugador.id}`);
@@ -1165,10 +1182,18 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
       localStorage.setItem(`player_comp_vars_${jugador.id}`, JSON.stringify(keys));
       localStorage.setItem(`player_target_ratios_${jugador.id}`, JSON.stringify(updatedRatios));
     }
+    savePlayerProfileConfigServer(jugador.id, {
+      ratios: updatedRatios,
+      variables: keys,
+      benchmarkOverrides: compProfileOverrides[jugador.id] || {},
+    }).catch(() => {});
   };
 
   // Ratios de trabajo individuales para cada variable (ej: 1.0x = 100% partido, 1.2x = +20% sobrecarga)
   const [playerTargetRatios, setPlayerTargetRatios] = useState<Record<string, number>>(() => {
+    if (initialPlayerTargetRatios && Object.keys(initialPlayerTargetRatios).length > 0) {
+      return initialPlayerTargetRatios;
+    }
     if (typeof window !== "undefined") {
       try {
         const stored = localStorage.getItem(`player_target_ratios_${jugador.id}`);
@@ -1185,13 +1210,59 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
     };
   });
 
+  const [isSavingRatios, setIsSavingRatios] = useState(false);
+  const [ratiosSavedMessage, setRatiosSavedMessage] = useState(false);
+
+  // Función explícita para guardar los ratios individuales en servidor y localmente
+  const handleSavePlayerRatios = async (
+    customRatios?: Record<string, number>,
+    customVars?: string[],
+    customOverrides?: Record<string, number>
+  ) => {
+    const ratiosToSave = customRatios || playerTargetRatios;
+    const varsToSave = customVars || playerCompVariables;
+    const overridesToSave = customOverrides || compProfileOverrides[jugador.id] || {};
+
+    setIsSavingRatios(true);
+
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem(`player_target_ratios_${jugador.id}`, JSON.stringify(ratiosToSave));
+        localStorage.setItem(`player_comp_vars_${jugador.id}`, JSON.stringify(varsToSave));
+        localStorage.setItem(`player_comp_profile_overrides_${jugador.id}`, JSON.stringify(overridesToSave));
+      } catch (e) {}
+    }
+
+    try {
+      await savePlayerProfileConfigServer(jugador.id, {
+        ratios: ratiosToSave,
+        variables: varsToSave,
+        benchmarkOverrides: overridesToSave,
+      });
+      setRatiosSavedMessage(true);
+      setTimeout(() => setRatiosSavedMessage(false), 3000);
+    } catch (e) {
+      console.error("Error guardando ratios:", e);
+    } finally {
+      setIsSavingRatios(false);
+    }
+  };
+
   const handleUpdateRatio = (metricKey: string, newRatio: number) => {
-    const val = isNaN(newRatio) ? 1.0 : Math.max(0.1, Math.min(5.0, Number(newRatio.toFixed(2))));
+    let val = isNaN(newRatio) ? 1.0 : newRatio;
+    if (val > 10) val = val / 100; // si el usuario escribe 110, interpretar como 1.10x (110%)
+    val = Math.max(0.1, Math.min(5.0, Number(val.toFixed(2))));
     const updated = { ...playerTargetRatios, [metricKey]: val };
     setPlayerTargetRatios(updated);
     if (typeof window !== "undefined") {
       localStorage.setItem(`player_target_ratios_${jugador.id}`, JSON.stringify(updated));
     }
+    // Auto-guardado en segundo plano
+    savePlayerProfileConfigServer(jugador.id, {
+      ratios: updated,
+      variables: playerCompVariables,
+      benchmarkOverrides: compProfileOverrides[jugador.id] || {},
+    }).catch(() => {});
   };
 
   const handleSetAllRatios = (ratio: number) => {
@@ -1203,6 +1274,12 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
     if (typeof window !== "undefined") {
       localStorage.setItem(`player_target_ratios_${jugador.id}`, JSON.stringify(updated));
     }
+    // Auto-guardado en segundo plano
+    savePlayerProfileConfigServer(jugador.id, {
+      ratios: updated,
+      variables: playerCompVariables,
+      benchmarkOverrides: compProfileOverrides[jugador.id] || {},
+    }).catch(() => {});
   };
 
   const handleAddVariable = (key: string) => {
@@ -2585,6 +2662,33 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                         </button>
                       ))}
                     </div>
+
+                    {/* Botón Guardar Ratios Individuales */}
+                    <button
+                      type="button"
+                      onClick={() => handleSavePlayerRatios()}
+                      disabled={isSavingRatios}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "5px",
+                        padding: "3px 10px",
+                        borderRadius: "6px",
+                        border: ratiosSavedMessage ? "1px solid #059669" : "1px solid #0284c7",
+                        background: ratiosSavedMessage ? "#ecfdf5" : isSavingRatios ? "#e0f2fe" : "#0284c7",
+                        color: ratiosSavedMessage ? "#065f46" : isSavingRatios ? "#0369a1" : "#ffffff",
+                        fontSize: "11px",
+                        fontWeight: 800,
+                        cursor: isSavingRatios ? "wait" : "pointer",
+                        boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+                        transition: "all 0.15s ease",
+                      }}
+                      title={`Guardar permanentemente en la base de datos los ratios de ${jugador.apodo || jugador.nombre} para cada variable`}
+                    >
+                      <span>
+                        {ratiosSavedMessage ? "✓ Ratios Guardados" : isSavingRatios ? "Guardando..." : "💾 Guardar Ratios"}
+                      </span>
+                    </button>
 
                     {/* Selector de Variables según Mis Favoritas */}
                     <div style={{ position: "relative" }}>

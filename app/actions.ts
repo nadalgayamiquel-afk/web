@@ -4073,6 +4073,77 @@ export async function saveGpsFavoritesServer(
   }
 }
 
+export type PlayerProfileConfig = {
+  ratios: Record<string, number>;
+  variables?: string[];
+  benchmarkOverrides?: Record<string, number>;
+  updatedAt?: string;
+};
+
+export async function getPlayerProfileConfigServer(jugadorId: string): Promise<PlayerProfileConfig | null> {
+  try {
+    const path = require("path");
+    const filePath = path.join(process.cwd(), "public", "player_ratios_config.json");
+    if (fs.existsSync(filePath)) {
+      const raw = fs.readFileSync(filePath, "utf8");
+      const allConfigs = JSON.parse(raw);
+      if (allConfigs && allConfigs[jugadorId]) {
+        return allConfigs[jugadorId];
+      }
+    }
+    const config = await getClubConfig();
+    if (config && (config as any).playerRatiosConfig && (config as any).playerRatiosConfig[jugadorId]) {
+      return (config as any).playerRatiosConfig[jugadorId];
+    }
+  } catch (e) {
+    console.error("Error reading player profile config:", e);
+  }
+  return null;
+}
+
+export async function savePlayerProfileConfigServer(
+  jugadorId: string,
+  payload: {
+    ratios: Record<string, number>;
+    variables?: string[];
+    benchmarkOverrides?: Record<string, number>;
+  }
+): Promise<{ success: boolean }> {
+  try {
+    const path = require("path");
+    const filePath = path.join(process.cwd(), "public", "player_ratios_config.json");
+    let allConfigs: Record<string, PlayerProfileConfig> = {};
+    if (fs.existsSync(filePath)) {
+      try {
+        const raw = fs.readFileSync(filePath, "utf8");
+        allConfigs = JSON.parse(raw) || {};
+      } catch (err) {}
+    }
+
+    allConfigs[jugadorId] = {
+      ratios: payload.ratios,
+      variables: payload.variables,
+      benchmarkOverrides: payload.benchmarkOverrides,
+      updatedAt: new Date().toISOString(),
+    };
+
+    fs.writeFileSync(filePath, JSON.stringify(allConfigs, null, 2), "utf8");
+
+    try {
+      const config = await getClubConfig();
+      if (config) {
+        (config as any).playerRatiosConfig = allConfigs;
+        await saveClubConfig(config);
+      }
+    } catch (e) {}
+
+    return { success: true };
+  } catch (e) {
+    console.error("Error saving player profile config:", e);
+    return { success: false };
+  }
+}
+
 export async function getExternalLinksBBDD(): Promise<ExternalDatabaseLinks> {
   try {
     const supabase = getServerSupabase();
