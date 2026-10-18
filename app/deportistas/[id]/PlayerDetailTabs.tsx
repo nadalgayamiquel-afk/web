@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
-import { useFavoriteGpsVariables } from "../../lib/gpsVariables";
+import { useFavoriteGpsVariables, ALL_GPS_VARIABLES } from "../../lib/gpsVariables";
 import {
   computeCompetitiveProfiles,
   getCompactMetricHeader,
@@ -1090,6 +1090,94 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
     return {};
   });
   const [showCompMatchesDetail, setShowCompMatchesDetail] = useState<boolean>(false);
+  const [showAddVarDropdown, setShowAddVarDropdown] = useState<boolean>(false);
+  const [ratioDisplayMode, setRatioDisplayMode] = useState<"multiplier" | "percentage">("multiplier");
+
+  // Variables activas en la fila del perfil competitivo de este jugador
+  const [playerCompVariables, setPlayerCompVariables] = useState<string[]>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem(`player_comp_vars_${jugador.id}`);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch {}
+    }
+    return [
+      "Distance(m)",
+      "Distancia / Min",
+      "Distance +21 (m)",
+      "Acc+Dec",
+      "Player Load",
+      "MAX Speed(km/h)",
+    ];
+  });
+
+  // Ratios de trabajo individuales para cada variable (ej: 1.0x = 100% partido, 1.2x = +20% sobrecarga)
+  const [playerTargetRatios, setPlayerTargetRatios] = useState<Record<string, number>>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem(`player_target_ratios_${jugador.id}`);
+        if (stored) return JSON.parse(stored);
+      } catch {}
+    }
+    return {
+      "Distance(m)": 1.0,
+      "Distancia / Min": 1.0,
+      "Distance +21 (m)": 1.0,
+      "Acc+Dec": 1.0,
+      "Player Load": 1.0,
+      "MAX Speed(km/h)": 1.0,
+    };
+  });
+
+  const handleUpdateRatio = (metricKey: string, newRatio: number) => {
+    const val = isNaN(newRatio) ? 1.0 : Math.max(0.1, Math.min(5.0, Number(newRatio.toFixed(2))));
+    const updated = { ...playerTargetRatios, [metricKey]: val };
+    setPlayerTargetRatios(updated);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(`player_target_ratios_${jugador.id}`, JSON.stringify(updated));
+    }
+  };
+
+  const handleSetAllRatios = (ratio: number) => {
+    const updated: Record<string, number> = {};
+    playerCompVariables.forEach((k) => {
+      updated[k] = ratio;
+    });
+    setPlayerTargetRatios(updated);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(`player_target_ratios_${jugador.id}`, JSON.stringify(updated));
+    }
+  };
+
+  const handleAddVariable = (key: string) => {
+    if (!playerCompVariables.includes(key)) {
+      const updated = [...playerCompVariables, key];
+      setPlayerCompVariables(updated);
+      if (!playerTargetRatios[key]) {
+        const updatedRatios = { ...playerTargetRatios, [key]: 1.0 };
+        setPlayerTargetRatios(updatedRatios);
+        if (typeof window !== "undefined") {
+          localStorage.setItem(`player_target_ratios_${jugador.id}`, JSON.stringify(updatedRatios));
+        }
+      }
+      if (typeof window !== "undefined") {
+        localStorage.setItem(`player_comp_vars_${jugador.id}`, JSON.stringify(updated));
+      }
+    }
+    setShowAddVarDropdown(false);
+  };
+
+  const handleRemoveVariable = (key: string) => {
+    if (playerCompVariables.length <= 1) return;
+    const updated = playerCompVariables.filter((k) => k !== key);
+    setPlayerCompVariables(updated);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(`player_comp_vars_${jugador.id}`, JSON.stringify(updated));
+    }
+  };
 
   // Se recalcula reactivamente al añadir nuevos partidos en gps_datos
   const competitiveProfilesMap = useMemo(() => {
@@ -2226,8 +2314,7 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
         <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
           
           {/* ══════════════════════════════════════════════════════════════ */}
-          {/* SECCIÓN A: PERFIL COMPETITIVO INDIVIDUAL (BENCHMARK 100% MATCH) */}
-          {/* ══════════════════════════════════════════════════════════════ */}
+          {/* SECCIÓN A: PERFIL COMPETITIVO INDIVIDUAL (BENCHMARK 100% MATCH EN UNA SOLA LÍNEA) */}
           {(() => {
             const cp = playerCompProfile;
             const isReal = cp?.isReal || false;
@@ -2253,64 +2340,200 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
               methodBorder = "#fdba74";
             }
 
+            // Lista de métricas a mostrar según las variables elegidas por el usuario
+            const displayMetrics = playerCompVariables.map((k) => {
+              const fav = favoriteVariables.find((v) => v.key === k) || ALL_GPS_VARIABLES.find((v) => v.key === k);
+              const label = getCompactMetricHeader(k, fav?.label);
+              const unit = fav?.unit || (k === "Distance(m)" || k.includes("(m)") ? "m" : k.includes("Speed") ? "km/h" : k.includes("Min") ? "m/min" : k.includes("Load") ? "AU" : "cnt");
+              let rawVal = cp?.values?.[k];
+              if (rawVal === undefined || rawVal === null) {
+                if (k === "Distance(m)") rawVal = cp?.dist;
+                else if (k === "Distancia / Min") rawVal = cp?.mMin;
+                else if (k === "Distance +21 (m)") rawVal = cp?.hsr;
+                else if (k === "Acc+Dec") rawVal = cp?.accDec;
+                else if (k === "Player Load") rawVal = cp?.load;
+                else if (k === "MAX Speed(km/h)") rawVal = cp?.maxSpeed;
+              }
+              const ratio = playerTargetRatios[k] !== undefined ? playerTargetRatios[k] : 1.0;
+              const targetVal = rawVal !== undefined && rawVal !== null && typeof rawVal === "number" ? (k.includes("Min") || k.includes("Speed") ? Math.round(rawVal * ratio * 10) / 10 : Math.round(rawVal * ratio)) : null;
+
+              return {
+                key: k,
+                label,
+                unit,
+                rawVal,
+                ratio,
+                targetVal,
+              };
+            });
+
             return (
               <div
                 style={{
                   background: "#ffffff",
                   borderRadius: "10px",
                   border: "1.5px solid #cbd5e1",
-                  padding: "18px 20px",
+                  padding: "16px 18px",
                   boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
                   display: "flex",
                   flexDirection: "column",
-                  gap: "14px",
+                  gap: "12px",
                 }}
               >
-                {/* CABECERA: TÍTULO, MÉTODO ACTUAL Y BOTÓN AJUSTAR */}
-                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: "10px" }}>
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <span style={{ fontSize: "16px" }}>🏆</span>
-                      <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 900, color: "#0f172a", textTransform: "uppercase", letterSpacing: "0.03em" }}>
-                        Perfil Competitivo Individual (100% Match)
-                      </h3>
-                      <span
-                        style={{
-                          background: methodBadgeBg,
-                          color: methodBadgeColor,
-                          border: `1px solid ${methodBorder}`,
-                          fontSize: "11px",
-                          fontWeight: 800,
-                          padding: "2px 8px",
-                          borderRadius: "5px",
-                        }}
-                      >
-                        {cp?.badgeText || "Sin Perfil"}
-                      </span>
-                    </div>
-                    <p style={{ margin: "4px 0 0", fontSize: "11.5px", color: "#64748b" }}>
-                      Filtrado oficial: 1ª parte y 2ª parte de partido • Actualizado automáticamente con los registros GPS.
-                    </p>
+                {/* ── FILA SUPERIOR: TÍTULO, MÉTODO, ESTADO EN LÍNEA Y CONTROLES ── */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "10px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                    <span style={{ fontSize: "16px" }}>🏆</span>
+                    <strong style={{ fontSize: "14px", color: "#0f172a", textTransform: "uppercase", letterSpacing: "0.03em" }}>
+                      Perfil Competitivo (100% Match)
+                    </strong>
+                    <span
+                      style={{
+                        background: methodBadgeBg,
+                        color: methodBadgeColor,
+                        border: `1px solid ${methodBorder}`,
+                        fontSize: "11px",
+                        fontWeight: 800,
+                        padding: "2px 8px",
+                        borderRadius: "5px",
+                      }}
+                    >
+                      {cp?.badgeText || "Sin Perfil"}
+                    </span>
+                    <span style={{ fontSize: "11.5px", color: isReal ? "#166534" : is45 ? "#854d0e" : isCopied ? "#9a3412" : "#64748b", fontWeight: 600 }}>
+                      • {cp?.detailText || "Actualizado automáticamente con cada partido"}
+                    </span>
                   </div>
 
-                  {/* Acciones: Ver partidos analizados y Ajustar Manual */}
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  {/* CONTROLES DERECHA: PRESETS DE RATIO, AÑADIR VARIABLE, PARTIDOS Y AJUSTE */}
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                    {/* Presets Rápidos de Ratio */}
+                    <div style={{ display: "inline-flex", alignItems: "center", gap: "3px", background: "#f8fafc", padding: "2px 4px", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
+                      <span style={{ fontSize: "10.5px", fontWeight: 700, color: "#64748b", marginRight: "2px" }}>Ratio:</span>
+                      {[
+                        { label: "1.0x (100%)", val: 1.0 },
+                        { label: "1.1x (+10%)", val: 1.1 },
+                        { label: "1.2x (+20%)", val: 1.2 },
+                        { label: "0.8x (-20%)", val: 0.8 },
+                      ].map((preset) => (
+                        <button
+                          key={preset.val}
+                          type="button"
+                          onClick={() => handleSetAllRatios(preset.val)}
+                          style={{
+                            padding: "2px 6px",
+                            borderRadius: "4px",
+                            border: "none",
+                            background: "transparent",
+                            color: "#0369a1",
+                            fontSize: "10px",
+                            fontWeight: 700,
+                            cursor: "pointer",
+                          }}
+                          title={`Fijar ratio ${preset.label} en todas las variables`}
+                        >
+                          {preset.val}x
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Botón Añadir Variable */}
+                    <div style={{ position: "relative" }}>
+                      <button
+                        type="button"
+                        onClick={() => setShowAddVarDropdown((prev) => !prev)}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "4px",
+                          padding: "4px 9px",
+                          borderRadius: "6px",
+                          border: "1px solid #cbd5e1",
+                          background: showAddVarDropdown ? "#f1f5f9" : "#ffffff",
+                          color: "#0f172a",
+                          fontSize: "11px",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                        }}
+                      >
+                        <span>+ Añadir Variable</span>
+                        <span style={{ fontSize: "9px" }}>{showAddVarDropdown ? "▲" : "▼"}</span>
+                      </button>
+
+                      {showAddVarDropdown && (
+                        <div
+                          style={{
+                            position: "absolute",
+                            right: 0,
+                            top: "calc(100% + 4px)",
+                            zIndex: 50,
+                            background: "#ffffff",
+                            border: "1px solid #cbd5e1",
+                            borderRadius: "6px",
+                            boxShadow: "0 6px 16px rgba(0,0,0,0.08)",
+                            padding: "8px",
+                            width: "240px",
+                            maxHeight: "260px",
+                            overflowY: "auto",
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: "3px",
+                          }}
+                        >
+                          <div style={{ fontSize: "11px", fontWeight: 800, color: "#334155", padding: "2px 4px", borderBottom: "1px solid #f1f5f9" }}>
+                            Selecciona una variable a añadir:
+                          </div>
+                          {ALL_GPS_VARIABLES.map((v) => {
+                            const isAlready = playerCompVariables.includes(v.key);
+                            return (
+                              <button
+                                key={v.key}
+                                type="button"
+                                disabled={isAlready}
+                                onClick={() => handleAddVariable(v.key)}
+                                style={{
+                                  textAlign: "left",
+                                  padding: "5px 6px",
+                                  borderRadius: "4px",
+                                  border: "none",
+                                  background: isAlready ? "#f1f5f9" : "transparent",
+                                  color: isAlready ? "#94a3b8" : "#0f172a",
+                                  fontSize: "11px",
+                                  fontWeight: isAlready ? 500 : 600,
+                                  cursor: isAlready ? "default" : "pointer",
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  alignItems: "center",
+                                }}
+                              >
+                                <span>{v.label}</span>
+                                {isAlready && <span style={{ fontSize: "9px", color: "#15803d" }}>✓ activa</span>}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Botón Ver Partidos */}
                     <button
                       type="button"
                       onClick={() => setShowCompMatchesDetail((prev) => !prev)}
                       style={{
-                        padding: "4px 10px",
+                        padding: "4px 9px",
                         borderRadius: "6px",
                         border: "1px solid #cbd5e1",
                         background: showCompMatchesDetail ? "#f1f5f9" : "#ffffff",
-                        color: "#334155",
-                        fontSize: "11.5px",
+                        color: "#475569",
+                        fontSize: "11px",
                         fontWeight: 700,
                         cursor: "pointer",
                       }}
                     >
-                      {showCompMatchesDetail ? "Ocultar Partidos ▲" : `Ver Partidos (${cp?.analyzedMatches?.length || 0}) ▼`}
+                      {showCompMatchesDetail ? "Ocultar ▲" : `Partidos (${cp?.analyzedMatches?.length || 0}) ▼`}
                     </button>
+
+                    {/* Botón Ajustar Benchmark */}
                     <button
                       type="button"
                       onClick={() => {
@@ -2332,146 +2555,244 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                         }
                       }}
                       style={{
-                        padding: "4px 10px",
+                        padding: "4px 9px",
                         borderRadius: "6px",
                         border: "1px solid #cbd5e1",
                         background: "#f8fafc",
                         color: "#1e3a8a",
-                        fontSize: "11.5px",
+                        fontSize: "11px",
                         fontWeight: 700,
                         cursor: "pointer",
                       }}
+                      title="Editar benchmark manualmente"
                     >
-                      ✏️ Ajustar Benchmark
+                      ✏️ Ajustar
                     </button>
                   </div>
                 </div>
 
-                {/* BANNER DINÁMICO DE ESTADO Y EVOLUCIÓN METODOLÓGICA */}
+                {/* ── FILA ÚNICA HORIZONTAL CON TODAS LAS VARIABLES Y SUS RATIOS DE TRABAJO ── */}
                 <div
                   style={{
-                    padding: "8px 12px",
-                    borderRadius: "6px",
-                    background: isReal ? "#f0fdf4" : is45 ? "#fefce8" : isCopied ? "#fff7ed" : "#f8fafc",
-                    border: `1px solid ${isReal ? "#bbf7d0" : is45 ? "#fef08a" : isCopied ? "#fed7aa" : "#e2e8f0"}`,
-                    fontSize: "11.5px",
-                    color: isReal ? "#166534" : is45 ? "#854d0e" : isCopied ? "#9a3412" : "#475569",
                     display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    flexWrap: "wrap",
-                    gap: "6px",
-                  }}
-                >
-                  <div>
-                    <strong>{isReal ? "🟢 Perfil 100% Real:" : is45 ? "🟡 Perfil Estimado (*):" : isCopied ? "🟠 Perfil Copiado (**):" : "⚪ Portero:"}</strong>{" "}
-                    {cp?.detailText || "Sin datos de competición"}
-                  </div>
-                  {!isReal && !isGK && (
-                    <span style={{ fontSize: "10.5px", fontStyle: "italic", opacity: 0.9 }}>
-                      {is45
-                        ? "Al disputar un partido completo (90'), ascenderá automáticamente a Perfil Real."
-                        : "Al disputar al menos 45 min oficiales, el método evolucionará automáticamente a estimado (45'*)."}
-                    </span>
-                  )}
-                </div>
-
-                {/* REJILLA DE VARIABLES CLAVE DEL PERFIL (DT, m/min, HSR, Acc-Dec, Player Load, Vmax, Sprints) */}
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+                    overflowX: "auto",
                     gap: "10px",
+                    alignItems: "stretch",
+                    paddingBottom: "4px",
                   }}
                 >
-                  {[
-                    { label: "DT", unit: "m", key: "Distance(m)", val: cp?.values?.["Distance(m)"] ?? cp?.dist, color: "#0284c7" },
-                    { label: "m/min", unit: "m/min", key: "Distancia / Min", val: cp?.values?.["Distancia / Min"] ?? cp?.mMin, color: "#0891b2" },
-                    { label: "HSR", unit: "m", key: "Distance +21 (m)", val: cp?.values?.["Distance +21 (m)"] ?? cp?.values?.["HSR Abs (m)"] ?? cp?.hsr, color: "#ea580c" },
-                    { label: "Acc-Dec", unit: "cnt", key: "Acc+Dec", val: cp?.values?.["Acc+Dec"] ?? cp?.accDec, color: "#9333ea" },
-                    { label: "Player Load", unit: "AU", key: "Player Load", val: cp?.values?.["Player Load"] ?? cp?.load, color: "#16a34a" },
-                    { label: "Vmax", unit: "km/h", key: "MAX Speed(km/h)", val: cp?.values?.["MAX Speed(km/h)"] ?? cp?.maxSpeed, color: "#b91c1c" },
-                  ].map((kpi) => {
+                  {displayMetrics.map((m) => {
                     const suffix = cp?.asterisk || "";
-                    const displayVal =
-                      kpi.val !== undefined && kpi.val !== null
-                        ? typeof kpi.val === "number"
-                          ? kpi.val % 1 !== 0
-                            ? kpi.val.toFixed(1)
-                            : kpi.val.toLocaleString()
-                          : kpi.val
+                    const displayRaw =
+                      m.rawVal !== undefined && m.rawVal !== null
+                        ? typeof m.rawVal === "number"
+                          ? m.rawVal % 1 !== 0
+                            ? m.rawVal.toFixed(1)
+                            : m.rawVal.toLocaleString()
+                          : m.rawVal
+                        : "—";
+
+                    const displayTarget =
+                      m.targetVal !== undefined && m.targetVal !== null
+                        ? typeof m.targetVal === "number"
+                          ? m.targetVal % 1 !== 0
+                            ? m.targetVal.toFixed(1)
+                            : m.targetVal.toLocaleString()
+                          : m.targetVal
                         : "—";
 
                     return (
                       <div
-                        key={kpi.label}
+                        key={m.key}
                         style={{
+                          minWidth: "145px",
+                          flex: "1 1 0px",
                           background: "#f8fafc",
-                          borderRadius: "6px",
+                          borderRadius: "8px",
                           border: "1px solid #e2e8f0",
                           padding: "10px 12px",
                           display: "flex",
                           flexDirection: "column",
-                          gap: "3px",
+                          gap: "8px",
+                          position: "relative",
+                          boxShadow: "0 1px 2px rgba(0,0,0,0.02)",
                         }}
                       >
+                        {/* Cabecera de la columna con nombre, unidad y botón de eliminar */}
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                          <span style={{ fontSize: "11px", fontWeight: 800, color: "#475569" }}>{kpi.label}</span>
-                          <span style={{ fontSize: "9.5px", color: "#94a3b8" }}>{kpi.unit}</span>
-                        </div>
-                        <div style={{ display: "flex", alignItems: "baseline", gap: "2px" }}>
-                          <span style={{ fontSize: "19px", fontWeight: 900, color: "#0f172a" }}>{displayVal}</span>
-                          {suffix && displayVal !== "—" && (
-                            <span
+                          <div style={{ display: "flex", alignItems: "baseline", gap: "4px" }}>
+                            <strong style={{ fontSize: "12px", color: "#1e293b", fontWeight: 800 }}>{m.label}</strong>
+                            <span style={{ fontSize: "9.5px", color: "#94a3b8" }}>({m.unit})</span>
+                          </div>
+                          {playerCompVariables.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveVariable(m.key)}
                               style={{
-                                fontSize: "13px",
-                                fontWeight: 900,
-                                color: is45 ? "#b45309" : "#c2410c",
+                                border: "none",
+                                background: "transparent",
+                                color: "#94a3b8",
+                                fontSize: "11px",
+                                cursor: "pointer",
+                                padding: "0 2px",
                               }}
-                              title={is45 ? "Estimado 45x2*" : "Copiado Posición**"}
+                              title="Quitar variable de la fila"
                             >
-                              {suffix}
-                            </span>
+                              ✕
+                            </button>
                           )}
+                        </div>
+
+                        {/* Benchmark 100% Partido */}
+                        <div>
+                          <div style={{ fontSize: "9.5px", color: "#64748b", textTransform: "uppercase", fontWeight: 700 }}>
+                            100% Partido
+                          </div>
+                          <div style={{ display: "flex", alignItems: "baseline", gap: "2px", marginTop: "1px" }}>
+                            <span style={{ fontSize: "17px", fontWeight: 900, color: "#0f172a" }}>{displayRaw}</span>
+                            {suffix && displayRaw !== "—" && (
+                              <span
+                                style={{
+                                  fontSize: "12px",
+                                  fontWeight: 900,
+                                  color: is45 ? "#b45309" : "#c2410c",
+                                }}
+                                title={is45 ? "Estimado 45x2*" : "Copiado Posición**"}
+                              >
+                                {suffix}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Selector de Ratio de Trabajo */}
+                        <div style={{ borderTop: "1px solid #e2e8f0", paddingTop: "6px" }}>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "3px" }}>
+                            <span style={{ fontSize: "9.5px", fontWeight: 800, color: "#475569", textTransform: "uppercase" }}>
+                              Ratio Trabajo:
+                            </span>
+                            <span style={{ fontSize: "10px", fontWeight: 800, color: m.ratio > 1.0 ? "#0369a1" : m.ratio < 1.0 ? "#d97706" : "#166534" }}>
+                              {Math.round(m.ratio * 100)}%
+                            </span>
+                          </div>
+
+                          <div style={{ display: "flex", alignItems: "center", gap: "3px" }}>
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateRatio(m.key, m.ratio - 0.05)}
+                              style={{
+                                width: "18px",
+                                height: "20px",
+                                padding: 0,
+                                borderRadius: "3px",
+                                border: "1px solid #cbd5e1",
+                                background: "#ffffff",
+                                fontSize: "11px",
+                                fontWeight: 800,
+                                cursor: "pointer",
+                                color: "#475569",
+                              }}
+                            >
+                              -
+                            </button>
+
+                            <input
+                              type="number"
+                              step="0.05"
+                              min="0.1"
+                              max="5.0"
+                              value={m.ratio}
+                              onChange={(e) => handleUpdateRatio(m.key, parseFloat(e.target.value))}
+                              style={{
+                                width: "100%",
+                                padding: "2px 4px",
+                                borderRadius: "4px",
+                                border: "1px solid #cbd5e1",
+                                fontSize: "11.5px",
+                                fontWeight: 800,
+                                textAlign: "center",
+                                color: "#0f172a",
+                                background: "#ffffff",
+                                outline: "none",
+                              }}
+                            />
+
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateRatio(m.key, m.ratio + 0.05)}
+                              style={{
+                                width: "18px",
+                                height: "20px",
+                                padding: 0,
+                                borderRadius: "3px",
+                                border: "1px solid #cbd5e1",
+                                background: "#ffffff",
+                                fontSize: "11px",
+                                fontWeight: 800,
+                                cursor: "pointer",
+                                color: "#475569",
+                              }}
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Carga Objetivo Calculada */}
+                        <div
+                          style={{
+                            background: m.ratio !== 1.0 ? "#eff6ff" : "#f1f5f9",
+                            borderRadius: "5px",
+                            padding: "4px 6px",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            marginTop: "auto",
+                          }}
+                        >
+                          <span style={{ fontSize: "9px", fontWeight: 700, color: "#64748b" }}>🎯 Obj:</span>
+                          <span style={{ fontSize: "11.5px", fontWeight: 900, color: m.ratio !== 1.0 ? "#1d4ed8" : "#334155" }}>
+                            {displayTarget} {m.unit}
+                          </span>
                         </div>
                       </div>
                     );
                   })}
                 </div>
 
-                {/* DESGLOSE DESPLEGABLE DE PARTIDOS ANALIZADOS (1ª Y 2ª PARTE) */}
+                {/* ── DESGLOSE DESPLEGABLE DE PARTIDOS ANALIZADOS ── */}
                 {showCompMatchesDetail && (
-                  <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "12px", display: "flex", flexDirection: "column", gap: "8px" }}>
-                    <div style={{ fontSize: "12px", fontWeight: 800, color: "#334155" }}>
-                      Partidos Oficiales Registrados ({cp?.analyzedMatches?.length || 0})
+                  <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "10px", display: "flex", flexDirection: "column", gap: "6px" }}>
+                    <div style={{ fontSize: "11.5px", fontWeight: 800, color: "#334155" }}>
+                      Partidos Oficiales Computados ({cp?.analyzedMatches?.length || 0})
                     </div>
                     {cp?.analyzedMatches && cp.analyzedMatches.length > 0 ? (
                       <div style={{ overflowX: "auto" }}>
                         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px", color: "#0f172a" }}>
                           <thead>
                             <tr style={{ background: "#f8fafc", borderBottom: "1px solid #cbd5e1", textAlign: "left", color: "#64748b" }}>
-                              <th style={{ padding: "6px 8px" }}>Fecha</th>
-                              <th style={{ padding: "6px 8px", textAlign: "center" }}>Minutos</th>
-                              <th style={{ padding: "6px 8px" }}>Partes Disputadas</th>
-                              <th style={{ padding: "6px 8px", textAlign: "right" }}>Distancia (m)</th>
+                              <th style={{ padding: "5px 8px" }}>Fecha</th>
+                              <th style={{ padding: "5px 8px", textAlign: "center" }}>Minutos</th>
+                              <th style={{ padding: "5px 8px" }}>Partes Disputadas</th>
+                              <th style={{ padding: "5px 8px", textAlign: "right" }}>DT (m)</th>
                             </tr>
                           </thead>
                           <tbody>
                             {cp.analyzedMatches.map((m, mIdx) => (
                               <tr key={m.fecha || mIdx} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                                <td style={{ padding: "6px 8px", fontWeight: 700 }}>{m.fecha}</td>
-                                <td style={{ padding: "6px 8px", textAlign: "center", fontWeight: 800 }}>{m.minutos}'</td>
-                                <td style={{ padding: "6px 8px" }}>
-                                  <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                                <td style={{ padding: "5px 8px", fontWeight: 700 }}>{m.fecha}</td>
+                                <td style={{ padding: "5px 8px", textAlign: "center", fontWeight: 800 }}>{m.minutos}'</td>
+                                <td style={{ padding: "5px 8px" }}>
+                                  <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
                                     {m.parts?.map((pPart, pIdx) => (
                                       <span
                                         key={pIdx}
                                         style={{
-                                          padding: "2px 6px",
-                                          borderRadius: "4px",
+                                          padding: "1px 5px",
+                                          borderRadius: "3px",
                                           background: "#eff6ff",
                                           color: "#1e40af",
-                                          fontSize: "10px",
+                                          fontSize: "9.5px",
                                           fontWeight: 700,
                                         }}
                                       >
@@ -2480,7 +2801,7 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                                     ))}
                                   </div>
                                 </td>
-                                <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 800 }}>
+                                <td style={{ padding: "5px 8px", textAlign: "right", fontWeight: 800 }}>
                                   {m.dist ? m.dist.toLocaleString() : "—"} m
                                 </td>
                               </tr>
@@ -2490,7 +2811,7 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                       </div>
                     ) : (
                       <div style={{ fontSize: "11px", color: "#94a3b8", fontStyle: "italic" }}>
-                        Este jugador no tiene tareas de 1ª o 2ª parte de partido registradas todavía.
+                        Este jugador no tiene tareas oficiales de 1ª o 2ª parte de partido registradas.
                       </div>
                     )}
                   </div>
