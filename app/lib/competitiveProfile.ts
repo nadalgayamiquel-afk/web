@@ -14,6 +14,48 @@ export interface AnalyzedMatch {
   parts: AnalyzedMatchPart[];
 }
 
+export interface MetricMatchPart {
+  nombre: string;
+  minutos: number;
+  val: number;
+}
+
+export interface MetricMatchBreakdown {
+  fecha: string;
+  minutos: number;
+  partes: MetricMatchPart[];
+  totalMatchVal: number;
+}
+
+export interface MetricPeerBreakdown {
+  jugadorId: string;
+  apodo: string;
+  posicion: string;
+  val: number;
+}
+
+export interface MetricExplanation {
+  key: string;
+  label: string;
+  unit: string;
+  category: "real_varios" | "real_uno" | "estimado_45" | "copiado_posicion" | "sin_perfil";
+  isOverridden: boolean;
+  overrideVal?: number | null;
+  calculatedVal: number | null;
+  finalVal: number | null;
+  summary: string;
+  formula: string;
+  steps: string[];
+  matches?: MetricMatchBreakdown[];
+  best45?: {
+    nombre: string;
+    minutos: number;
+    partVal: number;
+    factor: number;
+  };
+  peers?: MetricPeerBreakdown[];
+}
+
 export interface CompetitiveProfilePlayer {
   jugadorId: string;
   nombre: string;
@@ -32,6 +74,7 @@ export interface CompetitiveProfilePlayer {
   minutesMatch: number;
   analyzedMatches: AnalyzedMatch[];
   values: Record<string, number | null>;
+  explanations: Record<string, MetricExplanation>;
   dist: number;
   mMin: number;
   hsr: number;
@@ -141,10 +184,20 @@ export function computeCompetitiveProfiles({
   availableFavVariables?: any[];
   derivedVariables?: any[];
 }): Map<string, CompetitiveProfilePlayer> {
-  const favVars =
-    availableFavVariables && availableFavVariables.length > 0
-      ? availableFavVariables
-      : ALL_GPS_VARIABLES.filter((v) => DEFAULT_FAVORITE_GPS_VARIABLES.includes(v.key) && v.key !== "Duration(min)");
+  // Construir mapa de todas las variables posibles para que cualquier variable elegida tenga cálculo y explicación completa
+  const allVarsMap = new Map<string, any>();
+  ALL_GPS_VARIABLES.forEach((v) => allVarsMap.set(v.key, v));
+  (availableFavVariables || []).forEach((v) => allVarsMap.set(v.key, v));
+  (derivedVariables || []).forEach((v) => {
+    allVarsMap.set(v.id || v.key, {
+      key: v.id || v.key,
+      label: v.label,
+      shortLabel: v.shortLabel,
+      unit: v.unit,
+      categoria: "Variables Derivadas",
+    });
+  });
+  const varsToCompute = Array.from(allVarsMap.values());
 
   const realGps = (gpsRecords || []).filter((r) => !isRecordSimulado(r));
   const playerMatchesMap = new Map<string, AnalyzedMatch[]>();
@@ -246,6 +299,7 @@ export function computeCompetitiveProfiles({
       minutesMatch: 90,
       analyzedMatches: matches,
       values: {},
+      explanations: {},
       dist: 10200,
       mMin: 113,
       hsr: 650,
@@ -264,22 +318,83 @@ export function computeCompetitiveProfiles({
       p.asterisk = "";
       p.detailText = `${fullMatches.length} partidos oficiales de 90' ((Máx+Prom)/2)`;
 
-      favVars.forEach((v) => {
-        const vList = fullMatches.map((m) => {
+      varsToCompute.forEach((v) => {
+        const isRate = isRateOrPeak(v.key);
+        const matchBreakdowns: MetricMatchBreakdown[] = [];
+
+        fullMatches.forEach((m) => {
+          const partsBreakdown: MetricMatchPart[] = m.parts.map((part) => {
+            let pVal: number;
+            if (v.key === "Distancia / Min" || v.key.toLowerCase().includes("m/min")) {
+              pVal = part.minutos > 0 ? Math.round((part.dist / part.minutos) * 10) / 10 : 0;
+            } else {
+              pVal = calculateGpsMetricValue(part.rawTask, v.key, derivedVariables);
+            }
+            return {
+              nombre: part.nombre,
+              minutos: part.minutos,
+              val: isRate ? Math.round(pVal * 10) / 10 : Math.round(pVal),
+            };
+          });
+
+          let matchVal: number;
           if (v.key === "Distancia / Min" || v.key.toLowerCase().includes("m/min")) {
-            return m.minutos > 0 ? m.dist / m.minutos : 0;
+            matchVal = m.minutos > 0 ? Math.round((m.dist / m.minutos) * 10) / 10 : 0;
+          } else if (isRate) {
+            matchVal = Math.max(...partsBreakdown.map((pb) => pb.val));
+          } else {
+            matchVal = partsBreakdown.reduce((sum, pb) => sum + pb.val, 0);
           }
-          if (isRateOrPeak(v.key)) {
-            return Math.max(...m.parts.map((part) => calculateGpsMetricValue(part.rawTask, v.key, derivedVariables)));
-          }
-          return m.parts.reduce((acc, part) => acc + calculateGpsMetricValue(part.rawTask, v.key, derivedVariables), 0);
+
+          matchBreakdowns.push({
+            fecha: m.fecha,
+            minutos: m.minutos,
+            partes: partsBreakdown,
+            totalMatchVal: matchVal,
+          });
         });
 
+        const vList = matchBreakdowns.map((mb) => mb.totalMatchVal);
         const maxVal = Math.max(...vList);
         const avgVal = vList.reduce((a, b) => a + b, 0) / vList.length;
-        const finalVal =
-          overrides[v.key] ?? (isRateOrPeak(v.key) ? Math.round(((maxVal + avgVal) / 2) * 10) / 10 : Math.round((maxVal + avgVal) / 2));
+        const calcVal = isRate ? Math.round(((maxVal + avgVal) / 2) * 10) / 10 : Math.round((maxVal + avgVal) / 2);
+        const isOverridden = overrides[v.key] !== undefined;
+        const finalVal = isOverridden ? overrides[v.key] : calcVal;
+
         p.values[v.key] = finalVal;
+
+        const label = getCompactMetricHeader(v.key, v.label);
+        const unit = v.unit || "";
+        const avgFormatted = isRate ? avgVal.toFixed(1) : Math.round(avgVal).toString();
+
+        const steps: string[] = [
+          `1. Partidos completos detectados: ${fullMatches.length} partidos oficiales de 90 minutos.`,
+          `2. Valores por partido: ` +
+            matchBreakdowns.map((mb) => `${mb.fecha} (${mb.totalMatchVal} ${unit})`).join(", ") +
+            `.`,
+          `3. Máximo registrado en un partido = ${maxVal} ${unit}.`,
+          `4. Promedio de los partidos = ${avgFormatted} ${unit}.`,
+          `5. Cálculo oficial ((Máx + Prom) / 2): (${maxVal} + ${avgFormatted}) / 2 = ${calcVal} ${unit}.`,
+        ];
+
+        if (isOverridden) {
+          steps.push(`✏️ Ajuste manual activo: ${finalVal} ${unit} (Valor calculado: ${calcVal} ${unit}).`);
+        }
+
+        p.explanations[v.key] = {
+          key: v.key,
+          label,
+          unit,
+          category: "real_varios",
+          isOverridden,
+          overrideVal: isOverridden ? overrides[v.key] : null,
+          calculatedVal: calcVal,
+          finalVal,
+          summary: `Calculado a partir de ${fullMatches.length} partidos de 90' aplicando la fórmula oficial (Máximo + Promedio) / 2.`,
+          formula: `(Máx: ${maxVal} + Prom: ${avgFormatted}) / 2 = ${calcVal} ${unit}`,
+          steps,
+          matches: matchBreakdowns,
+        };
       });
 
       p.dist = (p.values["Distance(m)"] as number) || 10200;
@@ -305,16 +420,75 @@ export function computeCompetitiveProfiles({
       p.detailText = `1 partido de 90' (${fullMatches[0].fecha})`;
 
       const m = fullMatches[0];
-      favVars.forEach((v) => {
+      varsToCompute.forEach((v) => {
+        const isRate = isRateOrPeak(v.key);
+        const partsBreakdown: MetricMatchPart[] = m.parts.map((part) => {
+          let pVal: number;
+          if (v.key === "Distancia / Min" || v.key.toLowerCase().includes("m/min")) {
+            pVal = part.minutos > 0 ? Math.round((part.dist / part.minutos) * 10) / 10 : 0;
+          } else {
+            pVal = calculateGpsMetricValue(part.rawTask, v.key, derivedVariables);
+          }
+          return {
+            nombre: part.nombre,
+            minutos: part.minutos,
+            val: isRate ? Math.round(pVal * 10) / 10 : Math.round(pVal),
+          };
+        });
+
         let raw: number;
         if (v.key === "Distancia / Min" || v.key.toLowerCase().includes("m/min")) {
           raw = m.minutos > 0 ? Math.round((m.dist / m.minutos) * 10) / 10 : 0;
-        } else if (isRateOrPeak(v.key)) {
-          raw = Math.max(...m.parts.map((part) => calculateGpsMetricValue(part.rawTask, v.key, derivedVariables)));
+        } else if (isRate) {
+          raw = Math.max(...partsBreakdown.map((pb) => pb.val));
         } else {
-          raw = m.parts.reduce((acc, part) => acc + calculateGpsMetricValue(part.rawTask, v.key, derivedVariables), 0);
+          raw = partsBreakdown.reduce((sum, pb) => sum + pb.val, 0);
         }
-        p.values[v.key] = overrides[v.key] ?? (isRateOrPeak(v.key) ? Math.round(raw * 10) / 10 : Math.round(raw));
+
+        const calcVal = isRate ? Math.round(raw * 10) / 10 : Math.round(raw);
+        const isOverridden = overrides[v.key] !== undefined;
+        const finalVal = isOverridden ? overrides[v.key] : calcVal;
+
+        p.values[v.key] = finalVal;
+
+        const label = getCompactMetricHeader(v.key, v.label);
+        const unit = v.unit || "";
+
+        const matchBreakdowns: MetricMatchBreakdown[] = [
+          {
+            fecha: m.fecha,
+            minutos: m.minutos,
+            partes: partsBreakdown,
+            totalMatchVal: calcVal,
+          },
+        ];
+
+        const steps: string[] = [
+          `1. El jugador ha disputado un único partido completo de 90' (${m.fecha}, ${m.minutos} min).`,
+          `2. Desglose de tareas del partido: ` +
+            partsBreakdown.map((pb) => `${pb.nombre}: ${pb.val} ${unit}`).join(" | ") +
+            `.`,
+          `3. Benchmark Competitivo directo = ${calcVal} ${unit} (100% Real).`,
+        ];
+
+        if (isOverridden) {
+          steps.push(`✏️ Ajuste manual activo: ${finalVal} ${unit} (Valor calculado: ${calcVal} ${unit}).`);
+        }
+
+        p.explanations[v.key] = {
+          key: v.key,
+          label,
+          unit,
+          category: "real_uno",
+          isOverridden,
+          overrideVal: isOverridden ? overrides[v.key] : null,
+          calculatedVal: calcVal,
+          finalVal,
+          summary: `Valor directo del único partido de 90' disputado (${m.fecha}).`,
+          formula: `Valor partido 90' = ${calcVal} ${unit}`,
+          steps,
+          matches: matchBreakdowns,
+        };
       });
 
       p.dist = (p.values["Distance(m)"] as number) || 10200;
@@ -340,16 +514,71 @@ export function computeCompetitiveProfiles({
       const best45 = [...halfParts].sort((a, b) => (b.minutos || 0) - (a.minutos || 0))[0];
       p.detailText = `Estimado: parte ${best45.nombre || "1ª parte"} (${best45.minutos}') x 2 (No real *)`;
 
-      favVars.forEach((v) => {
+      varsToCompute.forEach((v) => {
+        const isRate = isRateOrPeak(v.key);
+        let partVal: number;
+        let calcVal: number;
+        let formulaText: string;
+
         if (v.key === "Distancia / Min" || v.key.toLowerCase().includes("m/min")) {
-          p.values[v.key] = overrides[v.key] ?? (best45.minutos > 0 ? Math.round((best45.dist / best45.minutos) * 10) / 10 : 0);
-        } else if (isRateOrPeak(v.key)) {
+          partVal = best45.minutos > 0 ? Math.round((best45.dist / best45.minutos) * 10) / 10 : 0;
+          calcVal = partVal;
+          formulaText = `Ritmo directo de la parte (${best45.minutos}') = ${calcVal} m/min*`;
+        } else if (isRate) {
           const raw = calculateGpsMetricValue(best45.rawTask, v.key, derivedVariables);
-          p.values[v.key] = overrides[v.key] ?? Math.round(raw * 10) / 10;
+          partVal = Math.round(raw * 10) / 10;
+          calcVal = partVal;
+          formulaText = `Intensidad / Pico directo de la parte = ${calcVal} ${v.unit || ""}*`;
         } else {
           const raw = calculateGpsMetricValue(best45.rawTask, v.key, derivedVariables);
-          p.values[v.key] = overrides[v.key] ?? Math.round(raw * 2);
+          partVal = Math.round(raw);
+          calcVal = Math.round(raw * 2);
+          formulaText = `Parte de ${best45.minutos}' × 2 = ${partVal} × 2 = ${calcVal} ${v.unit || ""}*`;
         }
+
+        const isOverridden = overrides[v.key] !== undefined;
+        const finalVal = isOverridden ? overrides[v.key] : calcVal;
+
+        p.values[v.key] = finalVal;
+
+        const label = getCompactMetricHeader(v.key, v.label);
+        const unit = v.unit || "";
+
+        const steps: string[] = [
+          `1. El jugador no ha disputado 90' completos en ningún partido oficial.`,
+          `2. Mejor parte oficial registrada: ${best45.nombre} (${best45.minutos} minutos).`,
+          isRate
+            ? `3. Al ser una métrica de intensidad/ritmo, se toma el valor directo registrado en la parte (${partVal} ${unit}).`
+            : `3. Volumen acumulado en la parte: ${partVal} ${unit}.`,
+          isRate
+            ? `4. Resultado proyectado = ${calcVal} ${unit}*.`
+            : `4. Proyección a 90' multiplicando por 2: ${partVal} × 2 = ${calcVal} ${unit}*.`,
+          `5. Se indica con asterisco (*) porque no corresponde a un partido real de 90'.`,
+        ];
+
+        if (isOverridden) {
+          steps.push(`✏️ Ajuste manual activo: ${finalVal} ${unit} (Valor calculado: ${calcVal} ${unit}).`);
+        }
+
+        p.explanations[v.key] = {
+          key: v.key,
+          label,
+          unit,
+          category: "estimado_45",
+          isOverridden,
+          overrideVal: isOverridden ? overrides[v.key] : null,
+          calculatedVal: calcVal,
+          finalVal,
+          summary: `Estimación proyectada a partir de su mejor parte disputada (${best45.nombre}, ${best45.minutos}').`,
+          formula: formulaText,
+          steps,
+          best45: {
+            nombre: best45.nombre,
+            minutos: best45.minutos,
+            partVal,
+            factor: isRate ? 1 : 2,
+          },
+        };
       });
 
       p.dist = (p.values["Distance(m)"] as number) || Math.round(best45.dist * 2);
@@ -383,8 +612,31 @@ export function computeCompetitiveProfiles({
         p.shortBadgeText = "S/P";
         p.asterisk = "";
         p.detailText = "Portero sin datos GPS oficiales (Sin perfil competitivo)";
-        favVars.forEach((v) => {
-          p.values[v.key] = overrides[v.key] ?? null;
+        varsToCompute.forEach((v) => {
+          const isOverridden = overrides[v.key] !== undefined;
+          const finalVal = isOverridden ? overrides[v.key] : null;
+          p.values[v.key] = finalVal;
+
+          const label = getCompactMetricHeader(v.key, v.label);
+          const unit = v.unit || "";
+
+          p.explanations[v.key] = {
+            key: v.key,
+            label,
+            unit,
+            category: "sin_perfil",
+            isOverridden,
+            overrideVal: isOverridden ? overrides[v.key] : null,
+            calculatedVal: null,
+            finalVal,
+            summary: "Los porteros no disponen de registros GPS en partidos oficiales.",
+            formula: "Sin Perfil Competitivo (—)",
+            steps: [
+              "1. El jugador es guardameta (POR).",
+              "2. No se dispone de datos de GPS en partidos oficiales de campo para esta posición.",
+              "3. Se clasifica como Sin Perfil (S/P). Puedes asignar un valor manual si dispones de datos específicos.",
+            ],
+          };
         });
         p.dist = overrides["Distance(m)"] ?? overrides.dist ?? 0;
         p.hsr = overrides["Distance +21 (m)"] ?? overrides.hsr ?? 0;
@@ -417,13 +669,73 @@ export function computeCompetitiveProfiles({
         pool = Array.from(positionProfilesMap.values()).flat();
       }
 
-      favVars.forEach((v) => {
+      varsToCompute.forEach((v) => {
+        const isRate = isRateOrPeak(v.key);
+        const label = getCompactMetricHeader(v.key, v.label);
+        const unit = v.unit || "";
+
         if (pool && pool.length > 0) {
-          const vals = pool.map((x) => (x.values[v.key] as number) ?? 0);
+          const peerBreakdown: MetricPeerBreakdown[] = pool.map((tm) => ({
+            jugadorId: tm.jugadorId,
+            apodo: tm.apodo,
+            posicion: tm.posicion,
+            val: (tm.values[v.key] as number) ?? 0,
+          }));
+
+          const vals = peerBreakdown.map((pb) => pb.val);
           const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
-          p.values[v.key] = overrides[v.key] ?? (isRateOrPeak(v.key) ? Math.round(avg * 10) / 10 : Math.round(avg));
+          const calcVal = isRate ? Math.round(avg * 10) / 10 : Math.round(avg);
+          const isOverridden = overrides[v.key] !== undefined;
+          const finalVal = isOverridden ? overrides[v.key] : calcVal;
+
+          p.values[v.key] = finalVal;
+
+          const steps: string[] = [
+            `1. El jugador no dispone de suficientes minutos (<45' en un partido) para un cálculo individual.`,
+            `2. Se consulta el perfil de compañeros de su misma posición (${pos}).`,
+            `3. Compañeros de posición computados (${peerBreakdown.length}): ` +
+              peerBreakdown.map((pb) => `${pb.apodo} (${pb.val} ${unit})`).join(", ") +
+              `.`,
+            `4. Promedio de la demarcación = ${calcVal} ${unit}**.`,
+            `5. Marcado con doble asterisco (**) para señalar que es un perfil copiado por posición.`,
+          ];
+
+          if (isOverridden) {
+            steps.push(`✏️ Ajuste manual activo: ${finalVal} ${unit} (Valor calculado: ${calcVal} ${unit}).`);
+          }
+
+          p.explanations[v.key] = {
+            key: v.key,
+            label,
+            unit,
+            category: "copiado_posicion",
+            isOverridden,
+            overrideVal: isOverridden ? overrides[v.key] : null,
+            calculatedVal: calcVal,
+            finalVal,
+            summary: `Copiado del promedio de jugadores de su misma posición (${pos}).`,
+            formula: `Promedio posición (${pos}) = ${calcVal} ${unit}**`,
+            steps,
+            peers: peerBreakdown,
+          };
         } else {
-          p.values[v.key] = overrides[v.key] ?? null;
+          const isOverridden = overrides[v.key] !== undefined;
+          const finalVal = isOverridden ? overrides[v.key] : null;
+          p.values[v.key] = finalVal;
+
+          p.explanations[v.key] = {
+            key: v.key,
+            label,
+            unit,
+            category: "copiado_posicion",
+            isOverridden,
+            overrideVal: isOverridden ? overrides[v.key] : null,
+            calculatedVal: null,
+            finalVal,
+            summary: `Sin compañeros con datos en su posición (${pos}).`,
+            formula: "—",
+            steps: ["No se han encontrado compañeros de la misma posición con partidos registrados."],
+          };
         }
       });
 

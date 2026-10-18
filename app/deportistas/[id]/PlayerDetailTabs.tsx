@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
-import { useFavoriteGpsVariables, ALL_GPS_VARIABLES } from "../../lib/gpsVariables";
+import { useFavoriteGpsVariables, ALL_GPS_VARIABLES, calculateGpsMetricValue } from "../../lib/gpsVariables";
 import {
   computeCompetitiveProfiles,
   getCompactMetricHeader,
+  isRateOrPeak,
   CompetitiveProfilePlayer,
 } from "../../lib/competitiveProfile";
 import { useRouter } from "next/navigation";
@@ -1179,6 +1180,48 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
     }
   };
 
+  const [selectedExplanationKey, setSelectedExplanationKey] = useState<string | null>(null);
+
+  const handleModifyMetric = (metricKey: string) => {
+    const currentVal = playerCompProfile?.values?.[metricKey] ?? 0;
+    const fav = favoriteVariables.find((v) => v.key === metricKey) || ALL_GPS_VARIABLES.find((v) => v.key === metricKey);
+    const label = getCompactMetricHeader(metricKey, fav?.label);
+    const unit = fav?.unit || "";
+    const input = window.prompt(
+      `Modificar benchmark de ${label} (${unit}) para ${jugador.apodo || jugador.nombre}:\n\n(Valor actual: ${currentVal} ${unit})`,
+      String(currentVal)
+    );
+    if (input !== null && input.trim() !== "" && !isNaN(Number(input))) {
+      const updated = {
+        ...compProfileOverrides,
+        [jugador.id]: {
+          ...(compProfileOverrides[jugador.id] || {}),
+          [metricKey]: Number(input),
+        },
+      };
+      setCompProfileOverrides(updated);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("gps_competitive_profile_overrides", JSON.stringify(updated));
+      }
+    }
+  };
+
+  const handleResetMetric = (metricKey: string) => {
+    const fav = favoriteVariables.find((v) => v.key === metricKey) || ALL_GPS_VARIABLES.find((v) => v.key === metricKey);
+    const label = getCompactMetricHeader(metricKey, fav?.label);
+    if (!confirm(`¿Restablecer ${label} al valor oficial calculado automáticamente por el sistema?`)) return;
+    const current = { ...(compProfileOverrides[jugador.id] || {}) };
+    delete current[metricKey];
+    const updated = {
+      ...compProfileOverrides,
+      [jugador.id]: current,
+    };
+    setCompProfileOverrides(updated);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("gps_competitive_profile_overrides", JSON.stringify(updated));
+    }
+  };
+
   // Se recalcula reactivamente al añadir nuevos partidos en gps_datos
   const competitiveProfilesMap = useMemo(() => {
     return computeCompetitiveProfiles({
@@ -2345,6 +2388,8 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
               const fav = favoriteVariables.find((v) => v.key === k) || ALL_GPS_VARIABLES.find((v) => v.key === k);
               const label = getCompactMetricHeader(k, fav?.label);
               const unit = fav?.unit || (k === "Distance(m)" || k.includes("(m)") ? "m" : k.includes("Speed") ? "km/h" : k.includes("Min") ? "m/min" : k.includes("Load") ? "AU" : "cnt");
+              const isOverridden = compProfileOverrides[jugador.id]?.[k] !== undefined;
+
               let rawVal = cp?.values?.[k];
               if (rawVal === undefined || rawVal === null) {
                 if (k === "Distance(m)") rawVal = cp?.dist;
@@ -2364,6 +2409,7 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                 rawVal,
                 ratio,
                 targetVal,
+                isOverridden,
               };
             });
 
@@ -2405,7 +2451,7 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                     </span>
                   </div>
 
-                  {/* CONTROLES DERECHA: PRESETS DE RATIO, AÑADIR VARIABLE, PARTIDOS Y AJUSTE */}
+                  {/* CONTROLES DERECHA: PRESETS DE RATIO, AÑADIR VARIABLE Y PARTIDOS */}
                   <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
                     {/* Presets Rápidos de Ratio */}
                     <div style={{ display: "inline-flex", alignItems: "center", gap: "3px", background: "#f8fafc", padding: "2px 4px", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
@@ -2472,8 +2518,8 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                             borderRadius: "6px",
                             boxShadow: "0 6px 16px rgba(0,0,0,0.08)",
                             padding: "8px",
-                            width: "240px",
-                            maxHeight: "260px",
+                            width: "250px",
+                            maxHeight: "280px",
                             overflowY: "auto",
                             display: "flex",
                             flexDirection: "column",
@@ -2530,43 +2576,7 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                         cursor: "pointer",
                       }}
                     >
-                      {showCompMatchesDetail ? "Ocultar ▲" : `Partidos (${cp?.analyzedMatches?.length || 0}) ▼`}
-                    </button>
-
-                    {/* Botón Ajustar Benchmark */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const current = cp?.dist || 10200;
-                        const input = window.prompt(`Ajustar DT Competitiva (m) para ${jugador.apodo || jugador.nombre}:`, String(current));
-                        if (input && !isNaN(Number(input))) {
-                          const updated = {
-                            ...compProfileOverrides,
-                            [jugador.id]: {
-                              ...(compProfileOverrides[jugador.id] || {}),
-                              "Distance(m)": Number(input),
-                              dist: Number(input),
-                            },
-                          };
-                          setCompProfileOverrides(updated);
-                          if (typeof window !== "undefined") {
-                            localStorage.setItem("gps_competitive_profile_overrides", JSON.stringify(updated));
-                          }
-                        }
-                      }}
-                      style={{
-                        padding: "4px 9px",
-                        borderRadius: "6px",
-                        border: "1px solid #cbd5e1",
-                        background: "#f8fafc",
-                        color: "#1e3a8a",
-                        fontSize: "11px",
-                        fontWeight: 700,
-                        cursor: "pointer",
-                      }}
-                      title="Editar benchmark manualmente"
-                    >
-                      ✏️ Ajustar
+                      {showCompMatchesDetail ? "Ocultar Partidos ▲" : `Partidos (${cp?.analyzedMatches?.length || 0}) ▼`}
                     </button>
                   </div>
                 </div>
@@ -2605,11 +2615,11 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                       <div
                         key={m.key}
                         style={{
-                          minWidth: "145px",
+                          minWidth: "155px",
                           flex: "1 1 0px",
-                          background: "#f8fafc",
+                          background: m.isOverridden ? "#fffdf5" : "#f8fafc",
                           borderRadius: "8px",
-                          border: "1px solid #e2e8f0",
+                          border: `1px solid ${m.isOverridden ? "#fcd34d" : "#e2e8f0"}`,
                           padding: "10px 12px",
                           display: "flex",
                           flexDirection: "column",
@@ -2618,39 +2628,123 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                           boxShadow: "0 1px 2px rgba(0,0,0,0.02)",
                         }}
                       >
-                        {/* Cabecera de la columna con nombre, unidad y botón de eliminar */}
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                          <div style={{ display: "flex", alignItems: "baseline", gap: "4px" }}>
-                            <strong style={{ fontSize: "12px", color: "#1e293b", fontWeight: 800 }}>{m.label}</strong>
-                            <span style={{ fontSize: "9.5px", color: "#94a3b8" }}>({m.unit})</span>
+                        {/* Cabecera de la columna con nombre, unidad y botones de acción */}
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "4px" }}>
+                          <div style={{ display: "flex", alignItems: "baseline", gap: "3px", minWidth: 0 }}>
+                            <strong
+                              style={{
+                                fontSize: "12px",
+                                color: "#1e293b",
+                                fontWeight: 800,
+                                whiteSpace: "nowrap",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                              }}
+                              title={m.label}
+                            >
+                              {m.label}
+                            </strong>
+                            <span style={{ fontSize: "9px", color: "#94a3b8" }}>({m.unit})</span>
                           </div>
-                          {playerCompVariables.length > 1 && (
+
+                          <div style={{ display: "flex", alignItems: "center", gap: "2px", flexShrink: 0 }}>
+                            {/* Botón Explicación Matemática */}
                             <button
                               type="button"
-                              onClick={() => handleRemoveVariable(m.key)}
+                              onClick={() => setSelectedExplanationKey(m.key)}
                               style={{
                                 border: "none",
-                                background: "transparent",
-                                color: "#94a3b8",
-                                fontSize: "11px",
+                                background: "#eff6ff",
+                                color: "#2563eb",
+                                fontSize: "10px",
                                 cursor: "pointer",
-                                padding: "0 2px",
+                                padding: "2px 4px",
+                                borderRadius: "4px",
+                                fontWeight: 800,
                               }}
-                              title="Quitar variable de la fila"
+                              title={`Ver explicación matemática detallada de cómo se calculó ${m.label}`}
                             >
-                              ✕
+                              ℹ️
                             </button>
-                          )}
+
+                            {/* Botón Modificar Benchmark */}
+                            <button
+                              type="button"
+                              onClick={() => handleModifyMetric(m.key)}
+                              style={{
+                                border: "none",
+                                background: m.isOverridden ? "#fef3c7" : "#f1f5f9",
+                                color: m.isOverridden ? "#b45309" : "#475569",
+                                fontSize: "10px",
+                                cursor: "pointer",
+                                padding: "2px 4px",
+                                borderRadius: "4px",
+                                fontWeight: 800,
+                              }}
+                              title={`Modificar manualmente el benchmark de ${m.label}`}
+                            >
+                              ✏️
+                            </button>
+
+                            {/* Botón Restablecer si está editado manual */}
+                            {m.isOverridden && (
+                              <button
+                                type="button"
+                                onClick={() => handleResetMetric(m.key)}
+                                style={{
+                                  border: "none",
+                                  background: "#fee2e2",
+                                  color: "#dc2626",
+                                  fontSize: "10px",
+                                  cursor: "pointer",
+                                  padding: "2px 4px",
+                                  borderRadius: "4px",
+                                  fontWeight: 900,
+                                }}
+                                title="Restablecer valor al cálculo automático oficial"
+                              >
+                                ↺
+                              </button>
+                            )}
+
+                            {/* Botón Quitar Variable */}
+                            {playerCompVariables.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveVariable(m.key)}
+                                style={{
+                                  border: "none",
+                                  background: "transparent",
+                                  color: "#94a3b8",
+                                  fontSize: "11px",
+                                  cursor: "pointer",
+                                  padding: "0 2px",
+                                }}
+                                title={`Quitar ${m.label} de la fila`}
+                              >
+                                ✕
+                              </button>
+                            )}
+                          </div>
                         </div>
 
                         {/* Benchmark 100% Partido */}
                         <div>
-                          <div style={{ fontSize: "9.5px", color: "#64748b", textTransform: "uppercase", fontWeight: 700 }}>
-                            100% Partido
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                            <div style={{ fontSize: "9.5px", color: "#64748b", textTransform: "uppercase", fontWeight: 700 }}>
+                              100% Partido
+                            </div>
+                            {m.isOverridden && (
+                              <span style={{ fontSize: "8.5px", fontWeight: 800, color: "#b45309", background: "#fef3c7", padding: "1px 4px", borderRadius: "3px" }}>
+                                Manual
+                              </span>
+                            )}
                           </div>
                           <div style={{ display: "flex", alignItems: "baseline", gap: "2px", marginTop: "1px" }}>
-                            <span style={{ fontSize: "17px", fontWeight: 900, color: "#0f172a" }}>{displayRaw}</span>
-                            {suffix && displayRaw !== "—" && (
+                            <span style={{ fontSize: "17px", fontWeight: 900, color: m.isOverridden ? "#b45309" : "#0f172a" }}>
+                              {displayRaw}
+                            </span>
+                            {suffix && displayRaw !== "—" && !m.isOverridden && (
                               <span
                                 style={{
                                   fontSize: "12px",
@@ -2760,11 +2854,11 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                   })}
                 </div>
 
-                {/* ── DESGLOSE DESPLEGABLE DE PARTIDOS ANALIZADOS ── */}
+                {/* ── DESGLOSE DESPLEGABLE DE PARTIDOS ANALIZADOS CON TODAS LAS VARIABLES ACTIVAS ── */}
                 {showCompMatchesDetail && (
                   <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "10px", display: "flex", flexDirection: "column", gap: "6px" }}>
                     <div style={{ fontSize: "11.5px", fontWeight: 800, color: "#334155" }}>
-                      Partidos Oficiales Computados ({cp?.analyzedMatches?.length || 0})
+                      Partidos Oficiales Computados ({cp?.analyzedMatches?.length || 0}) — Desglose de Todas las Variables
                     </div>
                     {cp?.analyzedMatches && cp.analyzedMatches.length > 0 ? (
                       <div style={{ overflowX: "auto" }}>
@@ -2774,7 +2868,11 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                               <th style={{ padding: "5px 8px" }}>Fecha</th>
                               <th style={{ padding: "5px 8px", textAlign: "center" }}>Minutos</th>
                               <th style={{ padding: "5px 8px" }}>Partes Disputadas</th>
-                              <th style={{ padding: "5px 8px", textAlign: "right" }}>DT (m)</th>
+                              {displayMetrics.map((dm) => (
+                                <th key={dm.key} style={{ padding: "5px 8px", textAlign: "right", color: "#1e293b", fontWeight: 800 }}>
+                                  {dm.label} ({dm.unit})
+                                </th>
+                              ))}
                             </tr>
                           </thead>
                           <tbody>
@@ -2801,9 +2899,23 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                                     ))}
                                   </div>
                                 </td>
-                                <td style={{ padding: "5px 8px", textAlign: "right", fontWeight: 800 }}>
-                                  {m.dist ? m.dist.toLocaleString() : "—"} m
-                                </td>
+                                {displayMetrics.map((dm) => {
+                                  let matchVal: number;
+                                  if (dm.key === "Distancia / Min" || dm.key.toLowerCase().includes("m/min")) {
+                                    matchVal = m.minutos > 0 ? Math.round((m.dist / m.minutos) * 10) / 10 : 0;
+                                  } else if (isRateOrPeak(dm.key)) {
+                                    const partVals = m.parts.map((p) => calculateGpsMetricValue(p.rawTask, dm.key, derivedVariables));
+                                    matchVal = Math.round(Math.max(...partVals) * 10) / 10;
+                                  } else {
+                                    const sumVal = m.parts.reduce((acc, p) => acc + calculateGpsMetricValue(p.rawTask, dm.key, derivedVariables), 0);
+                                    matchVal = Math.round(sumVal);
+                                  }
+                                  return (
+                                    <td key={dm.key} style={{ padding: "5px 8px", textAlign: "right", fontWeight: 800 }}>
+                                      {matchVal !== undefined && !isNaN(matchVal) ? matchVal.toLocaleString() : "—"}
+                                    </td>
+                                  );
+                                })}
                               </tr>
                             ))}
                           </tbody>
@@ -2816,6 +2928,349 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                     )}
                   </div>
                 )}
+
+                {/* ── MODAL DE EXPLICACIÓN MATEMÁTICA PASO A PASO POR VARIABLE ── */}
+                {selectedExplanationKey && (() => {
+                  const exp = cp?.explanations?.[selectedExplanationKey];
+                  const fav = favoriteVariables.find((v) => v.key === selectedExplanationKey) || ALL_GPS_VARIABLES.find((v) => v.key === selectedExplanationKey);
+                  const metricLabel = fav?.label || selectedExplanationKey;
+                  const compactLabel = getCompactMetricHeader(selectedExplanationKey, fav?.label);
+                  const unit = fav?.unit || exp?.unit || "";
+
+                  return (
+                    <div
+                      style={{
+                        position: "fixed",
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        backgroundColor: "rgba(15, 23, 42, 0.65)",
+                        backdropFilter: "blur(4px)",
+                        zIndex: 99999,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        padding: "20px",
+                      }}
+                      onClick={() => setSelectedExplanationKey(null)}
+                    >
+                      <div
+                        style={{
+                          background: "#ffffff",
+                          borderRadius: "12px",
+                          maxWidth: "680px",
+                          width: "100%",
+                          maxHeight: "90vh",
+                          overflowY: "auto",
+                          boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1)",
+                          border: "1px solid #cbd5e1",
+                          display: "flex",
+                          flexDirection: "column",
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {/* Cabecera del modal */}
+                        <div
+                          style={{
+                            padding: "16px 20px",
+                            borderBottom: "1px solid #e2e8f0",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            background: "#f8fafc",
+                            borderTopLeftRadius: "12px",
+                            borderTopRightRadius: "12px",
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                            <span style={{ fontSize: "20px" }}>ℹ️</span>
+                            <div>
+                              <div style={{ fontSize: "14.5px", fontWeight: 900, color: "#0f172a" }}>
+                                Explicación de Cálculo — {compactLabel} ({metricLabel})
+                              </div>
+                              <div style={{ fontSize: "11px", color: "#64748b" }}>
+                                Deportista: <strong>{jugador.apodo || jugador.nombre}</strong> ({jugador.posicion || "Jugador"})
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedExplanationKey(null)}
+                            style={{
+                              border: "none",
+                              background: "#e2e8f0",
+                              color: "#475569",
+                              borderRadius: "50%",
+                              width: "28px",
+                              height: "28px",
+                              fontSize: "14px",
+                              fontWeight: 800,
+                              cursor: "pointer",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                            }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+
+                        {/* Contenido del modal */}
+                        <div style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "16px" }}>
+                          {/* Tarjeta de Resumen y Fórmula */}
+                          <div
+                            style={{
+                              background: exp?.isOverridden ? "#fffbeb" : "#f0fdf4",
+                              border: `1.5px solid ${exp?.isOverridden ? "#fcd34d" : "#86efac"}`,
+                              borderRadius: "10px",
+                              padding: "14px 16px",
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: "8px",
+                            }}
+                          >
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
+                              <span
+                                style={{
+                                  fontSize: "11px",
+                                  fontWeight: 800,
+                                  textTransform: "uppercase",
+                                  color: exp?.isOverridden ? "#92400e" : "#166534",
+                                  letterSpacing: "0.03em",
+                                }}
+                              >
+                                {exp?.isOverridden ? "✏️ Valor Ajustado Manualmente" : "🏆 Método Oficial Aplicado"}
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: "11.5px",
+                                  fontWeight: 800,
+                                  padding: "2px 8px",
+                                  borderRadius: "5px",
+                                  background: exp?.isOverridden ? "#fef3c7" : methodBadgeBg,
+                                  color: exp?.isOverridden ? "#b45309" : methodBadgeColor,
+                                  border: `1px solid ${exp?.isOverridden ? "#fde047" : methodBorder}`,
+                                }}
+                              >
+                                {exp?.isOverridden ? "Manual" : cp?.badgeText}
+                              </span>
+                            </div>
+
+                            <div style={{ display: "flex", alignItems: "baseline", gap: "8px" }}>
+                              <span style={{ fontSize: "28px", fontWeight: 900, color: "#0f172a" }}>
+                                {exp?.finalVal !== null && exp?.finalVal !== undefined ? exp.finalVal.toLocaleString() : "—"}
+                              </span>
+                              <span style={{ fontSize: "14px", fontWeight: 800, color: "#64748b" }}>{unit}</span>
+                            </div>
+
+                            <div
+                              style={{
+                                background: "#ffffff",
+                                padding: "8px 12px",
+                                borderRadius: "6px",
+                                border: "1px dashed #cbd5e1",
+                                fontSize: "12px",
+                                fontFamily: "monospace",
+                                color: "#1e293b",
+                                fontWeight: 700,
+                              }}
+                            >
+                              Fórmula: {exp?.formula || "—"}
+                            </div>
+
+                            {exp?.summary && (
+                              <div style={{ fontSize: "11.5px", color: "#475569", lineHeight: 1.4 }}>
+                                {exp.summary}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Pasos de Cálculo Detallados */}
+                          {exp?.steps && exp.steps.length > 0 && (
+                            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                              <strong style={{ fontSize: "12.5px", color: "#0f172a", textTransform: "uppercase", letterSpacing: "0.03em" }}>
+                                Desglose Paso a Paso:
+                              </strong>
+                              <div
+                                style={{
+                                  background: "#f8fafc",
+                                  border: "1px solid #e2e8f0",
+                                  borderRadius: "8px",
+                                  padding: "12px 14px",
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  gap: "6px",
+                                }}
+                              >
+                                {exp.steps.map((st, sIdx) => (
+                                  <div key={sIdx} style={{ fontSize: "11.5px", color: "#334155", lineHeight: 1.45 }}>
+                                    {st}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Desglose de Partidos Oficiales Computados */}
+                          {exp?.matches && exp.matches.length > 0 && (
+                            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                              <strong style={{ fontSize: "12.5px", color: "#0f172a", textTransform: "uppercase", letterSpacing: "0.03em" }}>
+                                Partidos Oficiales Computados para esta Variable:
+                              </strong>
+                              <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: "8px" }}>
+                                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px", color: "#0f172a" }}>
+                                  <thead>
+                                    <tr style={{ background: "#f1f5f9", borderBottom: "1px solid #cbd5e1", textAlign: "left", color: "#475569" }}>
+                                      <th style={{ padding: "6px 10px" }}>Fecha</th>
+                                      <th style={{ padding: "6px 10px", textAlign: "center" }}>Minutos</th>
+                                      <th style={{ padding: "6px 10px" }}>Partes Analizadas</th>
+                                      <th style={{ padding: "6px 10px", textAlign: "right" }}>Valor Registrado</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {exp.matches.map((m, mIdx) => (
+                                      <tr key={mIdx} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                                        <td style={{ padding: "6px 10px", fontWeight: 700 }}>{m.fecha}</td>
+                                        <td style={{ padding: "6px 10px", textAlign: "center", fontWeight: 800 }}>{m.minutos}'</td>
+                                        <td style={{ padding: "6px 10px" }}>
+                                          <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
+                                            {m.partes.map((p, pIdx) => (
+                                              <span
+                                                key={pIdx}
+                                                style={{
+                                                  background: "#eff6ff",
+                                                  color: "#1d4ed8",
+                                                  padding: "2px 6px",
+                                                  borderRadius: "4px",
+                                                  fontSize: "10px",
+                                                  fontWeight: 700,
+                                                }}
+                                              >
+                                                {p.nombre} ({p.minutos}'): {p.val.toLocaleString()} {unit}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        </td>
+                                        <td style={{ padding: "6px 10px", textAlign: "right", fontWeight: 900, color: "#0f172a" }}>
+                                          {m.totalMatchVal.toLocaleString()} {unit}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Desglose de Compañeros de Posición (si fue copiado) */}
+                          {exp?.peers && exp.peers.length > 0 && (
+                            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                              <strong style={{ fontSize: "12.5px", color: "#0f172a", textTransform: "uppercase", letterSpacing: "0.03em" }}>
+                                Compañeros de Posición ({jugador.posicion || "Misma Demarcación"}):
+                              </strong>
+                              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                                {exp.peers.map((peer, pIdx) => (
+                                  <div
+                                    key={pIdx}
+                                    style={{
+                                      background: "#fff7ed",
+                                      border: "1px solid #fdba74",
+                                      padding: "6px 10px",
+                                      borderRadius: "6px",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: "6px",
+                                      fontSize: "11px",
+                                    }}
+                                  >
+                                    <span style={{ fontWeight: 800, color: "#9a3412" }}>{peer.apodo}:</span>
+                                    <strong style={{ color: "#0f172a" }}>{peer.val.toLocaleString()} {unit}</strong>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Pie del modal con acciones */}
+                        <div
+                          style={{
+                            padding: "12px 20px",
+                            borderTop: "1px solid #e2e8f0",
+                            background: "#f8fafc",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            borderBottomLeftRadius: "12px",
+                            borderBottomRightRadius: "12px",
+                            flexWrap: "wrap",
+                            gap: "8px",
+                          }}
+                        >
+                          <div style={{ display: "flex", gap: "8px" }}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleModifyMetric(selectedExplanationKey);
+                              }}
+                              style={{
+                                padding: "5px 12px",
+                                borderRadius: "6px",
+                                border: "1px solid #cbd5e1",
+                                background: "#ffffff",
+                                color: "#1e3a8a",
+                                fontSize: "11.5px",
+                                fontWeight: 700,
+                                cursor: "pointer",
+                              }}
+                            >
+                              ✏️ Modificar este Valor Manualmente
+                            </button>
+
+                            {exp?.isOverridden && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleResetMetric(selectedExplanationKey);
+                                }}
+                                style={{
+                                  padding: "5px 12px",
+                                  borderRadius: "6px",
+                                  border: "1px solid #fecaca",
+                                  background: "#fef2f2",
+                                  color: "#dc2626",
+                                  fontSize: "11.5px",
+                                  fontWeight: 700,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                ↺ Restablecer al Cálculo Oficial
+                              </button>
+                            )}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => setSelectedExplanationKey(null)}
+                            style={{
+                              padding: "5px 14px",
+                              borderRadius: "6px",
+                              border: "none",
+                              background: "#0f172a",
+                              color: "#ffffff",
+                              fontSize: "11.5px",
+                              fontWeight: 800,
+                              cursor: "pointer",
+                            }}
+                          >
+                            Cerrar
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             );
           })()}
