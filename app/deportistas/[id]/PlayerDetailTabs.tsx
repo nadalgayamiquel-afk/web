@@ -1292,26 +1292,124 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
   const [gpsProfileMode, setGpsProfileMode] = useState<"promedio" | "maximos" | "competitivo">("promedio");
 
   const mdColumns = ["-5 MD", "-4 MD", "-3 MD", "-2 MD", "-1 MD", "MD", "+1 MD", "+2 MD"];
-  
-  const [gpsMatrixPromedio, setGpsMatrixPromedio] = useState<Record<string, Record<string, number>>>({
-    "MAX Speed(km/h)": { "-5 MD": 28.5, "-4 MD": 30.2, "-3 MD": 31.4, "-2 MD": 27.1, "-1 MD": 25.8, "MD": 32.8, "+1 MD": 22.0, "+2 MD": 24.5 },
-    "Distance(m)": { "-5 MD": 4800, "-4 MD": 6200, "-3 MD": 7100, "-2 MD": 3800, "-1 MD": 2900, "MD": 10400, "+1 MD": 2200, "+2 MD": 3400 },
-    "HMLD (m)": { "-5 MD": 650, "-4 MD": 890, "-3 MD": 1100, "-2 MD": 420, "-1 MD": 280, "MD": 1850, "+1 MD": 150, "+2 MD": 310 },
-    "HSR Abs (m)": { "-5 MD": 320, "-4 MD": 540, "-3 MD": 680, "-2 MD": 210, "-1 MD": 120, "MD": 920, "+1 MD": 60, "+2 MD": 180 },
-    "Sprint Abs Cnt": { "-5 MD": 4, "-4 MD": 8, "-3 MD": 12, "-2 MD": 2, "-1 MD": 1, "MD": 18, "+1 MD": 0, "+2 MD": 2 },
-    "High Acc Cnt": { "-5 MD": 14, "-4 MD": 22, "-3 MD": 28, "-2 MD": 9, "-1 MD": 6, "MD": 42, "+1 MD": 4, "+2 MD": 10 },
-    "High Dec Cnt": { "-5 MD": 14, "-4 MD": 20, "-3 MD": 27, "-2 MD": 9, "-1 MD": 6, "MD": 43, "+1 MD": 4, "+2 MD": 9 },
+
+  // Función para normalizar nombres de Match Day procedentes de gps_datos
+  const normalizeMD = (rawMD?: string, tipoSesion?: string): string | null => {
+    const combined = `${rawMD || ""} ${tipoSesion || ""}`.trim().toUpperCase().replace(/\s+/g, "");
+    if (combined.includes("-5") || combined.includes("5MD") || combined.includes("MD5")) return "-5 MD";
+    if (combined.includes("-4") || combined.includes("4MD") || combined.includes("MD4")) return "-4 MD";
+    if (combined.includes("-3") || combined.includes("3MD") || combined.includes("MD3")) return "-3 MD";
+    if (combined.includes("-2") || combined.includes("2MD") || combined.includes("MD2")) return "-2 MD";
+    if (combined.includes("-1") || combined.includes("1MD") || combined.includes("MD1")) return "-1 MD";
+    if (combined.includes("+1") || combined.includes("MD+1") || combined.includes("+1MD")) return "+1 MD";
+    if (combined.includes("+2") || combined.includes("MD+2") || combined.includes("+2MD")) return "+2 MD";
+    if (combined.includes("MD") || combined.includes("PARTIDO") || combined.includes("MATCH")) return "MD";
+    return null;
+  };
+
+  // Filtrar registros reales de GPS de este jugador
+  const playerRealGpsRecords = useMemo(() => {
+    return (allGpsRecords || []).filter((r) => {
+      const isSim = Boolean(
+        r.es_simulado ||
+        r.metricas?.es_simulado ||
+        String(r.tipo_registro || r.metricas?.tipo_registro || "").toUpperCase() === "SIMULADO" ||
+        (r.metricas?.colC && String(r.metricas?.colC).toUpperCase().includes("SIMULA"))
+      );
+      if (isSim) return false;
+
+      const jId = r.jugador_id || r.metricas?.jugador_id;
+      if (jId === jugador.id) return true;
+
+      const rName = String(r.jugador || r.metricas?.Player_Name || r.metricas?.jugador || "").trim().toLowerCase();
+      const pName = String(jugador.nombre || "").trim().toLowerCase();
+      const pApodo = String(jugador.apodo || "").trim().toLowerCase();
+      return (pName && rName === pName) || (pApodo && rName === pApodo);
+    });
+  }, [allGpsRecords, jugador.id, jugador.nombre, jugador.apodo]);
+
+  // Overrides manuales para la matriz de GPS
+  const [gpsMatrixCustomOverrides, setGpsMatrixCustomOverrides] = useState<Record<string, Record<string, number>>>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem(`gps_matrix_overrides_${jugador.id}`);
+        if (stored) return JSON.parse(stored);
+      } catch {}
+    }
+    return {};
   });
 
-  const [gpsMatrixMaximos, setGpsMatrixMaximos] = useState<Record<string, Record<string, number>>>({
-    "MAX Speed(km/h)": { "-5 MD": 30.1, "-4 MD": 31.8, "-3 MD": 33.2, "-2 MD": 28.9, "-1 MD": 27.2, "MD": 34.5, "+1 MD": 24.2, "+2 MD": 26.0 },
-    "Distance(m)": { "-5 MD": 5400, "-4 MD": 6800, "-3 MD": 7900, "-2 MD": 4200, "-1 MD": 3300, "MD": 11800, "+1 MD": 2600, "+2 MD": 3800 },
-    "HMLD (m)": { "-5 MD": 780, "-4 MD": 1020, "-3 MD": 1290, "-2 MD": 490, "-1 MD": 340, "MD": 2100, "+1 MD": 190, "+2 MD": 370 },
-    "HSR Abs (m)": { "-5 MD": 410, "-4 MD": 630, "-3 MD": 790, "-2 MD": 260, "-1 MD": 150, "MD": 1080, "+1 MD": 80, "+2 MD": 210 },
-    "Sprint Abs Cnt": { "-5 MD": 6, "-4 MD": 11, "-3 MD": 16, "-2 MD": 4, "-1 MD": 2, "MD": 24, "+1 MD": 1, "+2 MD": 3 },
-    "High Acc Cnt": { "-5 MD": 18, "-4 MD": 27, "-3 MD": 34, "-2 MD": 13, "-1 MD": 9, "MD": 52, "+1 MD": 6, "+2 MD": 13 },
-    "High Dec Cnt": { "-5 MD": 17, "-4 MD": 25, "-3 MD": 32, "-2 MD": 12, "-1 MD": 8, "MD": 51, "+1 MD": 5, "+2 MD": 12 },
-  });
+  // Cálculo reactivo de la matriz GPS según datos reales y variables elegidas por el usuario
+  const realGpsMatrixByMD = useMemo(() => {
+    const res: {
+      promedio: Record<string, Record<string, number | null>>;
+      maximos: Record<string, Record<string, number | null>>;
+      competitivo: Record<string, Record<string, number | null>>;
+      sessionCounts: Record<string, number>;
+    } = { promedio: {}, maximos: {}, competitivo: {}, sessionCounts: {} };
+
+    // Conteo de sesiones por columna de Match Day
+    mdColumns.forEach((col) => {
+      res.sessionCounts[col] = playerRealGpsRecords.filter(
+        (r) => normalizeMD(r.match_day, r.tipo_sesion) === col
+      ).length;
+    });
+
+    playerCompVariables.forEach((vKey) => {
+      res.promedio[vKey] = {};
+      res.maximos[vKey] = {};
+      res.competitivo[vKey] = {};
+
+      const isRate = isRateOrPeak(vKey);
+
+      mdColumns.forEach((col) => {
+        const colRecs = playerRealGpsRecords.filter(
+          (r) => normalizeMD(r.match_day, r.tipo_sesion) === col
+        );
+
+        if (colRecs.length === 0) {
+          res.promedio[vKey][col] = null;
+          res.maximos[vKey][col] = null;
+          if (col === "MD") {
+            const compVal = playerCompProfile?.values?.[vKey];
+            res.competitivo[vKey][col] = typeof compVal === "number" ? compVal : null;
+          } else {
+            res.competitivo[vKey][col] = null;
+          }
+          return;
+        }
+
+        const vals = colRecs.map((r) => {
+          if (vKey === "Distancia / Min" || vKey.toLowerCase().includes("m/min")) {
+            const dur = Number(r.duracion || r.metricas?.["Duration(min)"] || 0);
+            const dist = calculateGpsMetricValue(r.metricas || r, "Distance(m)", derivedVariables);
+            return dur > 0 ? dist / dur : calculateGpsMetricValue(r.metricas || r, vKey, derivedVariables);
+          }
+          return calculateGpsMetricValue(r.metricas || r, vKey, derivedVariables);
+        });
+
+        const sum = vals.reduce((a, b) => a + b, 0);
+        const avg = sum / vals.length;
+        const max = Math.max(...vals);
+
+        const formattedAvg = isRate ? Math.round(avg * 10) / 10 : Math.round(avg);
+        const formattedMax = isRate ? Math.round(max * 10) / 10 : Math.round(max);
+
+        res.promedio[vKey][col] = formattedAvg;
+        res.maximos[vKey][col] = formattedMax;
+
+        if (col === "MD") {
+          const compVal = playerCompProfile?.values?.[vKey];
+          res.competitivo[vKey][col] = typeof compVal === "number" ? compVal : formattedMax;
+        } else {
+          const compDem = (formattedMax + formattedAvg) / 2;
+          res.competitivo[vKey][col] = isRate ? Math.round(compDem * 10) / 10 : Math.round(compDem);
+        }
+      });
+    });
+
+    return res;
+  }, [playerRealGpsRecords, playerCompVariables, mdColumns, derivedVariables, playerCompProfile]);
 
   // Local state for Ficha Cualitativa
   const [cualitativa, setCualitativa] = useState({
@@ -1394,8 +1492,7 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (parsed.gpsMatrixPromedio) setGpsMatrixPromedio(parsed.gpsMatrixPromedio);
-        if (parsed.gpsMatrixMaximos) setGpsMatrixMaximos(parsed.gpsMatrixMaximos);
+// GPS matrix is now reactive and computed dynamically from real GPS records
         if (parsed.cualitativa) setCualitativa(parsed.cualitativa);
         if (parsed.testRecords) setTestRecords(parsed.testRecords);
       } catch (e) {
@@ -1445,8 +1542,7 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
       eventosEquipo,
       disponibilidadJugador,
       eventosJugador,
-      gpsMatrixPromedio,
-      gpsMatrixMaximos,
+      gpsMatrixCustomOverrides,
       cualitativa,
       testRecords,
       lesiones,
@@ -1747,103 +1843,54 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
     }
   };
 
-  // Rename variable across both matrices
-  const handleRenameMetric = (oldName: string, newName: string) => {
-    const trimmed = newName.trim();
-    if (!trimmed || trimmed === oldName) return;
+  // Obtener valor de celda según el modo activo (promedio, maximos o competitivo con datos reales)
+  const getCellValue = (metricKey: string, col: string): string | number => {
+    if (gpsMatrixCustomOverrides[metricKey]?.[col] !== undefined) {
+      return gpsMatrixCustomOverrides[metricKey][col];
+    }
+    const modeData = realGpsMatrixByMD[gpsProfileMode] || realGpsMatrixByMD.promedio;
+    const val = modeData[metricKey]?.[col];
+    if (val === null || val === undefined) return "—";
+    return val;
+  };
 
-    const renameInObj = (source: Record<string, Record<string, number>>) => {
-      const res: Record<string, Record<string, number>> = {};
-      Object.keys(source).forEach((k) => {
-        if (k === oldName) res[trimmed] = source[oldName];
-        else res[k] = source[k];
-      });
-      return res;
+  // Modificar valor de celda manualmente
+  const updateCellValue = (metricKey: string, col: string, newVal: number) => {
+    const nextOverrides = {
+      ...gpsMatrixCustomOverrides,
+      [metricKey]: {
+        ...(gpsMatrixCustomOverrides[metricKey] || {}),
+        [col]: newVal,
+      },
     };
-
-    const nextProm = renameInObj(gpsMatrixPromedio);
-    const nextMax = renameInObj(gpsMatrixMaximos);
-    setGpsMatrixPromedio(nextProm);
-    setGpsMatrixMaximos(nextMax);
-    saveExtraData({ gpsMatrixPromedio: nextProm, gpsMatrixMaximos: nextMax });
-  };
-
-  // Add metric to both matrices
-  const handleAddGpsMetric = () => {
-    const metricName = prompt("Nombre de la nueva variable GPS:", "Nueva Variable GPS");
-    if (!metricName || !metricName.trim()) return;
-    const name = metricName.trim();
-    if (gpsMatrixPromedio[name]) return;
-
-    const emptyRow: Record<string, number> = {};
-    mdColumns.forEach((col) => {
-      emptyRow[col] = 0;
-    });
-
-    const nextProm = { ...gpsMatrixPromedio, [name]: emptyRow };
-    const nextMax = { ...gpsMatrixMaximos, [name]: emptyRow };
-    setGpsMatrixPromedio(nextProm);
-    setGpsMatrixMaximos(nextMax);
-    saveExtraData({ gpsMatrixPromedio: nextProm, gpsMatrixMaximos: nextMax });
-  };
-
-  // Delete metric from both matrices
-  const handleDeleteGpsMetric = (targetMetric?: string) => {
-    const metrics = Object.keys(gpsMatrixPromedio);
-    if (metrics.length === 0) return;
-    const nameToDelete = targetMetric || prompt(
-      `Escribe el nombre exacto de la variable a borrar:\nVariables disponibles:\n- ${metrics.join("\n- ")}`,
-      metrics[metrics.length - 1]
-    );
-    if (!nameToDelete || !nameToDelete.trim()) return;
-    const key = nameToDelete.trim();
-    if (!gpsMatrixPromedio[key]) {
-      alert(`La variable "${key}" no existe.`);
-      return;
-    }
-    if (!confirm(`¿Eliminar la variable "${key}"?`)) return;
-
-    const nextProm = { ...gpsMatrixPromedio };
-    delete nextProm[key];
-    const nextMax = { ...gpsMatrixMaximos };
-    delete nextMax[key];
-
-    setGpsMatrixPromedio(nextProm);
-    setGpsMatrixMaximos(nextMax);
-    saveExtraData({ gpsMatrixPromedio: nextProm, gpsMatrixMaximos: nextMax });
-  };
-
-  // Get active cell value depending on profile mode
-  const getCellValue = (metric: string, col: string) => {
-    const pVal = gpsMatrixPromedio[metric]?.[col] ?? 0;
-    const mVal = gpsMatrixMaximos[metric]?.[col] ?? 0;
-
-    if (gpsProfileMode === "promedio") return pVal;
-    if (gpsProfileMode === "maximos") return mVal;
-    // Perfil Competitivo: ((Max + promedio) / 2)
-    return parseFloat((((mVal + pVal) / 2)).toFixed(1));
-  };
-
-  // Update cell value for active profile mode
-  const updateCellValue = (metric: string, col: string, newVal: number) => {
-    if (gpsProfileMode === "promedio") {
-      const nextProm = {
-        ...gpsMatrixPromedio,
-        [metric]: { ...gpsMatrixPromedio[metric], [col]: newVal },
-      };
-      setGpsMatrixPromedio(nextProm);
-      saveExtraData({ gpsMatrixPromedio: nextProm });
-    } else if (gpsProfileMode === "maximos") {
-      const nextMax = {
-        ...gpsMatrixMaximos,
-        [metric]: { ...gpsMatrixMaximos[metric], [col]: newVal },
-      };
-      setGpsMatrixMaximos(nextMax);
-      saveExtraData({ gpsMatrixMaximos: nextMax });
+    setGpsMatrixCustomOverrides(nextOverrides);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(`gps_matrix_overrides_${jugador.id}`, JSON.stringify(nextOverrides));
     }
   };
 
-  const activeMetricList = Object.keys(gpsMatrixPromedio);
+  // Restablecer celda a datos reales calculados
+  const handleResetCellOverride = (metricKey: string, col: string) => {
+    const current = { ...(gpsMatrixCustomOverrides[metricKey] || {}) };
+    delete current[col];
+    const nextOverrides = { ...gpsMatrixCustomOverrides, [metricKey]: current };
+    setGpsMatrixCustomOverrides(nextOverrides);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(`gps_matrix_overrides_${jugador.id}`, JSON.stringify(nextOverrides));
+    }
+  };
+
+  // Restablecer todas las celdas a datos reales calculados
+  const handleResetAllMatrixOverrides = () => {
+    if (!confirm("¿Restablecer todas las celdas a los datos reales calculados del GPS?")) return;
+    setGpsMatrixCustomOverrides({});
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(`gps_matrix_overrides_${jugador.id}`);
+    }
+  };
+
+  // Las variables activas son las elegidas por el usuario
+  const activeMetricList = playerCompVariables;
 
   return (
     <div>
@@ -3452,17 +3499,25 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
           })()}
           
           {/* ══════════════════════════════════════════════════════════════ */}
-          {/* 1. PERFIL GPS (ARRIBA)                                         */}
+          {/* 1. PERFIL GPS REAL POR MATCH DAY (MD) SEGÚN VARIABLES ELEGIDAS */}
           {/* ══════════════════════════════════════════════════════════════ */}
           <div style={{ background: "#ffffff", padding: "16px 20px", borderRadius: "10px", border: "1px solid #cbd5e1" }}>
-            {/* CABECERA CON 3 BOTONCITOS A LA DERECHA */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px", flexWrap: "wrap", gap: "8px" }}>
-              <div style={{ fontWeight: 900, fontSize: "13.5px", color: "#0f172a", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                DATOS GPS — {gpsProfileMode === "promedio" ? "PERFIL PROMEDIO" : gpsProfileMode === "maximos" ? "PERFIL MÁXIMOS" : "PERFIL COMPETITIVO ((MÁX + PROM)/2)"}
+            {/* CABECERA CON TÍTULO, SUBTÍTULO Y SELECTORES DE MODO Y VARIABLES */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px", flexWrap: "wrap", gap: "10px" }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span style={{ fontSize: "16px" }}>📊</span>
+                  <div style={{ fontWeight: 900, fontSize: "13.5px", color: "#0f172a", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    DATOS GPS REALES POR MATCH DAY (MD) — {gpsProfileMode === "promedio" ? "PERFIL PROMEDIO REAL" : gpsProfileMode === "maximos" ? "PERFIL MÁXIMOS REALES" : "PERFIL COMPETITIVO ((MÁX + PROM)/2)"}
+                  </div>
+                </div>
+                <div style={{ fontSize: "11px", color: "#64748b", marginTop: "2px" }}>
+                  • Calculado a partir de {playerRealGpsRecords.length} sesiones reales de GPS del jugador ({activeMetricList.length} variables activas)
+                </div>
               </div>
 
-              {/* 3 BOTONCITOS PEQUEÑOS A LA DERECHA */}
-              <div style={{ display: "flex", gap: "6px" }} className="no-print">
+              {/* CONTROLES: 3 BOTONES DE MODO + SELECTOR DE VARIABLES */}
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }} className="no-print">
                 <button
                   type="button"
                   onClick={() => setGpsProfileMode("promedio")}
@@ -3478,8 +3533,9 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                     boxShadow: gpsProfileMode === "promedio" ? "0 1px 3px rgba(30,58,138,0.2)" : "none",
                     transition: "all 0.15s ease",
                   }}
+                  title="Mostrar promedios reales por cada día de partido (MD)"
                 >
-                  Promedio
+                  Promedio Real
                 </button>
                 <button
                   type="button"
@@ -3496,6 +3552,7 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                     boxShadow: gpsProfileMode === "maximos" ? "0 1px 3px rgba(194,65,12,0.2)" : "none",
                     transition: "all 0.15s ease",
                   }}
+                  title="Mostrar máximos picos reales por cada día de partido (MD)"
                 >
                   Perfil Máximos
                 </button>
@@ -3514,6 +3571,7 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                     boxShadow: gpsProfileMode === "competitivo" ? "0 1px 3px rgba(126,34,206,0.2)" : "none",
                     transition: "all 0.15s ease",
                   }}
+                  title="Mostrar perfil competitivo con el 100% Match en MD"
                 >
                   Perfil Competitivo
                 </button>
@@ -3522,124 +3580,202 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
 
             <hr style={{ border: "none", borderTop: "1.5px solid #0f172a", margin: "0 0 12px" }} />
 
-            {/* TABLA MATRIZ DE DATOS GPS POR MATCH DAY */}
+            {/* TABLA MATRIZ DE DATOS GPS REALES POR MATCH DAY */}
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11.5px" }}>
                 <thead>
-                  <tr>
-                    <th style={{ padding: "6px 10px", width: "160px" }} />
+                  <tr style={{ background: "#f8fafc", borderBottom: "1.5px solid #cbd5e1" }}>
+                    <th style={{ padding: "6px 10px", width: "190px", textAlign: "left", fontSize: "11px", color: "#475569" }}>
+                      Variable GPS
+                    </th>
                     {mdColumns.map((col) => {
                       const isMD = col === "MD";
+                      const count = realGpsMatrixByMD.sessionCounts[col] || 0;
                       return (
                         <th
                           key={col}
                           style={{
-                            padding: "6px",
+                            padding: "6px 4px",
                             textAlign: "center",
                             fontWeight: 800,
                             fontSize: "11px",
                             color: isMD ? "#dc2626" : "#0f172a",
                           }}
                         >
-                          {col}
+                          <div>{col}</div>
+                          <div style={{ fontSize: "9px", color: isMD ? "#ef4444" : "#94a3b8", fontWeight: 600 }}>
+                            ({count} {count === 1 ? "ses" : "ses"})
+                          </div>
                         </th>
                       );
                     })}
                   </tr>
                 </thead>
                 <tbody>
-                  {activeMetricList.map((metric, rIdx) => (
-                    <tr key={metric} style={{ background: rIdx % 2 === 0 ? "#f8fafc" : "#ffffff", borderBottom: "1px solid #f1f5f9" }}>
-                      <td style={{ padding: "4px 8px", textAlign: "right" }}>
-                        <input
-                          type="text"
-                          defaultValue={metric}
-                          onBlur={(e) => handleRenameMetric(metric, e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              (e.target as HTMLInputElement).blur();
-                            }
-                          }}
-                          style={{
-                            border: "none",
-                            background: "transparent",
-                            fontWeight: 800,
-                            fontSize: "11.5px",
-                            color: "#0f172a",
-                            textAlign: "right",
-                            outline: "none",
-                            width: "140px",
-                          }}
-                        />
-                      </td>
-                      {mdColumns.map((col) => {
-                        const val = getCellValue(metric, col);
-                        const isComp = gpsProfileMode === "competitivo";
+                  {activeMetricList.map((metricKey, rIdx) => {
+                    const fav = favoriteVariables.find((v) => v.key === metricKey) || ALL_GPS_VARIABLES.find((v) => v.key === metricKey);
+                    const compact = getCompactMetricHeader(metricKey, fav?.label);
+                    const unit = fav?.unit || (metricKey === "Distance(m)" || metricKey.includes("(m)") ? "m" : metricKey.includes("Speed") ? "km/h" : metricKey.includes("Min") ? "m/min" : metricKey.includes("Load") ? "AU" : "cnt");
 
-                        return (
-                          <td key={col} style={{ padding: "4px", textAlign: "center" }}>
-                            {isComp ? (
-                              <span style={{ fontWeight: 800, fontSize: "11.5px", color: "#7e22ce" }}>
-                                {val}
+                    return (
+                      <tr key={metricKey} style={{ background: rIdx % 2 === 0 ? "#f8fafc" : "#ffffff", borderBottom: "1px solid #f1f5f9" }}>
+                        {/* Celda del nombre de la variable */}
+                        <td style={{ padding: "6px 10px", textAlign: "left" }}>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "6px" }}>
+                            <div style={{ display: "flex", alignItems: "baseline", gap: "4px", minWidth: 0 }}>
+                              <strong style={{ fontSize: "11.5px", color: "#0f172a", fontWeight: 800 }}>
+                                {compact}
+                              </strong>
+                              <span style={{ fontSize: "9.5px", color: "#64748b" }}>
+                                ({unit})
                               </span>
-                            ) : (
-                              <input
-                                type="number"
-                                step="0.1"
-                                value={val}
-                                onChange={(e) => {
-                                  const nextVal = parseFloat(e.target.value) || 0;
-                                  updateCellValue(metric, col, nextVal);
-                                }}
+                            </div>
+
+                            {/* Botón quitar variable de la fila */}
+                            {activeMetricList.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveVariable(metricKey)}
                                 style={{
-                                  width: "100%",
-                                  maxWidth: "68px",
-                                  textAlign: "center",
-                                  background: "transparent",
                                   border: "none",
-                                  fontWeight: 700,
-                                  fontSize: "11.5px",
-                                  color: gpsProfileMode === "maximos" ? "#c2410c" : "#0f172a",
-                                  outline: "none",
+                                  background: "transparent",
+                                  color: "#94a3b8",
+                                  fontSize: "10px",
+                                  cursor: "pointer",
+                                  padding: "0 2px",
                                 }}
-                              />
+                                title={`Quitar ${compact} de la tabla`}
+                              >
+                                ✕
+                              </button>
                             )}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
+                          </div>
+                        </td>
+
+                        {/* Celdas de cada Match Day (MD) */}
+                        {mdColumns.map((col) => {
+                          const val = getCellValue(metricKey, col);
+                          const isComp = gpsProfileMode === "competitivo";
+                          const isMD = col === "MD";
+                          const isOverridden = gpsMatrixCustomOverrides[metricKey]?.[col] !== undefined;
+
+                          return (
+                            <td
+                              key={col}
+                              style={{
+                                padding: "4px 6px",
+                                textAlign: "center",
+                                background: isMD && isComp ? "#faf5ff" : undefined,
+                              }}
+                            >
+                              <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "2px" }}>
+                                <span
+                                  style={{
+                                    fontWeight: isMD ? 900 : 700,
+                                    fontSize: "11.5px",
+                                    color: isOverridden
+                                      ? "#b45309"
+                                      : isComp && isMD
+                                      ? "#7e22ce"
+                                      : gpsProfileMode === "maximos"
+                                      ? "#c2410c"
+                                      : "#0f172a",
+                                  }}
+                                  title={
+                                    isOverridden
+                                      ? "Valor ajustado manualmente (haz clic para modificar o restablecer)"
+                                      : `Valor real en ${col}`
+                                  }
+                                >
+                                  {val !== "—" && typeof val === "number" ? val.toLocaleString() : val}
+                                </span>
+
+                                {/* Botón para editar celda si se desea */}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const curr = val !== "—" ? val : 0;
+                                    const input = prompt(
+                                      `Ajustar ${compact} (${unit}) para ${col} (${gpsProfileMode}):`,
+                                      String(curr)
+                                    );
+                                    if (input !== null && input.trim() !== "" && !isNaN(Number(input))) {
+                                      updateCellValue(metricKey, col, Number(input));
+                                    }
+                                  }}
+                                  style={{
+                                    border: "none",
+                                    background: "transparent",
+                                    color: "#cbd5e1",
+                                    fontSize: "9px",
+                                    cursor: "pointer",
+                                    padding: "0 1px",
+                                    opacity: isOverridden ? 1 : 0.4,
+                                  }}
+                                  title="Editar este valor"
+                                >
+                                  ✏️
+                                </button>
+
+                                {isOverridden && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleResetCellOverride(metricKey, col)}
+                                    style={{
+                                      border: "none",
+                                      background: "transparent",
+                                      color: "#dc2626",
+                                      fontSize: "9px",
+                                      cursor: "pointer",
+                                      padding: "0 1px",
+                                      fontWeight: 800,
+                                    }}
+                                    title="Restablecer al cálculo automático real"
+                                  >
+                                    ↺
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
 
-            <div style={{ marginTop: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }} className="no-print">
-              <div style={{ display: "flex", gap: "8px" }}>
-                <button
-                  type="button"
-                  onClick={handleAddGpsMetric}
-                  style={{ background: "#f1f5f9", color: "#334155", border: "1px solid #cbd5e1", padding: "5px 12px", borderRadius: "6px", fontSize: "11.5px", fontWeight: 700, cursor: "pointer" }}
-                >
-                  + Añadir Variable
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDeleteGpsMetric()}
-                  style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", padding: "5px 12px", borderRadius: "6px", fontSize: "11.5px", fontWeight: 700, cursor: "pointer" }}
-                >
-                  - Borrar Variable
-                </button>
+            {/* BARRA INFERIOR CON INFORMACIÓN Y ACCIONES */}
+            <div style={{ marginTop: "12px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }} className="no-print">
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ fontSize: "11px", color: "#166534", fontWeight: 700 }}>
+                  ✓ Calculado automáticamente con datos reales de las sesiones GPS oficiales
+                </span>
               </div>
-              <button
-                type="button"
-                onClick={() => saveExtraData({ gpsMatrixPromedio, gpsMatrixMaximos })}
-                style={{ background: "#1e3a8a", color: "#fff", border: "none", padding: "6px 14px", borderRadius: "6px", fontSize: "12px", fontWeight: 800, cursor: "pointer" }}
-              >
-                Guardar Datos GPS
-              </button>
+
+              {Object.keys(gpsMatrixCustomOverrides).length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleResetAllMatrixOverrides}
+                  style={{
+                    background: "#fef2f2",
+                    color: "#dc2626",
+                    border: "1px solid #fecaca",
+                    padding: "4px 10px",
+                    borderRadius: "5px",
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                  title="Restablecer todas las celdas a los cálculos reales del GPS"
+                >
+                  ↺ Restablecer todas las celdas a Datos Reales
+                </button>
+              )}
             </div>
           </div>
-
+          
           {/* ══════════════════════════════════════════════════════════════ */}
           {/* 2. EVOLUCIÓN ANTROPOMÉTRICA: PESO vs PLIEGUES (ABAJO)          */}
           {/* ══════════════════════════════════════════════════════════════ */}
