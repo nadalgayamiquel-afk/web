@@ -2618,7 +2618,7 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                             </button>
                             <button
                               type="button"
-                              onClick={() => handleSetPresetVariables(["Distance(m)", "Distancia / Min", "Distance +21 (m)", "Acc+Dec", "Player Load"])}
+                              onClick={() => handleSetPresetVariables(["Distance(m)", "Distancia / Min", "Distance +21 (m)", "Acc+Dec", "Player Load", "MAX Speed(km/h)"])}
                               style={{
                                 flex: "1 1 auto",
                                 padding: "4px 8px",
@@ -2631,9 +2631,9 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                                 cursor: "pointer",
                                 textAlign: "center",
                               }}
-                              title="Activar Top 5 discretas recomendadas"
+                              title="Activar las 6 variables favoritas recomendadas (DT, m/min, HSR, Acc-Dec, Load, Vmax)"
                             >
-                              Top 5 Estándar
+                              Top 6 Favoritas
                             </button>
                           </div>
 
@@ -2757,14 +2757,14 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                   </div>
                 </div>
 
-                {/* ── FILA ÚNICA HORIZONTAL CON TODAS LAS VARIABLES Y SUS RATIOS DE TRABAJO ── */}
+                {/* ── FILA ÚNICA HORIZONTAL CON TODAS LAS VARIABLES (DISEÑADA PARA 6 VARIABLES EN 1 LÍNEA) ── */}
                 <div
                   style={{
                     display: "flex",
                     overflowX: "auto",
-                    gap: "10px",
+                    gap: "6px",
                     alignItems: "stretch",
-                    paddingBottom: "4px",
+                    paddingBottom: "2px",
                   }}
                 >
                   {displayMetrics.map((m) => {
@@ -2791,25 +2791,25 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                       <div
                         key={m.key}
                         style={{
-                          minWidth: "155px",
+                          minWidth: "115px",
                           flex: "1 1 0px",
                           background: m.isOverridden ? "#fffdf5" : "#f8fafc",
                           borderRadius: "8px",
                           border: `1px solid ${m.isOverridden ? "#fcd34d" : "#e2e8f0"}`,
-                          padding: "10px 12px",
+                          padding: "7px 8px",
                           display: "flex",
                           flexDirection: "column",
-                          gap: "8px",
+                          gap: "6px",
                           position: "relative",
                           boxShadow: "0 1px 2px rgba(0,0,0,0.02)",
                         }}
                       >
                         {/* Cabecera de la columna con nombre, unidad y botones de acción */}
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "4px" }}>
-                          <div style={{ display: "flex", alignItems: "baseline", gap: "3px", minWidth: 0 }}>
+                          <div style={{ display: "flex", alignItems: "baseline", gap: "2px", minWidth: 0 }}>
                             <strong
                               style={{
-                                fontSize: "12px",
+                                fontSize: "11.5px",
                                 color: "#1e293b",
                                 fontWeight: 800,
                                 whiteSpace: "nowrap",
@@ -2820,10 +2820,10 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                             >
                               {m.label}
                             </strong>
-                            <span style={{ fontSize: "9px", color: "#94a3b8" }}>({m.unit})</span>
+                            <span style={{ fontSize: "8.5px", color: "#94a3b8" }}>({m.unit})</span>
                           </div>
 
-                          <div style={{ display: "flex", alignItems: "center", gap: "2px", flexShrink: 0 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "1.5px", flexShrink: 0 }}>
                             {/* Botón Explicación Matemática */}
                             <button
                               type="button"
@@ -2832,10 +2832,10 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                                 border: "none",
                                 background: "#eff6ff",
                                 color: "#2563eb",
-                                fontSize: "10px",
+                                fontSize: "9.5px",
                                 cursor: "pointer",
-                                padding: "2px 4px",
-                                borderRadius: "4px",
+                                padding: "1px 3px",
+                                borderRadius: "3px",
                                 fontWeight: 800,
                               }}
                               title={`Ver explicación matemática detallada de cómo se calculó ${m.label}`}
@@ -2851,10 +2851,10 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                                 border: "none",
                                 background: m.isOverridden ? "#fef3c7" : "#f1f5f9",
                                 color: m.isOverridden ? "#b45309" : "#475569",
-                                fontSize: "10px",
+                                fontSize: "9.5px",
                                 cursor: "pointer",
-                                padding: "2px 4px",
-                                borderRadius: "4px",
+                                padding: "1px 3px",
+                                borderRadius: "3px",
                                 fontWeight: 800,
                               }}
                               title={`Modificar manualmente el benchmark de ${m.label}`}
@@ -2871,10 +2871,10 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                                   border: "none",
                                   background: "#fee2e2",
                                   color: "#dc2626",
-                                  fontSize: "10px",
+                                  fontSize: "9px",
                                   cursor: "pointer",
-                                  padding: "2px 4px",
-                                  borderRadius: "4px",
+                                  padding: "1px 3px",
+                                  borderRadius: "3px",
                                   fontWeight: 900,
                                 }}
                                 title="Restablecer valor al cálculo automático oficial"
@@ -2892,9 +2892,9 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                                   border: "none",
                                   background: "transparent",
                                   color: "#94a3b8",
-                                  fontSize: "11px",
+                                  fontSize: "10.5px",
                                   cursor: "pointer",
-                                  padding: "0 2px",
+                                  padding: "0 1px",
                                 }}
                                 title={`Quitar ${m.label} de la fila`}
                               >
@@ -2917,7 +2917,7 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                             )}
                           </div>
                           <div style={{ display: "flex", alignItems: "baseline", gap: "2px", marginTop: "1px" }}>
-                            <span style={{ fontSize: "17px", fontWeight: 900, color: m.isOverridden ? "#b45309" : "#0f172a" }}>
+                            <span style={{ fontSize: "15px", fontWeight: 900, color: m.isOverridden ? "#b45309" : "#0f172a" }}>
                               {displayRaw}
                             </span>
                             {suffix && displayRaw !== "—" && !m.isOverridden && (
@@ -2946,18 +2946,18 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                             </span>
                           </div>
 
-                          <div style={{ display: "flex", alignItems: "center", gap: "3px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
                             <button
                               type="button"
                               onClick={() => handleUpdateRatio(m.key, m.ratio - 0.05)}
                               style={{
-                                width: "18px",
-                                height: "20px",
+                                width: "16px",
+                                height: "18px",
                                 padding: 0,
                                 borderRadius: "3px",
                                 border: "1px solid #cbd5e1",
                                 background: "#ffffff",
-                                fontSize: "11px",
+                                fontSize: "10px",
                                 fontWeight: 800,
                                 cursor: "pointer",
                                 color: "#475569",
@@ -2975,10 +2975,10 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                               onChange={(e) => handleUpdateRatio(m.key, parseFloat(e.target.value))}
                               style={{
                                 width: "100%",
-                                padding: "2px 4px",
-                                borderRadius: "4px",
+                                padding: "1px 2px",
+                                borderRadius: "3px",
                                 border: "1px solid #cbd5e1",
-                                fontSize: "11.5px",
+                                fontSize: "11px",
                                 fontWeight: 800,
                                 textAlign: "center",
                                 color: "#0f172a",
@@ -2991,13 +2991,13 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                               type="button"
                               onClick={() => handleUpdateRatio(m.key, m.ratio + 0.05)}
                               style={{
-                                width: "18px",
-                                height: "20px",
+                                width: "16px",
+                                height: "18px",
                                 padding: 0,
                                 borderRadius: "3px",
                                 border: "1px solid #cbd5e1",
                                 background: "#ffffff",
-                                fontSize: "11px",
+                                fontSize: "10px",
                                 fontWeight: 800,
                                 cursor: "pointer",
                                 color: "#475569",
@@ -3012,16 +3012,16 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                         <div
                           style={{
                             background: m.ratio !== 1.0 ? "#eff6ff" : "#f1f5f9",
-                            borderRadius: "5px",
-                            padding: "4px 6px",
+                            borderRadius: "4px",
+                            padding: "3px 5px",
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "space-between",
                             marginTop: "auto",
                           }}
                         >
-                          <span style={{ fontSize: "9px", fontWeight: 700, color: "#64748b" }}>🎯 Obj:</span>
-                          <span style={{ fontSize: "11.5px", fontWeight: 900, color: m.ratio !== 1.0 ? "#1d4ed8" : "#334155" }}>
+                          <span style={{ fontSize: "8.5px", fontWeight: 700, color: "#64748b" }}>🎯 Obj:</span>
+                          <span style={{ fontSize: "10.5px", fontWeight: 900, color: m.ratio !== 1.0 ? "#1d4ed8" : "#334155" }}>
                             {displayTarget} {m.unit}
                           </span>
                         </div>
