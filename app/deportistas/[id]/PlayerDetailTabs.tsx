@@ -1419,15 +1419,8 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
     objetivos: "Mejorar la fuerza máxima en sentadilla (+5%) y mantener la simetría muscular en isquiosurales durante el microciclo.",
   });
 
-  // Local state for Tests
-  const [testRecords, setTestRecords] = useState([
-    { fecha: "Set", peso: 74.5, pliegues: 48, vam: 16.2, sprint30: 4.12, cmj: 38.5 },
-    { fecha: "Oct", peso: 74.2, pliegues: 46, vam: 16.5, sprint30: 4.08, cmj: 39.8 },
-    { fecha: "Nov", peso: 73.8, pliegues: 44, vam: 16.8, sprint30: 4.04, cmj: 41.2 },
-    { fecha: "Dic", peso: 74.0, pliegues: 43, vam: 17.0, sprint30: 4.01, cmj: 42.0 },
-    { fecha: "Ene", peso: 73.5, pliegues: 42, vam: 17.2, sprint30: 3.98, cmj: 43.1 },
-    { fecha: "Feb", peso: 73.6, pliegues: 41, vam: 17.4, sprint30: 3.96, cmj: 43.8 },
-  ]);
+  // Local state for Tests (solo datos reales registrados)
+  const [testRecords, setTestRecords] = useState<{ fecha: string; peso: number; pliegues: number; vam?: number; sprint30?: number; cmj?: number }[]>([]);
 
   const [newTest, setNewTest] = useState({ fecha: "", peso: "", pliegues: "", vam: "", sprint30: "", cmj: "" });
 
@@ -1494,7 +1487,18 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
         const parsed = JSON.parse(saved);
 // GPS matrix is now reactive and computed dynamically from real GPS records
         if (parsed.cualitativa) setCualitativa(parsed.cualitativa);
-        if (parsed.testRecords) setTestRecords(parsed.testRecords);
+        if (parsed.testRecords && Array.isArray(parsed.testRecords)) {
+          // Filtrar registros mock/demo antiguos (Set, Oct, Nov, Dic, Ene, Feb)
+          const isDemoRecord = (r: any) =>
+            (r.fecha === "Set" && r.peso === 74.5) ||
+            (r.fecha === "Oct" && r.peso === 74.2) ||
+            (r.fecha === "Nov" && r.peso === 73.8) ||
+            (r.fecha === "Dic" && r.peso === 74.0) ||
+            (r.fecha === "Ene" && r.peso === 73.5) ||
+            (r.fecha === "Feb" && r.peso === 73.6);
+          const cleanRecords = parsed.testRecords.filter((r: any) => !isDemoRecord(r));
+          setTestRecords(cleanRecords);
+        }
       } catch (e) {
         console.error(e);
       }
@@ -1621,11 +1625,11 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
     if (!newTest.fecha) return;
     const entry = {
       fecha: newTest.fecha,
-      peso: parseFloat(newTest.peso) || 74.0,
-      pliegues: parseFloat(newTest.pliegues) || 42,
-      vam: parseFloat(newTest.vam) || 17.0,
-      sprint30: parseFloat(newTest.sprint30) || 4.0,
-      cmj: parseFloat(newTest.cmj) || 42.0,
+      peso: parseFloat(newTest.peso) || (jugador.peso ? Number(jugador.peso) : 0),
+      pliegues: parseFloat(newTest.pliegues) || 0,
+      vam: parseFloat(newTest.vam) || 0,
+      sprint30: parseFloat(newTest.sprint30) || 0,
+      cmj: parseFloat(newTest.cmj) || 0,
     };
     const updated = [...testRecords, entry];
     setTestRecords(updated);
@@ -3783,27 +3787,24 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
             
             {/* CABECERA LIMPIA SIN RECUADROS RECARGADOS */}
             {(() => {
-              const pesoList = testingData.pesoRecords.map(r => r.peso);
-              const latestPeso = pesoList.length > 0 ? pesoList[pesoList.length - 1] : jugador.peso;
-              const firstPeso = pesoList.length > 0 ? pesoList[0] : jugador.peso;
+              const pesoList = testingData.pesoRecords.length > 0
+                ? testingData.pesoRecords.map(r => r.peso)
+                : testRecords.filter(r => r.peso && r.peso > 0).map(r => r.peso);
+              const latestPeso = pesoList.length > 0 ? pesoList[pesoList.length - 1] : (jugador.peso ? Number(jugador.peso) : null);
+              const firstPeso = pesoList.length > 0 ? pesoList[0] : (jugador.peso ? Number(jugador.peso) : null);
               const deltaPeso = latestPeso && firstPeso && pesoList.length > 1 ? Number((latestPeso - firstPeso).toFixed(1)) : null;
 
-              const plieguesList = testingData.plieguesRecords.map(r => r.suma).filter((v): v is number => v !== null);
+              const plieguesList = testingData.plieguesRecords.length > 0
+                ? testingData.plieguesRecords.map(r => r.suma).filter((v): v is number => v !== null)
+                : testRecords.filter(r => r.pliegues && r.pliegues > 0).map(r => r.pliegues);
               const latestPliegues = plieguesList.length > 0 ? plieguesList[plieguesList.length - 1] : null;
               const firstPliegues = plieguesList.length > 0 ? plieguesList[0] : null;
               const deltaPliegues = latestPliegues !== null && firstPliegues !== null && plieguesList.length > 1 ? Number((latestPliegues - firstPliegues).toFixed(1)) : null;
 
               const fatList = testingData.plieguesRecords.map(r => r.fatPct).filter((v): v is number => v !== null);
-              const latestFat = fatList.length > 0 ? fatList[fatList.length - 1] : (latestPliegues ? calculateGrasaPct6Pliegues(latestPliegues) : null);
-
-              const chartDataToUse = testingData.combinedChartData.length > 0
-                ? testingData.combinedChartData
-                : testRecords.map(r => ({
-                    date: r.fecha,
-                    peso: r.peso,
-                    pliegues: r.pliegues,
-                    fatPct: calculateGrasaPct6Pliegues(r.pliegues)
-                  }));
+              const latestFat = fatList.length > 0
+                ? fatList[fatList.length - 1]
+                : (latestPliegues !== null ? calculateGrasaPct6Pliegues(latestPliegues) : null);
 
               return (
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px", flexWrap: "wrap", gap: "10px" }}>
@@ -3812,7 +3813,7 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                       Evolución Antropométrica — Peso (kg) y Pliegues Cutáneos (mm)
                     </h3>
                     <p style={{ fontSize: "11.5px", color: "#64748b", margin: "2px 0 0" }}>
-                      Progresión temporal sincronizada con los tests de valoración física. {testingData.combinedChartData.length === 0 && "(Datos de ejemplo)"}
+                      Progresión temporal con datos reales sincronizados de valoración física y antropometría.
                     </p>
                   </div>
 
@@ -3843,11 +3844,11 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
               {(() => {
                 const chartDataToUse = testingData.combinedChartData.length > 0
                   ? testingData.combinedChartData
-                  : testRecords.map(r => ({
+                  : testRecords.filter(r => (r.peso && r.peso > 0) || (r.pliegues && r.pliegues > 0)).map(r => ({
                       date: r.fecha,
-                      peso: r.peso,
-                      pliegues: r.pliegues,
-                      fatPct: calculateGrasaPct6Pliegues(r.pliegues)
+                      peso: r.peso > 0 ? r.peso : null,
+                      pliegues: r.pliegues > 0 ? r.pliegues : null,
+                      fatPct: r.pliegues > 0 ? calculateGrasaPct6Pliegues(r.pliegues) : null
                     }));
                 
                 return chartDataToUse.length > 0 ? (
