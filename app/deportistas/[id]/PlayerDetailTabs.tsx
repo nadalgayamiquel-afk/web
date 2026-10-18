@@ -1,7 +1,12 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
-import { useFavoriteGpsVariables, ALL_GPS_VARIABLES, calculateGpsMetricValue } from "../../lib/gpsVariables";
+import {
+  useFavoriteGpsVariables,
+  ALL_GPS_VARIABLES,
+  DEFAULT_FAVORITE_GPS_VARIABLES,
+  calculateGpsMetricValue,
+} from "../../lib/gpsVariables";
 import {
   computeCompetitiveProfiles,
   getCompactMetricHeader,
@@ -1081,6 +1086,13 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
   // Local state for GPS Profile Mode (Promedio | Máximos | Competitivo)
   // ── PERFIL COMPETITIVO INDIVIDUAL OFICIAL (MOTOR REACTIVO 100% MATCH) ──
   const { favoriteVariables, derivedVariables } = useFavoriteGpsVariables();
+
+  // Lista de métricas favoritas activas del usuario (excluyendo Duration(min))
+  const availableFavVariables = useMemo(() => {
+    const list = (favoriteVariables || []).filter((v) => v.key !== "Duration(min)");
+    if (list.length > 0) return list;
+    return ALL_GPS_VARIABLES.filter((v) => DEFAULT_FAVORITE_GPS_VARIABLES.includes(v.key) && v.key !== "Duration(min)");
+  }, [favoriteVariables]);
   const [compProfileOverrides, setCompProfileOverrides] = useState<Record<string, any>>(() => {
     if (typeof window !== "undefined") {
       try {
@@ -1094,13 +1106,18 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
   const [showAddVarDropdown, setShowAddVarDropdown] = useState<boolean>(false);
   const [ratioDisplayMode, setRatioDisplayMode] = useState<"multiplier" | "percentage">("multiplier");
 
-  // Variables activas en la fila del perfil competitivo de este jugador
+  // Variables activas en la fila del perfil competitivo de este jugador (según las favoritas del usuario)
   const [playerCompVariables, setPlayerCompVariables] = useState<string[]>(() => {
     if (typeof window !== "undefined") {
       try {
         const stored = localStorage.getItem(`player_comp_vars_${jugador.id}`);
         if (stored) {
           const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+        const teamFavs = localStorage.getItem("gps_profile_selected_fav_keys");
+        if (teamFavs) {
+          const parsed = JSON.parse(teamFavs);
           if (Array.isArray(parsed) && parsed.length > 0) return parsed;
         }
       } catch {}
@@ -1114,6 +1131,41 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
       "MAX Speed(km/h)",
     ];
   });
+
+  const handleToggleVariable = (key: string) => {
+    let next: string[];
+    if (playerCompVariables.includes(key)) {
+      if (playerCompVariables.length <= 1) return;
+      next = playerCompVariables.filter((k) => k !== key);
+    } else {
+      next = [...playerCompVariables, key];
+      if (playerTargetRatios[key] === undefined) {
+        const updatedRatios = { ...playerTargetRatios, [key]: 1.0 };
+        setPlayerTargetRatios(updatedRatios);
+        if (typeof window !== "undefined") {
+          localStorage.setItem(`player_target_ratios_${jugador.id}`, JSON.stringify(updatedRatios));
+        }
+      }
+    }
+    setPlayerCompVariables(next);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(`player_comp_vars_${jugador.id}`, JSON.stringify(next));
+    }
+  };
+
+  const handleSetPresetVariables = (keys: string[]) => {
+    if (!keys || keys.length === 0) return;
+    setPlayerCompVariables(keys);
+    const updatedRatios = { ...playerTargetRatios };
+    keys.forEach((k) => {
+      if (updatedRatios[k] === undefined) updatedRatios[k] = 1.0;
+    });
+    setPlayerTargetRatios(updatedRatios);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(`player_comp_vars_${jugador.id}`, JSON.stringify(keys));
+      localStorage.setItem(`player_target_ratios_${jugador.id}`, JSON.stringify(updatedRatios));
+    }
+  };
 
   // Ratios de trabajo individuales para cada variable (ej: 1.0x = 100% partido, 1.2x = +20% sobrecarga)
   const [playerTargetRatios, setPlayerTargetRatios] = useState<Record<string, number>>(() => {
@@ -2483,7 +2535,7 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                       ))}
                     </div>
 
-                    {/* Botón Añadir Variable */}
+                    {/* Selector de Variables según Mis Favoritas */}
                     <div style={{ position: "relative" }}>
                       <button
                         type="button"
@@ -2491,18 +2543,20 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                         style={{
                           display: "inline-flex",
                           alignItems: "center",
-                          gap: "4px",
-                          padding: "4px 9px",
+                          gap: "5px",
+                          padding: "4px 10px",
                           borderRadius: "6px",
-                          border: "1px solid #cbd5e1",
-                          background: showAddVarDropdown ? "#f1f5f9" : "#ffffff",
-                          color: "#0f172a",
+                          border: showAddVarDropdown ? "1.5px solid #2563eb" : "1px solid #cbd5e1",
+                          background: showAddVarDropdown ? "#eff6ff" : "#ffffff",
+                          color: showAddVarDropdown ? "#1e40af" : "#0f172a",
                           fontSize: "11px",
-                          fontWeight: 700,
+                          fontWeight: 800,
                           cursor: "pointer",
+                          boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+                          transition: "all 0.15s ease",
                         }}
                       >
-                        <span>+ Añadir Variable</span>
+                        <span>⭐ Variables Favoritas ({playerCompVariables.length})</span>
                         <span style={{ fontSize: "9px" }}>{showAddVarDropdown ? "▲" : "▼"}</span>
                       </button>
 
@@ -2511,52 +2565,174 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
                           style={{
                             position: "absolute",
                             right: 0,
-                            top: "calc(100% + 4px)",
-                            zIndex: 50,
+                            top: "calc(100% + 5px)",
+                            zIndex: 60,
                             background: "#ffffff",
                             border: "1px solid #cbd5e1",
-                            borderRadius: "6px",
-                            boxShadow: "0 6px 16px rgba(0,0,0,0.08)",
-                            padding: "8px",
-                            width: "250px",
-                            maxHeight: "280px",
+                            borderRadius: "8px",
+                            boxShadow: "0 10px 25px -5px rgba(0,0,0,0.15), 0 8px 10px -6px rgba(0,0,0,0.1)",
+                            padding: "12px",
+                            width: "295px",
+                            maxHeight: "380px",
                             overflowY: "auto",
                             display: "flex",
                             flexDirection: "column",
-                            gap: "3px",
+                            gap: "10px",
                           }}
                         >
-                          <div style={{ fontSize: "11px", fontWeight: 800, color: "#334155", padding: "2px 4px", borderBottom: "1px solid #f1f5f9" }}>
-                            Selecciona una variable a añadir:
+                          {/* Cabecera del selector */}
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #e2e8f0", paddingBottom: "6px" }}>
+                            <div>
+                              <strong style={{ fontSize: "12px", color: "#0f172a", display: "block" }}>Tus Variables Favoritas</strong>
+                              <span style={{ fontSize: "9.5px", color: "#64748b" }}>{playerCompVariables.length} activas en la fila</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setShowAddVarDropdown(false)}
+                              style={{ border: "none", background: "#f1f5f9", borderRadius: "4px", padding: "1px 6px", fontSize: "11px", cursor: "pointer", color: "#64748b", fontWeight: 700 }}
+                            >
+                              ✕
+                            </button>
                           </div>
-                          {ALL_GPS_VARIABLES.map((v) => {
-                            const isAlready = playerCompVariables.includes(v.key);
-                            return (
-                              <button
-                                key={v.key}
-                                type="button"
-                                disabled={isAlready}
-                                onClick={() => handleAddVariable(v.key)}
-                                style={{
-                                  textAlign: "left",
-                                  padding: "5px 6px",
-                                  borderRadius: "4px",
-                                  border: "none",
-                                  background: isAlready ? "#f1f5f9" : "transparent",
-                                  color: isAlready ? "#94a3b8" : "#0f172a",
-                                  fontSize: "11px",
-                                  fontWeight: isAlready ? 500 : 600,
-                                  cursor: isAlready ? "default" : "pointer",
-                                  display: "flex",
-                                  justifyContent: "space-between",
-                                  alignItems: "center",
-                                }}
-                              >
-                                <span>{v.label}</span>
-                                {isAlready && <span style={{ fontSize: "9px", color: "#15803d" }}>✓ activa</span>}
-                              </button>
+
+                          {/* Presets Rápidos */}
+                          <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
+                            <button
+                              type="button"
+                              onClick={() => handleSetPresetVariables(availableFavVariables.map((v) => v.key))}
+                              style={{
+                                flex: "1 1 auto",
+                                padding: "4px 8px",
+                                borderRadius: "5px",
+                                border: "1px solid #bfdbfe",
+                                background: "#eff6ff",
+                                color: "#1d4ed8",
+                                fontSize: "10px",
+                                fontWeight: 800,
+                                cursor: "pointer",
+                                textAlign: "center",
+                              }}
+                              title="Activar todas tus variables favoritas"
+                            >
+                              ⭐ Todas mis Favoritas
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSetPresetVariables(["Distance(m)", "Distancia / Min", "Distance +21 (m)", "Acc+Dec", "Player Load"])}
+                              style={{
+                                flex: "1 1 auto",
+                                padding: "4px 8px",
+                                borderRadius: "5px",
+                                border: "1px solid #e2e8f0",
+                                background: "#f8fafc",
+                                color: "#334155",
+                                fontSize: "10px",
+                                fontWeight: 800,
+                                cursor: "pointer",
+                                textAlign: "center",
+                              }}
+                              title="Activar Top 5 discretas recomendadas"
+                            >
+                              Top 5 Estándar
+                            </button>
+                          </div>
+
+                          {/* Lista con Checkboxes de Mis Variables Favoritas */}
+                          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                            <div style={{ fontSize: "10.5px", fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: "0.03em" }}>
+                              Mis Variables Favoritas:
+                            </div>
+                            {availableFavVariables.map((v) => {
+                              const isSelected = playerCompVariables.includes(v.key);
+                              const compact = getCompactMetricHeader(v.key, v.label);
+                              return (
+                                <label
+                                  key={v.key}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    handleToggleVariable(v.key);
+                                  }}
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "space-between",
+                                    padding: "6px 8px",
+                                    borderRadius: "5px",
+                                    background: isSelected ? "#f0fdf4" : "transparent",
+                                    border: `1px solid ${isSelected ? "#bbf7d0" : "#f1f5f9"}`,
+                                    cursor: "pointer",
+                                    transition: "all 0.1s ease",
+                                  }}
+                                >
+                                  <div style={{ display: "flex", alignItems: "center", gap: "7px" }}>
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={() => {}}
+                                      style={{ cursor: "pointer", accentColor: "#16a34a" }}
+                                    />
+                                    <span style={{ fontSize: "11px", fontWeight: isSelected ? 800 : 600, color: isSelected ? "#15803d" : "#1e293b" }}>
+                                      {compact} — {v.label}
+                                    </span>
+                                  </div>
+                                  <span style={{ fontSize: "9.5px", color: "#64748b", fontWeight: 600 }}>({v.unit})</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+
+                          {/* Sección Opcional: Otras Variables de la BBDD */}
+                          {(() => {
+                            const otherVars = ALL_GPS_VARIABLES.filter(
+                              (v) => !availableFavVariables.some((fav) => fav.key === v.key) && v.key !== "Duration(min)"
                             );
-                          })}
+                            if (otherVars.length === 0) return null;
+                            return (
+                              <details style={{ borderTop: "1px solid #f1f5f9", paddingTop: "6px" }}>
+                                <summary style={{ fontSize: "10px", fontWeight: 700, color: "#64748b", cursor: "pointer", userSelect: "none" }}>
+                                  + Ver otras variables ({otherVars.length})
+                                </summary>
+                                <div style={{ display: "flex", flexDirection: "column", gap: "3px", marginTop: "5px" }}>
+                                  {otherVars.map((v) => {
+                                    const isSelected = playerCompVariables.includes(v.key);
+                                    const compact = getCompactMetricHeader(v.key, v.label);
+                                    return (
+                                      <label
+                                        key={v.key}
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          handleToggleVariable(v.key);
+                                        }}
+                                        style={{
+                                          display: "flex",
+                                          alignItems: "center",
+                                          justifyContent: "space-between",
+                                          padding: "4px 6px",
+                                          borderRadius: "4px",
+                                          background: isSelected ? "#eff6ff" : "transparent",
+                                          border: `1px solid ${isSelected ? "#bfdbfe" : "#f8fafc"}`,
+                                          cursor: "pointer",
+                                        }}
+                                      >
+                                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                                          <input
+                                            type="checkbox"
+                                            checked={isSelected}
+                                            onChange={() => {}}
+                                            style={{ cursor: "pointer", accentColor: "#2563eb" }}
+                                          />
+                                          <span style={{ fontSize: "10.5px", color: isSelected ? "#1d4ed8" : "#475569", fontWeight: isSelected ? 700 : 500 }}>
+                                            {compact} — {v.label}
+                                          </span>
+                                        </div>
+                                        <span style={{ fontSize: "9px", color: "#94a3b8" }}>({v.unit})</span>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              </details>
+                            );
+                          })()}
                         </div>
                       )}
                     </div>
