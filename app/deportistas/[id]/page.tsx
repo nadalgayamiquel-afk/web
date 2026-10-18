@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
-import { archiveJugadorFromForm, saveJugador, getFullExcelBBDDRows, getTestingDatasets } from "../../actions";
+import { archiveJugadorFromForm, saveJugador, getFullExcelBBDDRows, getTestingDatasets, getAllGpsDatos, getActiveJugadores } from "../../actions";
 import PlayerDetailTabs from "./PlayerDetailTabs";
 
 type PageProps = { params: Promise<{ id: string }> };
@@ -59,6 +59,20 @@ export default async function JugadorPage({ params }: PageProps) {
     console.error("Error fetching testing data:", e);
   }
 
+  let allGpsRecords: any[] = [];
+  try {
+    allGpsRecords = await getAllGpsDatos();
+  } catch (e) {
+    console.error("Error fetching gps_datos for player report:", e);
+  }
+
+  let allJugadores: any[] = [];
+  try {
+    allJugadores = await getActiveJugadores();
+  } catch (e) {
+    console.error("Error fetching all jugadores for player report:", e);
+  }
+
   return (
     <main className="athlete-detail-page">
       <div className="athlete-detail-topbar">
@@ -98,6 +112,8 @@ export default async function JugadorPage({ params }: PageProps) {
           archiveJugadorAction={archiveJugadorFromForm}
           initialBBDDRows={initialBBDDRows}
           initialTestingData={initialTestingData}
+          allGpsRecords={allGpsRecords}
+          allJugadores={allJugadores}
         />
       </section>
     </main>

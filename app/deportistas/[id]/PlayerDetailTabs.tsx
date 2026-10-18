@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
+import { useFavoriteGpsVariables } from "../../lib/gpsVariables";
+import {
+  computeCompetitiveProfiles,
+  getCompactMetricHeader,
+  CompetitiveProfilePlayer,
+} from "../../lib/competitiveProfile";
 import { useRouter } from "next/navigation";
 import {
   ResponsiveContainer,
@@ -73,6 +79,8 @@ type Props = {
   archiveJugadorAction: (formData: FormData) => Promise<void>;
   initialBBDDRows?: any[];
   initialTestingData?: any[];
+  allGpsRecords?: any[];
+  allJugadores?: any[];
 };
 
 function fieldValue(value: string | number | null | undefined) {
@@ -1001,7 +1009,7 @@ function loadRealReportDataForPlayer(
   return { evEquipo, dispJugador, evJugador };
 }
 
-export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJugadorAction, initialBBDDRows = [], initialTestingData = [] }: Props) {
+export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJugadorAction, initialBBDDRows = [], initialTestingData = [], allGpsRecords = [], allJugadores = [] }: Props) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<
     "general" | "report" | "cualitativa" | "fisicos_tests" | "lesiones"
@@ -1070,6 +1078,34 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
   const [eventosJugador, setEventosJugador] = useState<{ label: string; pct: number; val: number }[]>([]);
 
   // Local state for GPS Profile Mode (Promedio | Máximos | Competitivo)
+  // ── PERFIL COMPETITIVO INDIVIDUAL OFICIAL (MOTOR REACTIVO 100% MATCH) ──
+  const { favoriteVariables, derivedVariables } = useFavoriteGpsVariables();
+  const [compProfileOverrides, setCompProfileOverrides] = useState<Record<string, any>>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("gps_competitive_profile_overrides");
+        if (stored) return JSON.parse(stored);
+      } catch {}
+    }
+    return {};
+  });
+  const [showCompMatchesDetail, setShowCompMatchesDetail] = useState<boolean>(false);
+
+  // Se recalcula reactivamente al añadir nuevos partidos en gps_datos
+  const competitiveProfilesMap = useMemo(() => {
+    return computeCompetitiveProfiles({
+      gpsRecords: allGpsRecords,
+      jugadores: allJugadores && allJugadores.length > 0 ? allJugadores : [jugador],
+      customOverrides: compProfileOverrides,
+      availableFavVariables: favoriteVariables,
+      derivedVariables,
+    });
+  }, [allGpsRecords, allJugadores, jugador, compProfileOverrides, favoriteVariables, derivedVariables]);
+
+  const playerCompProfile = useMemo(() => {
+    return competitiveProfilesMap.get(jugador.id);
+  }, [competitiveProfilesMap, jugador.id]);
+
   const [gpsProfileMode, setGpsProfileMode] = useState<"promedio" | "maximos" | "competitivo">("promedio");
 
   const mdColumns = ["-5 MD", "-4 MD", "-3 MD", "-2 MD", "-1 MD", "MD", "+1 MD", "+2 MD"];
@@ -2188,6 +2224,280 @@ export default function PlayerDetailTabs({ jugador, saveJugadorAction, archiveJu
       {/* PESTAÑA 4: DATOS FÍSICOS Y TESTS (GPS ARRIBA, GRÁFICO PESO vs PLIEGUES ABAJO) */}
       {activeTab === "fisicos_tests" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+          
+          {/* ══════════════════════════════════════════════════════════════ */}
+          {/* SECCIÓN A: PERFIL COMPETITIVO INDIVIDUAL (BENCHMARK 100% MATCH) */}
+          {/* ══════════════════════════════════════════════════════════════ */}
+          {(() => {
+            const cp = playerCompProfile;
+            const isReal = cp?.isReal || false;
+            const is45 = cp?.category === "estimado_45";
+            const isCopied = cp?.category === "copiado_posicion";
+            const isGK = cp?.category === "sin_perfil";
+
+            let methodBadgeBg = "#f1f5f9";
+            let methodBadgeColor = "#334155";
+            let methodBorder = "#cbd5e1";
+
+            if (isReal) {
+              methodBadgeBg = "#dcfce7";
+              methodBadgeColor = "#15803d";
+              methodBorder = "#86efac";
+            } else if (is45) {
+              methodBadgeBg = "#fef3c7";
+              methodBadgeColor = "#b45309";
+              methodBorder = "#fde047";
+            } else if (isCopied) {
+              methodBadgeBg = "#ffedd5";
+              methodBadgeColor = "#c2410c";
+              methodBorder = "#fdba74";
+            }
+
+            return (
+              <div
+                style={{
+                  background: "#ffffff",
+                  borderRadius: "10px",
+                  border: "1.5px solid #cbd5e1",
+                  padding: "18px 20px",
+                  boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "14px",
+                }}
+              >
+                {/* CABECERA: TÍTULO, MÉTODO ACTUAL Y BOTÓN AJUSTAR */}
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: "10px" }}>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <span style={{ fontSize: "16px" }}>🏆</span>
+                      <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 900, color: "#0f172a", textTransform: "uppercase", letterSpacing: "0.03em" }}>
+                        Perfil Competitivo Individual (100% Match)
+                      </h3>
+                      <span
+                        style={{
+                          background: methodBadgeBg,
+                          color: methodBadgeColor,
+                          border: `1px solid ${methodBorder}`,
+                          fontSize: "11px",
+                          fontWeight: 800,
+                          padding: "2px 8px",
+                          borderRadius: "5px",
+                        }}
+                      >
+                        {cp?.badgeText || "Sin Perfil"}
+                      </span>
+                    </div>
+                    <p style={{ margin: "4px 0 0", fontSize: "11.5px", color: "#64748b" }}>
+                      Filtrado oficial: 1ª parte y 2ª parte de partido • Actualizado automáticamente con los registros GPS.
+                    </p>
+                  </div>
+
+                  {/* Acciones: Ver partidos analizados y Ajustar Manual */}
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowCompMatchesDetail((prev) => !prev)}
+                      style={{
+                        padding: "4px 10px",
+                        borderRadius: "6px",
+                        border: "1px solid #cbd5e1",
+                        background: showCompMatchesDetail ? "#f1f5f9" : "#ffffff",
+                        color: "#334155",
+                        fontSize: "11.5px",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {showCompMatchesDetail ? "Ocultar Partidos ▲" : `Ver Partidos (${cp?.analyzedMatches?.length || 0}) ▼`}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const current = cp?.dist || 10200;
+                        const input = window.prompt(`Ajustar DT Competitiva (m) para ${jugador.apodo || jugador.nombre}:`, String(current));
+                        if (input && !isNaN(Number(input))) {
+                          const updated = {
+                            ...compProfileOverrides,
+                            [jugador.id]: {
+                              ...(compProfileOverrides[jugador.id] || {}),
+                              "Distance(m)": Number(input),
+                              dist: Number(input),
+                            },
+                          };
+                          setCompProfileOverrides(updated);
+                          if (typeof window !== "undefined") {
+                            localStorage.setItem("gps_competitive_profile_overrides", JSON.stringify(updated));
+                          }
+                        }
+                      }}
+                      style={{
+                        padding: "4px 10px",
+                        borderRadius: "6px",
+                        border: "1px solid #cbd5e1",
+                        background: "#f8fafc",
+                        color: "#1e3a8a",
+                        fontSize: "11.5px",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      ✏️ Ajustar Benchmark
+                    </button>
+                  </div>
+                </div>
+
+                {/* BANNER DINÁMICO DE ESTADO Y EVOLUCIÓN METODOLÓGICA */}
+                <div
+                  style={{
+                    padding: "8px 12px",
+                    borderRadius: "6px",
+                    background: isReal ? "#f0fdf4" : is45 ? "#fefce8" : isCopied ? "#fff7ed" : "#f8fafc",
+                    border: `1px solid ${isReal ? "#bbf7d0" : is45 ? "#fef08a" : isCopied ? "#fed7aa" : "#e2e8f0"}`,
+                    fontSize: "11.5px",
+                    color: isReal ? "#166534" : is45 ? "#854d0e" : isCopied ? "#9a3412" : "#475569",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    flexWrap: "wrap",
+                    gap: "6px",
+                  }}
+                >
+                  <div>
+                    <strong>{isReal ? "🟢 Perfil 100% Real:" : is45 ? "🟡 Perfil Estimado (*):" : isCopied ? "🟠 Perfil Copiado (**):" : "⚪ Portero:"}</strong>{" "}
+                    {cp?.detailText || "Sin datos de competición"}
+                  </div>
+                  {!isReal && !isGK && (
+                    <span style={{ fontSize: "10.5px", fontStyle: "italic", opacity: 0.9 }}>
+                      {is45
+                        ? "Al disputar un partido completo (90'), ascenderá automáticamente a Perfil Real."
+                        : "Al disputar al menos 45 min oficiales, el método evolucionará automáticamente a estimado (45'*)."}
+                    </span>
+                  )}
+                </div>
+
+                {/* REJILLA DE VARIABLES CLAVE DEL PERFIL (DT, m/min, HSR, Acc-Dec, Player Load, Vmax, Sprints) */}
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+                    gap: "10px",
+                  }}
+                >
+                  {[
+                    { label: "DT", unit: "m", key: "Distance(m)", val: cp?.values?.["Distance(m)"] ?? cp?.dist, color: "#0284c7" },
+                    { label: "m/min", unit: "m/min", key: "Distancia / Min", val: cp?.values?.["Distancia / Min"] ?? cp?.mMin, color: "#0891b2" },
+                    { label: "HSR", unit: "m", key: "Distance +21 (m)", val: cp?.values?.["Distance +21 (m)"] ?? cp?.values?.["HSR Abs (m)"] ?? cp?.hsr, color: "#ea580c" },
+                    { label: "Acc-Dec", unit: "cnt", key: "Acc+Dec", val: cp?.values?.["Acc+Dec"] ?? cp?.accDec, color: "#9333ea" },
+                    { label: "Player Load", unit: "AU", key: "Player Load", val: cp?.values?.["Player Load"] ?? cp?.load, color: "#16a34a" },
+                    { label: "Vmax", unit: "km/h", key: "MAX Speed(km/h)", val: cp?.values?.["MAX Speed(km/h)"] ?? cp?.maxSpeed, color: "#b91c1c" },
+                  ].map((kpi) => {
+                    const suffix = cp?.asterisk || "";
+                    const displayVal =
+                      kpi.val !== undefined && kpi.val !== null
+                        ? typeof kpi.val === "number"
+                          ? kpi.val % 1 !== 0
+                            ? kpi.val.toFixed(1)
+                            : kpi.val.toLocaleString()
+                          : kpi.val
+                        : "—";
+
+                    return (
+                      <div
+                        key={kpi.label}
+                        style={{
+                          background: "#f8fafc",
+                          borderRadius: "6px",
+                          border: "1px solid #e2e8f0",
+                          padding: "10px 12px",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "3px",
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                          <span style={{ fontSize: "11px", fontWeight: 800, color: "#475569" }}>{kpi.label}</span>
+                          <span style={{ fontSize: "9.5px", color: "#94a3b8" }}>{kpi.unit}</span>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "baseline", gap: "2px" }}>
+                          <span style={{ fontSize: "19px", fontWeight: 900, color: "#0f172a" }}>{displayVal}</span>
+                          {suffix && displayVal !== "—" && (
+                            <span
+                              style={{
+                                fontSize: "13px",
+                                fontWeight: 900,
+                                color: is45 ? "#b45309" : "#c2410c",
+                              }}
+                              title={is45 ? "Estimado 45x2*" : "Copiado Posición**"}
+                            >
+                              {suffix}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* DESGLOSE DESPLEGABLE DE PARTIDOS ANALIZADOS (1ª Y 2ª PARTE) */}
+                {showCompMatchesDetail && (
+                  <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "12px", display: "flex", flexDirection: "column", gap: "8px" }}>
+                    <div style={{ fontSize: "12px", fontWeight: 800, color: "#334155" }}>
+                      Partidos Oficiales Registrados ({cp?.analyzedMatches?.length || 0})
+                    </div>
+                    {cp?.analyzedMatches && cp.analyzedMatches.length > 0 ? (
+                      <div style={{ overflowX: "auto" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px", color: "#0f172a" }}>
+                          <thead>
+                            <tr style={{ background: "#f8fafc", borderBottom: "1px solid #cbd5e1", textAlign: "left", color: "#64748b" }}>
+                              <th style={{ padding: "6px 8px" }}>Fecha</th>
+                              <th style={{ padding: "6px 8px", textAlign: "center" }}>Minutos</th>
+                              <th style={{ padding: "6px 8px" }}>Partes Disputadas</th>
+                              <th style={{ padding: "6px 8px", textAlign: "right" }}>Distancia (m)</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {cp.analyzedMatches.map((m, mIdx) => (
+                              <tr key={m.fecha || mIdx} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                                <td style={{ padding: "6px 8px", fontWeight: 700 }}>{m.fecha}</td>
+                                <td style={{ padding: "6px 8px", textAlign: "center", fontWeight: 800 }}>{m.minutos}'</td>
+                                <td style={{ padding: "6px 8px" }}>
+                                  <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                                    {m.parts?.map((pPart, pIdx) => (
+                                      <span
+                                        key={pIdx}
+                                        style={{
+                                          padding: "2px 6px",
+                                          borderRadius: "4px",
+                                          background: "#eff6ff",
+                                          color: "#1e40af",
+                                          fontSize: "10px",
+                                          fontWeight: 700,
+                                        }}
+                                      >
+                                        {pPart.nombre} ({pPart.minutos}' • {pPart.dist}m)
+                                      </span>
+                                    ))}
+                                  </div>
+                                </td>
+                                <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 800 }}>
+                                  {m.dist ? m.dist.toLocaleString() : "—"} m
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: "11px", color: "#94a3b8", fontStyle: "italic" }}>
+                        Este jugador no tiene tareas de 1ª o 2ª parte de partido registradas todavía.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
           
           {/* ══════════════════════════════════════════════════════════════ */}
           {/* 1. PERFIL GPS (ARRIBA)                                         */}
