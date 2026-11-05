@@ -10,6 +10,23 @@ import { revalidatePath } from 'next/cache';
 import fs from "fs";
 import path from "path";
 
+
+// ─── RESILIENT DATA FALLBACK: Si Supabase no responde o la API key no está registrada en Vercel ───
+function getMasterBackupTable(tableName: string): any[] {
+  try {
+    const backupPath = path.join(process.cwd(), "public/master_backup.json");
+    if (fs.existsSync(backupPath)) {
+      const parsed = JSON.parse(fs.readFileSync(backupPath, "utf8"));
+      const tableData = parsed?.database_tables?.[tableName];
+      if (tableData && Array.isArray(tableData.rows)) return tableData.rows;
+      if (Array.isArray(tableData)) return tableData;
+    }
+  } catch (e) {
+    console.warn(`[masterBackup] No se pudo leer la tabla ${tableName} del archivo maestro:`, e);
+  }
+  return [];
+}
+
 function getServerSupabase() {
   const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "https://noumrtldxzmtqrfmydwz.supabase.co";
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || "sb_secret_auvqexI3sOGej22r57MSaA_Ko_YGSn-";
@@ -280,21 +297,43 @@ export async function archiveJugadorFromForm(formData: FormData) {
 }
 
 export async function getActiveJugadores() {
-  const supabase = getServerSupabase();
-  const club = clubKeyword(await getActiveClubName());
-  let query = supabase
-    .from("jugadores")
-    .select("id, nombre, apodo, posicion, foto_url, fecha_nacimiento, activo, cor_id, equipo, temporada")
-    .eq("activo", true)
-    .order("nombre");
-  if (club) query = query.ilike("equipo", `%${club}%`);
-  const { data, error } = await query;
+  let rawJugadores: any[] = [];
+  try {
+    const supabase = getServerSupabase();
+    const club = clubKeyword(await getActiveClubName());
+    let query = supabase
+      .from("jugadores")
+      .select("id, nombre, apodo, posicion, foto_url, fecha_nacimiento, activo, cor_id, equipo, temporada")
+      .eq("activo", true)
+      .order("nombre");
+    if (club) query = query.ilike("equipo", `%${club}%`);
+    const { data, error } = await query;
 
-  if (error) {
-    console.error("Error fetching active jugadores:", error);
-    return [];
+    if (!error && data && data.length > 0) {
+      rawJugadores = data;
+    } else if (error) {
+      console.warn("Supabase getActiveJugadores error, usando backup maestro:", error.message);
+    }
+  } catch (err: any) {
+    console.warn("Exception getActiveJugadores, usando backup maestro:", err?.message);
   }
-  return (data || []).map((item: any) => ({ ...item, dorsal: item.cor_id || null }));
+
+  // Fallback a copia de seguridad maestra local si Supabase falló
+  if (rawJugadores.length === 0) {
+    const backupRows = getMasterBackupTable("jugadores");
+    let filtered = backupRows.filter((j: any) => j.activo !== false);
+    const club = clubKeyword(await getActiveClubName());
+    if (club) {
+      const clubNorm = club.toLowerCase();
+      const clubMatches = filtered.filter((j: any) => (j.equipo || "").toLowerCase().includes(clubNorm));
+      if (clubMatches.length > 0) {
+        filtered = clubMatches;
+      }
+    }
+    rawJugadores = filtered;
+  }
+
+  return rawJugadores.map((item: any) => ({ ...item, dorsal: item.cor_id || item.dorsal || null }));
 }
 
 export async function updatePesosBatch(entries: { playerName: string; peso: number }[]) {
@@ -472,6 +511,7 @@ export async function saveGpsDatosBatch(records: any[]) {
 }
 
 export async function getAllGpsDatos() {
+  let rawData: any[] = [];
   try {
     const supabase = getServerSupabase();
     const { data, error } = await supabase
@@ -479,27 +519,34 @@ export async function getAllGpsDatos() {
       .select("*")
       .order("fecha", { ascending: false });
 
-    if (error) {
-      console.error("Error fetching gps_datos:", error);
-      return [];
+    if (!error && data && data.length > 0) {
+      rawData = data;
+    } else if (error) {
+      console.warn("Error fetching gps_datos, usando backup maestro:", error.message);
     }
-    // Aplanar métricas en cada registro para que campos como distancia_total, hsr, max_speed estén disponibles directamente
-    return (data || []).map((r: any) => ({
-      ...r,
-      es_simulado: Boolean(r.metricas?.es_simulado || r.metricas?.tipo_registro === "SIMULADO" || (r.metricas?.colC && String(r.metricas?.colC).toUpperCase().includes("SIMULA"))),
-      tipo_registro: r.metricas?.tipo_registro || (r.metricas?.es_simulado ? "SIMULADO" : "REAL"),
-      distancia_total: r.metricas?.["Distance(m)"] ?? r.metricas?.distancia_total ?? r.distancia_total ?? 0,
-      distancia_z4: r.metricas?.["HSR Abs (m)"] ?? r.metricas?.hsr ?? r.distancia_z4 ?? 0,
-      max_speed: r.metricas?.["MAX Speed(km/h)"] ?? r.metricas?.max_speed ?? r.max_speed ?? 0,
-      player_load: r.metricas?.["Player Load"] ?? r.metricas?.player_load ?? r.player_load ?? 0,
-      num_sprints: r.metricas?.["Sprints Count"] ?? r.metricas?.num_sprints ?? r.num_sprints ?? 0,
-      aceleraciones: r.metricas?.["Accs Count"] ?? r.metricas?.aceleraciones ?? r.aceleraciones ?? 0,
-      desaceleraciones: r.metricas?.["Decs Count"] ?? r.metricas?.desaceleraciones ?? r.desaceleraciones ?? 0,
-      duracion_min: r.duracion ?? r.metricas?.["Duration(min)"] ?? r.metricas?.duracion_min ?? 0,
-    }));
-  } catch (err) {
-    return [];
+  } catch (err: any) {
+    console.warn("Exception in getAllGpsDatos, usando backup maestro:", err?.message);
   }
+
+  if (rawData.length === 0) {
+    rawData = getMasterBackupTable("gps_datos");
+    rawData.sort((a: any, b: any) => (b.fecha || "").localeCompare(a.fecha || ""));
+  }
+
+  // Aplanar métricas en cada registro para que campos como distancia_total, hsr, max_speed estén disponibles directamente
+  return rawData.map((r: any) => ({
+    ...r,
+    es_simulado: Boolean(r.metricas?.es_simulado || r.metricas?.tipo_registro === "SIMULADO" || (r.metricas?.colC && String(r.metricas?.colC).toUpperCase().includes("SIMULA"))),
+    tipo_registro: r.metricas?.tipo_registro || (r.metricas?.es_simulado ? "SIMULADO" : "REAL"),
+    distancia_total: r.metricas?.["Distance(m)"] ?? r.metricas?.distancia_total ?? r.distancia_total ?? 0,
+    distancia_z4: r.metricas?.["HSR Abs (m)"] ?? r.metricas?.hsr ?? r.distancia_z4 ?? 0,
+    max_speed: r.metricas?.["MAX Speed(km/h)"] ?? r.metricas?.max_speed ?? r.max_speed ?? 0,
+    player_load: r.metricas?.["Player Load"] ?? r.metricas?.player_load ?? r.player_load ?? 0,
+    num_sprints: r.metricas?.["Sprints Count"] ?? r.metricas?.num_sprints ?? r.num_sprints ?? 0,
+    aceleraciones: r.metricas?.["Accs Count"] ?? r.metricas?.aceleraciones ?? r.aceleraciones ?? 0,
+    desaceleraciones: r.metricas?.["Decs Count"] ?? r.metricas?.desaceleraciones ?? r.desaceleraciones ?? 0,
+    duracion_min: r.duracion ?? r.metricas?.["Duration(min)"] ?? r.metricas?.duracion_min ?? 0,
+  }));
 }
 
 /**
@@ -1619,34 +1666,57 @@ export async function getTiposEvento() {
 }
 
 export async function getSesionesDiaRange(desde?: string, hasta?: string, equipo?: string) {
-  const supabase = getServerSupabase();
-  let query = supabase.from("sesiones_dia").select("*").order("fecha", { ascending: true });
+  let data: any[] | null = null;
+  try {
+    const supabase = getServerSupabase();
+    let query = supabase.from("sesiones_dia").select("*").order("fecha", { ascending: true });
 
-  let targetEquipo = equipo;
-  if (!targetEquipo) {
-    try {
-      const conf = await getClubConfig();
-      if (conf?.nombreClub) targetEquipo = conf.nombreClub;
-    } catch (e) {}
-  }
-
-  if (targetEquipo) {
-    if (targetEquipo.toLowerCase().includes("prat")) {
-      query = query.ilike("equipo", "%Prat%");
-    } else if (targetEquipo.toLowerCase().includes("manresa")) {
-      query = query.ilike("equipo", "%Manresa%");
-    } else if (targetEquipo.toLowerCase().includes("europa")) {
-      query = query.ilike("equipo", "%Europa%");
-    } else {
-      query = query.eq("equipo", targetEquipo);
+    let targetEquipo = equipo;
+    if (!targetEquipo) {
+      try {
+        const conf = await getClubConfig();
+        if (conf?.nombreClub) targetEquipo = conf.nombreClub;
+      } catch (e) {}
     }
+
+    if (targetEquipo) {
+      if (targetEquipo.toLowerCase().includes("prat")) {
+        query = query.ilike("equipo", "%Prat%");
+      } else if (targetEquipo.toLowerCase().includes("manresa")) {
+        query = query.ilike("equipo", "%Manresa%");
+      } else if (targetEquipo.toLowerCase().includes("europa")) {
+        query = query.ilike("equipo", "%Europa%");
+      } else {
+        query = query.eq("equipo", targetEquipo);
+      }
+    }
+
+    if (desde) query = query.gte("fecha", desde);
+    if (hasta) query = query.lte("fecha", hasta);
+
+    const res = await query;
+    if (!res.error && res.data && res.data.length > 0) {
+      data = res.data;
+    } else if (res.error) {
+      console.warn("Supabase getSesionesDiaRange error, recuperando desde backup maestro:", res.error.message);
+    }
+  } catch (err: any) {
+    console.warn("Exception getSesionesDiaRange, recuperando desde backup maestro:", err?.message);
   }
 
-  if (desde) query = query.gte("fecha", desde);
-  if (hasta) query = query.lte("fecha", hasta);
-
-  const { data, error } = await query;
-  if (error) throw new Error(`Error al cargar sesiones_dia: ${error.message}`);
+  // Fallback a backup maestro si Supabase dio error o no devolvió datos
+  if (!data || data.length === 0) {
+    const backupRows = getMasterBackupTable("sesiones_dia");
+    let filtered = [...backupRows];
+    if (desde) filtered = filtered.filter((r: any) => (r.fecha || "") >= desde);
+    if (hasta) filtered = filtered.filter((r: any) => (r.fecha || "") <= hasta);
+    if (equipo) {
+      const eqNorm = equipo.toLowerCase();
+      filtered = filtered.filter((r: any) => (r.equipo || "").toLowerCase().includes(eqNorm));
+    }
+    filtered.sort((a: any, b: any) => (a.fecha || "").localeCompare(b.fecha || ""));
+    data = filtered;
+  }
 
   const normalized = (data || []).map((row: any) => {
     const mainEv = row.evento_am ?? row.evento_principal ?? row.evento ?? (row.rival ? "P" : null);
@@ -2757,10 +2827,26 @@ export async function getEventosBloquesBBDD(dayIds?: string[]) {
     return map;
   }
 
-  const { count } = await supabase
+  const { count, error: errCount } = await supabase
     .from("sesiones_dia_bloques")
     .select("*", { count: "exact", head: true })
     .gte("fecha", FECHA_INICIO_EVENTOS);
+
+  if (errCount) {
+    console.warn("Error fetching sesiones_dia_bloques, usando backup maestro:", errCount.message);
+    const backupBloques = getMasterBackupTable("sesiones_dia_bloques");
+    const map: Record<string, any> = {};
+    backupBloques.forEach((row: any) => {
+      if (row.day_id) {
+        map[`${row.day_id}_slot_${row.slot}`] = row;
+        if (row.fecha) {
+          map[`${row.fecha}_slot_${row.slot}`] = row;
+          map[`day_${row.fecha}_slot_${row.slot}`] = row;
+        }
+      }
+    });
+    return map;
+  }
 
   const total = count || 0;
   const numPages = Math.ceil(total / PAGE_SIZE);
@@ -2806,9 +2892,9 @@ export async function getEstadoDiarioJugadores(sesionDiaIds?: string[]) {
     const { data, error } = await supabase
       .from("estado_diario_jugador")
       .select(selectFields);
-    if (error) {
-      console.error("Error fetching estado_diario_jugador:", error);
-      return [];
+    if (error || !data || data.length === 0) {
+      console.warn("Error/empty fetching estado_diario_jugador, usando backup maestro:", error?.message);
+      return getMasterBackupTable("estado_diario_jugador");
     }
     return data || [];
   }

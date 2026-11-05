@@ -43,14 +43,37 @@ async function getJugadores() {
   }
   let query = supabase.from("jugadores").select("*").order("nombre");
   if (club) query = query.ilike("equipo", `%${club}%`);
-  const { data, error } = await query;
-
-  if (error) {
-    console.error("Error al obtener jugadores:", error.message);
-    return [];
+  let finalJugadores: any[] = [];
+  try {
+    const { data, error } = await query;
+    if (!error && data && data.length > 0) {
+      finalJugadores = data;
+    } else if (error) {
+      console.warn("Error Supabase jugadores, usando backup maestro:", error.message);
+    }
+  } catch (e: any) {
+    console.warn("Exception jugadores, usando backup maestro:", e?.message);
   }
 
-  return (data || []).map((j: any) => ({
+  if (finalJugadores.length === 0) {
+    try {
+      const fs = require("fs");
+      const path = require("path");
+      const backupPath = path.join(process.cwd(), "public", "master_backup.json");
+      if (fs.existsSync(backupPath)) {
+        const parsed = JSON.parse(fs.readFileSync(backupPath, "utf8"));
+        let rows = parsed?.database_tables?.jugadores?.rows || [];
+        if (club) {
+          const clubNorm = club.toLowerCase();
+          const matches = rows.filter((j: any) => (j.equipo || "").toLowerCase().includes(clubNorm));
+          if (matches.length > 0) rows = matches;
+        }
+        finalJugadores = rows;
+      }
+    } catch (e) {}
+  }
+
+  return finalJugadores.map((j: any) => ({
     ...j,
     dorsal: j.dorsal !== undefined && j.dorsal !== null ? j.dorsal : j.cor_id,
   })) as Jugador[];
