@@ -130,8 +130,456 @@ body {
 .sessions-panel { grid-column: span 1; }.round-arrow { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; font-size: 17px; }.session-list { margin-top: 17px; }.agenda-row { display: grid; grid-template-columns: 43px 1fr auto; align-items: center; gap: 9px; padding: 13px 0; border-bottom: 1px solid var(--line); }.agenda-row:last-child { border-bottom: 0; }.agenda-row time { color: var(--muted); font-size: 11px; }.agenda-line { display: flex; align-items: center; gap: 9px; }.agenda-dot { width: 7px; height: 7px; border-radius: 50%; background: #78a9cc; }.agenda-dot.coral { background: var(--coral); }.agenda-dot.orange { background: #e3a051; }.agenda-row strong { display: block; font-size: 12px; font-weight: 700; }.agenda-row p { margin: 3px 0 0; color: var(--muted); font-size: 10px; }.event-tag { padding: 5px 7px; color: #4b7c9d; background: var(--blue); }.event-tag.orange { color: #a86f25; background: var(--orange); }
 .roster-panel { grid-column: span 2; }.roster-list { margin-top: 19px; }.roster-row { display: grid; grid-template-columns: 32px 1fr 100px 45px 15px; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }.player-name strong, .player-name span { display: block; }.player-name strong { font-size: 12px; }.player-name span { margin-top: 3px; color: var(--muted); font-size: 10px; }.status { font-size: 10px; }.status i { display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: #73b88b; }.status.orange i { background: #e3a051; }.status.coral i { background: var(--coral); }.readiness { font-size: 12px; text-align: right; }.row-arrow { color: var(--muted); text-align: right; }.gps-panel { grid-column: span 1; }.report-date { color: var(--muted); font-size: 9px; }.gps-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 24px 0 19px; }.gps-summary span, .gps-summary strong { display: block; }.gps-summary span { color: var(--muted); font-size: 9px; }.gps-summary strong { margin-top: 7px; font-family: Georgia, serif; font-size: 19px; font-weight: 400; }.gps-summary small { color: var(--muted); font-family: 'Avenir Next', sans-serif; font-size: 9px; }.sparkline { display: flex; align-items: end; gap: 4px; height: 43px; border-bottom: 1px solid var(--line); }.sparkline span { flex: 1; border-radius: 2px 2px 0 0; background: #c6dfd1; }.sparkline span:nth-child(4n) { background: #87b9a0; }.report-link { display: block; margin-top: 18px; }
 
-@media (max-width: 1050px) { .app-shell { grid-template-columns: 220px minmax(0, 1fr); }.content { padding: 32px 28px 50px; }.dashboard-grid { grid-template-columns: 1fr 1fr; }.hero-card, .week-panel, .roster-panel { grid-column: span 2; }.sessions-panel, .gps-panel { grid-column: span 1; } }
-@media (max-width: 700px) { .app-shell { display: block; }.sidebar { min-height: auto; padding: 18px; }.brand-mark { padding-bottom: 18px; }.main-nav, .sidebar-footer { display: none; }.team-switcher { padding-bottom: 0; border: 0; }.season-options { margin-bottom: 12px; }.content { padding: 27px 16px 40px; }.topbar { align-items: flex-start; margin-bottom: 23px; }.topbar h1 { font-size: 32px; }.header-actions { gap: 6px; }.header-actions .icon-button, .header-actions .notification { display: none; }.date-button { padding: 9px 8px; font-size: 9px; }.dashboard-grid { display: block; }.hero-card, .metric-card, .panel { margin-bottom: 12px; }.hero-card { min-height: 205px; padding: 23px; }.hero-orbit { width: 92px; height: 92px; margin: 35px 0 0; }.orbit-label { top: 27px; left: 25px; }.week-strip { gap: 1px; }.day-cell strong { font-size: 17px; }.selected-session { align-items: flex-start; }.load-pill { display: none; }.roster-row { grid-template-columns: 32px 1fr auto; }.roster-row .status, .roster-row .readiness, .roster-row .row-arrow { display: none; }.gps-summary { gap: 4px; } }
+/* ==========================================================================
+   SISTEMA RESPONSIVO INTEGRAL: MÓVIL Y TABLET (CE EUROPA / TOP PLAY)
+   ========================================================================== */
+
+/* Elementos auxiliares de navegación móvil y off-canvas drawer */
+.mobile-drawer-backdrop {
+  display: none;
+}
+
+.mobile-menu-trigger {
+  display: none;
+}
+
+.sidebar-mobile-header {
+  display: none;
+}
+
+.mobile-bottom-nav {
+  display: none;
+}
+
+.live-pill {
+  font-size: 11px;
+  background: #10b981;
+  color: #ffffff;
+  padding: 3px 10px;
+  border-radius: 12px;
+  margin-left: 10px;
+  font-weight: 800;
+  vertical-align: middle;
+  display: inline-block;
+}
+
+.topbar-cta-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: #1e3a8a;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
+  text-decoration: none;
+  box-shadow: 0 1px 3px rgba(30, 58, 138, 0.25);
+  transition: background 0.15s ease, transform 0.15s ease;
+  white-space: nowrap;
+}
+
+.topbar-cta-btn:hover {
+  background: #1d4ed8;
+  transform: translateY(-1px);
+}
+
+/* ─── VISTA TABLET (768px a 1024px: iPad, iPad Air, Surface, Tablets) ─── */
+@media (min-width: 768px) and (max-width: 1024px) {
+  .app-shell {
+    grid-template-columns: 210px minmax(0, 1fr) !important;
+  }
+
+  .sidebar {
+    padding: 24px 16px 20px !important;
+  }
+
+  .content {
+    padding: 24px 20px 48px !important;
+  }
+
+  .topbar {
+    margin-bottom: 20px !important;
+  }
+
+  .topbar h1 {
+    font-size: 24px !important;
+  }
+
+  .dashboard-grid {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 14px !important;
+  }
+
+  .hero-card {
+    grid-column: 1 / -1 !important;
+    padding: 18px 20px !important;
+  }
+
+  .metric-card {
+    grid-column: 1 / -1 !important;
+  }
+
+  .week-panel,
+  .sessions-panel,
+  .panel {
+    grid-column: 1 / -1 !important;
+  }
+
+  .week-strip {
+    gap: 6px !important;
+  }
+
+  .day-cell {
+    padding: 10px 4px !important;
+  }
+}
+
+/* ─── VISTA MÓVIL (< 768px: Smartphones / iPhone / Android) ─── */
+@media (max-width: 767px) {
+  .app-shell {
+    display: flex !important;
+    flex-direction: column !important;
+    width: 100% !important;
+    min-height: 100vh !important;
+    overflow-x: hidden !important;
+    position: relative !important;
+  }
+
+  /* Backdrop oscuro para el menú off-canvas desplegable */
+  .mobile-drawer-backdrop {
+    display: block !important;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.65);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: 1000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.24s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .mobile-drawer-backdrop.active {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+  }
+
+  /* Sidebar convertida en Off-Canvas Drawer fluido */
+  .sidebar {
+    display: flex !important;
+    flex-direction: column !important;
+    position: fixed !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    width: 290px !important;
+    max-width: 86vw !important;
+    height: 100% !important;
+    z-index: 1001 !important;
+    transform: translateX(-100%);
+    transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: none;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    background: #1e293b !important;
+    padding: 18px 16px 85px !important;
+  }
+
+  .sidebar.mobile-open {
+    transform: translateX(0) !important;
+    box-shadow: 12px 0 35px rgba(0, 0, 0, 0.5) !important;
+  }
+
+  .sidebar-mobile-header {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    padding-bottom: 14px !important;
+    margin-bottom: 12px !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+  }
+
+  .sidebar-close-btn {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 32px !important;
+    height: 32px !important;
+    border-radius: 8px !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    background: rgba(255, 255, 255, 0.08) !important;
+    color: #ffffff !important;
+    font-size: 15px !important;
+    font-weight: 700 !important;
+    cursor: pointer !important;
+  }
+
+  .sidebar-close-btn:active {
+    background: rgba(255, 255, 255, 0.2) !important;
+  }
+
+  /* Mantener activa la navegación dentro del drawer móvil */
+  .main-nav {
+    display: block !important;
+    padding-top: 10px !important;
+  }
+
+  .sidebar-footer {
+    display: block !important;
+    margin-top: 24px !important;
+    padding: 16px 8px !important;
+  }
+
+  /* Botón de activación del menú en cabecera */
+  .mobile-menu-trigger {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 38px !important;
+    height: 38px !important;
+    border-radius: 8px !important;
+    border: 1px solid #cbd5e1 !important;
+    background: #ffffff !important;
+    color: #1e293b !important;
+    cursor: pointer !important;
+    flex-shrink: 0 !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+  }
+
+  .mobile-menu-trigger:active {
+    background: #f1f5f9 !important;
+  }
+
+  /* Contenido principal con padding inferior para no solapar la barra fija */
+  .content {
+    padding: 14px 12px calc(80px + env(safe-area-inset-bottom, 0px)) 12px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    overflow-x: hidden !important;
+  }
+
+  /* Cabecera superior fluida */
+  .topbar {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 12px !important;
+    margin-bottom: 16px !important;
+  }
+
+  .topbar > div:first-child {
+    display: flex !important;
+    align-items: center !important;
+    gap: 10px !important;
+    width: 100% !important;
+  }
+
+  .topbar .breadcrumb {
+    display: none !important;
+  }
+
+  .topbar h1 {
+    font-size: 19px !important;
+    line-height: 1.25 !important;
+    margin: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+  }
+
+  .live-pill {
+    font-size: 9.5px !important;
+    padding: 2px 7px !important;
+    margin-left: 0 !important;
+  }
+
+  .topbar p {
+    font-size: 11px !important;
+    margin-top: 2px !important;
+  }
+
+  .header-actions {
+    display: flex !important;
+    width: 100% !important;
+  }
+
+  .topbar-cta-btn {
+    width: 100% !important;
+    justify-content: center !important;
+    padding: 9px 12px !important;
+    font-size: 12px !important;
+  }
+
+  /* Dashboard en flujo vertical continuo */
+  .dashboard-grid {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+    width: 100% !important;
+  }
+
+  /* Hero Card Resumen del Día */
+  .hero-card {
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    padding: 16px 14px !important;
+    border-radius: 12px !important;
+    min-height: unset !important;
+  }
+
+  .hero-card h2 {
+    font-size: 20px !important;
+    line-height: 1.2 !important;
+    margin: 4px 0 6px 0 !important;
+  }
+
+  .hero-card p {
+    font-size: 11.5px !important;
+  }
+
+  /* Metric Card Disponibilidad */
+  .metric-card {
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    padding: 14px 14px !important;
+    border-radius: 12px !important;
+    min-height: unset !important;
+  }
+
+  .metric-value {
+    font-size: 42px !important;
+    margin: 14px 0 10px !important;
+  }
+
+  /* Panel Semana: swipe táctil horizontal */
+  .week-panel {
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    padding: 14px 12px !important;
+    border-radius: 12px !important;
+  }
+
+  .week-strip {
+    display: flex !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    gap: 6px !important;
+    padding-bottom: 8px !important;
+    margin: 14px 0 12px 0 !important;
+    scrollbar-width: thin;
+  }
+
+  .day-cell {
+    min-width: 52px !important;
+    flex: 1 0 auto !important;
+    padding: 8px 4px !important;
+    border-radius: 8px !important;
+  }
+
+  .day-cell strong {
+    font-size: 17px !important;
+    margin: 4px 0 !important;
+  }
+
+  /* Panel Agenda del Día */
+  .sessions-panel {
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    padding: 14px 14px !important;
+    border-radius: 12px !important;
+  }
+
+  .agenda-row {
+    grid-template-columns: 42px 1fr auto !important;
+    gap: 8px !important;
+    padding: 10px 0 !important;
+  }
+
+  .agenda-row time {
+    font-size: 10.5px !important;
+  }
+
+  .agenda-row strong {
+    font-size: 11.5px !important;
+  }
+
+  /* Paneles HSR y Observaciones en Móvil */
+  .panel {
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    padding: 14px 14px !important;
+    border-radius: 12px !important;
+  }
+
+  /* Barra de Navegación Móvil Inferior Fija */
+  .mobile-bottom-nav {
+    display: flex !important;
+    position: fixed !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    height: 58px !important;
+    background: rgba(255, 255, 255, 0.96) !important;
+    backdrop-filter: blur(16px) !important;
+    -webkit-backdrop-filter: blur(16px) !important;
+    border-top: 1px solid #e2e8f0 !important;
+    justify-content: space-around !important;
+    align-items: center !important;
+    z-index: 990 !important;
+    padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.04) !important;
+  }
+
+  .bottom-nav-item {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    flex: 1 !important;
+    height: 100% !important;
+    padding: 4px 0 !important;
+    color: #64748b !important;
+    text-decoration: none !important;
+    background: transparent !important;
+    border: none !important;
+    cursor: pointer !important;
+    transition: color 0.15s ease !important;
+    -webkit-tap-highlight-color: transparent !important;
+  }
+
+  .bottom-nav-item:active {
+    opacity: 0.7 !important;
+  }
+
+  .bottom-nav-item.active {
+    color: #1e3a8a !important;
+  }
+
+  .bottom-nav-item.active .bottom-nav-label {
+    font-weight: 800 !important;
+    color: #1e3a8a !important;
+  }
+
+  .bottom-nav-icon {
+    font-size: 19px !important;
+    line-height: 1 !important;
+    margin-bottom: 2px !important;
+  }
+
+  .bottom-nav-label {
+    font-size: 10px !important;
+    font-weight: 600 !important;
+    letter-spacing: -0.01em !important;
+  }
+}
 
 /* ===== Listado de deportistas ===== */
 

@@ -216,6 +216,7 @@ export default function Home() {
   const [seasons, setSeasons] = useState<Array<keyof typeof teamsBySeason>>(["2026/27"]);
   const [team, setTeam] = useState<string>("CE Europa");
   const [isHydrated, setIsHydrated] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const clubConfig = useClubConfig();
 
   const [openGroups, setOpenGroups] = useState({ screens: true, reports: false, database: false, settings: false });
@@ -1146,11 +1147,31 @@ export default function Home() {
 
   return (
     <main className="app-shell">
-      {/* ─── BARRA LATERAL (SIDEBAR EXACTA ORIGINAL) ─── */}
-      <aside className="sidebar">
+      {/* ─── BACKDROP OSCURO PARA DRAWER MÓVIL ─── */}
+      <div
+        className={`mobile-drawer-backdrop ${mobileMenuOpen ? "active" : ""}`}
+        onClick={() => setMobileMenuOpen(false)}
+        aria-hidden="true"
+      />
+
+      {/* ─── BARRA LATERAL (SIDEBAR / OFF-CANVAS EN MÓVIL) ─── */}
+      <aside className={`sidebar ${mobileMenuOpen ? "mobile-open" : ""}`}>
+        {/* Cabecera para móvil con botón cerrar */}
+        <div className="sidebar-mobile-header">
+          <span style={{ fontSize: "12px", fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+            Navegación
+          </span>
+          <button
+            type="button"
+            className="sidebar-close-btn"
+            onClick={() => setMobileMenuOpen(false)}
+            aria-label="Cerrar menú"
+          >
+            ✕
+          </button>
+        </div>
         
-        
-        <div className="brand-header" style={{ padding: "20px 0", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <div className="brand-header" style={{ padding: "16px 0", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center" }}>
           <img
             src={clubConfig?.escudoUrl || "/ce-europa.png"}
             alt={clubConfig?.nombreClub || "Club"}
@@ -1190,36 +1211,35 @@ export default function Home() {
       <section className="content" id="resumen">
         {/* TOPBAR */}
         <header className="topbar">
-          <div>
-            <span className="breadcrumb">CENTRO DE CONTROL / <strong>RESUMEN DE RENDIMIENTO</strong></span>
-            <h1 suppressHydrationWarning>
-              Panel de Control · {team}
-              <span style={{ fontSize: "12px", background: "#10b981", color: "#ffffff", padding: "3px 10px", borderRadius: "12px", marginLeft: "12px", fontWeight: 800, verticalAlign: "middle" }}>
-                ● EN VIVO
-              </span>
-            </h1>
-            <p style={{ margin: "4px 0 0", fontSize: "12px", color: "#64748b", textTransform: "capitalize" }} suppressHydrationWarning>
-              {todayFormatted} · Microciclo en curso
-            </p>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            {/* Botón Hamburguesa visible en Móvil */}
+            <button
+              type="button"
+              className="mobile-menu-trigger"
+              onClick={() => setMobileMenuOpen(true)}
+              aria-label="Abrir menú de navegación"
+            >
+              <span style={{ fontSize: "20px", lineHeight: 1 }}>☰</span>
+            </button>
+            <div>
+              <span className="breadcrumb">CENTRO DE CONTROL / <strong>RESUMEN DE RENDIMIENTO</strong></span>
+              <h1 suppressHydrationWarning>
+                Panel de Control · {team}
+                <span className="live-pill">
+                  ● EN VIVO
+                </span>
+              </h1>
+              <p style={{ margin: "3px 0 0", fontSize: "12px", color: "#64748b", textTransform: "capitalize" }} suppressHydrationWarning>
+                {todayFormatted} · Microciclo en curso
+              </p>
+            </div>
           </div>
           <div className="header-actions">
             <Link
               href="/calendario"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "6px",
-                padding: "8px 14px",
-                borderRadius: "8px",
-                background: "#1e3a8a",
-                color: "#ffffff",
-                fontSize: "12px",
-                fontWeight: 800,
-                textDecoration: "none",
-                boxShadow: "0 1px 3px rgba(30, 58, 138, 0.25)",
-              }}
+              className="topbar-cta-btn"
             >
-              <span>📅</span> Ver Planificación
+              <span>📅</span> <span>Ver Planificación</span>
             </Link>
           </div>
         </header>
@@ -2109,6 +2129,35 @@ export default function Home() {
 
         </div>
       </section>
+
+      {/* ─── BARRA DE NAVEGACIÓN INFERIOR PARA MÓVIL (BOTTOM NAV) ─── */}
+      <nav className="mobile-bottom-nav" aria-label="Navegación rápida móvil">
+        <Link href="/" className="bottom-nav-item active">
+          <span className="bottom-nav-icon">🏠</span>
+          <span className="bottom-nav-label">Inicio</span>
+        </Link>
+        <Link href="/deportistas" className="bottom-nav-item">
+          <span className="bottom-nav-icon">🏃</span>
+          <span className="bottom-nav-label">Plantilla</span>
+        </Link>
+        <Link href="/calendario" className="bottom-nav-item">
+          <span className="bottom-nav-icon">📅</span>
+          <span className="bottom-nav-label">Agenda</span>
+        </Link>
+        <Link href="/cargas" className="bottom-nav-item">
+          <span className="bottom-nav-icon">⚡</span>
+          <span className="bottom-nav-label">Cargas</span>
+        </Link>
+        <button
+          type="button"
+          className="bottom-nav-item"
+          onClick={() => setMobileMenuOpen(true)}
+          aria-label="Abrir menú"
+        >
+          <span className="bottom-nav-icon">☰</span>
+          <span className="bottom-nav-label">Menú</span>
+        </button>
+      </nav>
     </main>
   );
 }
