@@ -16,45 +16,36 @@ type Jugador = {
 };
 
 async function getJugadores() {
+  let finalJugadores: any[] = [];
   const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!supabaseUrl || !supabaseKey) return [];
 
-  const supabase = createClient(supabaseUrl, supabaseKey);
   let club = "";
   try {
-    const { data: conf } = await supabase.from("configuracion_club").select("nombre_club").limit(1).maybeSingle();
-    if (conf?.nombre_club) {
-      club = conf.nombre_club.replace(/^(CE|CF|FC|UE|CD|AE|SD|UD|CP)\s+/i, "").trim();
+    const fs = require("fs");
+    const path = require("path");
+    const confPath = path.join(process.cwd(), "public", "club_config.json");
+    if (fs.existsSync(confPath)) {
+      const localConf = JSON.parse(fs.readFileSync(confPath, "utf8"));
+      if (localConf?.nombreClub) {
+        club = localConf.nombreClub.replace(/^(CE|CF|FC|UE|CD|AE|SD|UD|CP)\s+/i, "").trim();
+      }
     }
   } catch {}
-  if (!club) {
+
+  if (supabaseUrl && supabaseKey) {
     try {
-      const fs = require("fs");
-      const path = require("path");
-      const confPath = path.join(process.cwd(), "public", "club_config.json");
-      if (fs.existsSync(confPath)) {
-        const localConf = JSON.parse(fs.readFileSync(confPath, "utf8"));
-        if (localConf?.nombreClub) {
-          club = localConf.nombreClub.replace(/^(CE|CF|FC|UE|CD|AE|SD|UD|CP)\s+/i, "").trim();
-        }
+      const supabase = createClient(supabaseUrl, supabaseKey);
+      let query = supabase.from("jugadores").select("*").order("nombre");
+      if (club) query = query.ilike("equipo", `%${club}%`);
+      const { data, error } = await query;
+      if (!error && data && data.length > 0) {
+        finalJugadores = data;
       }
-    } catch {}
-  }
-  let query = supabase.from("jugadores").select("*").order("nombre");
-  if (club) query = query.ilike("equipo", `%${club}%`);
-  let finalJugadores: any[] = [];
-  try {
-    const { data, error } = await query;
-    if (!error && data && data.length > 0) {
-      finalJugadores = data;
-    } else if (error) {
-      console.warn("Error Supabase jugadores, usando backup maestro:", error.message);
-    }
-  } catch (e: any) {
-    console.warn("Exception jugadores, usando backup maestro:", e?.message);
+    } catch (e) {}
   }
 
+  // Si Supabase no devolvió datos o las claves no están registradas en Vercel, cargar del backup maestro
   if (finalJugadores.length === 0) {
     try {
       const fs = require("fs");
