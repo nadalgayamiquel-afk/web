@@ -1,0 +1,40 @@
+{
+  "5b2a3f2a-59d4-4acc-9edb-8fad83e23255": {
+    "ratios": {
+      "Distance(m)": 1,
+      "Distancia / Min": 1,
+      "Distance +21 (m)": 1,
+      "Acc+Dec": 1,
+      "MAX Speed(km/h)": 1,
+      "Sprints Count": 1
+    },
+    "variables": [
+      "Distance(m)",
+      "Acc+Dec",
+      "Sprints Count",
+      "MAX Speed(km/h)"
+    ],
+    "hsriVariableKey": "Distance +21 (m)",
+    "benchmarkOverrides": {},
+    "updatedAt": "2026-10-18T09:58:10.393Z"
+  },
+  "99f7e626-3a56-4713-aa74-cf40457b7f42": {
+    "ratios": {
+      "Acc+Dec": 2.8,
+      "Distance(m)": 2.8,
+      "Player Load": 1,
+      "Distancia / Min": 1,
+      "MAX Speed(km/h)": 1,
+      "Distance +21 (m)": 1,
+      "derived_hsr_19_8": 1.4
+    },
+    "variables": [
+      "Distance(m)",
+      "derived_hsr_19_8",
+      "Acc+Dec"
+    ],
+    "hsriVariableKey": "16 - 17 km/h (Distancia)",
+    "benchmarkOverrides": {},
+    "updatedAt": "2026-11-03T18:24:26.380Z"
+  }
+}

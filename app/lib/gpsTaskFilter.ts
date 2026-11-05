@@ -86,6 +86,8 @@ export function getEffectiveRecord(
     zeroMetricas["hmld"] = 0;
     zeroMetricas["HMLD (num)"] = 0;
     zeroMetricas["hmld_time"] = 0;
+    zeroMetricas["15 - 16 km/h (Distancia)"] = 0;
+    zeroMetricas["16 - 17 km/h (Distancia)"] = 0;
     zeroMetricas["1 - 8 km/h (Distancia)"] = 0;
     zeroMetricas["8 - 17 km/h (Distancia)"] = 0;
     zeroMetricas["17 - 19,8 km/h (Distancia)"] = 0;
@@ -190,8 +192,8 @@ export function getEffectiveRecord(
       if (mDc > maxDec) maxDec = mDc;
       sumHsr += hsrVal;
 
-      sumV1_8 += Number(t["1 - 8 km/h (Distancia)"] || 0);
-      sumV8_17 += Number(t["8 - 17 km/h (Distancia)"] || 0);
+      sumV1_8 += Number(t["15 - 16 km/h (Distancia)"] || t["15-16 km/h (Distancia)"] || t["1 - 8 km/h (Distancia)"] || t.distance_vrange1 || 0);
+      sumV8_17 += Number(t["16 - 17 km/h (Distancia)"] || t["16-17 km/h (Distancia)"] || t["8 - 17 km/h (Distancia)"] || t.distance_vrange2 || 0);
       sumV17_19 += Number(t["17 - 19,8 km/h (Distancia)"] || 0);
       sumV19_21 += Number(t["19,8 - 21 km/h (Distancia)"] || 0);
       sumV21 += Number(t["21 - 24 km/h (Distancia)"] || 0);
@@ -329,6 +331,8 @@ export function getEffectiveRecord(
     newMetricas["HSR Abs (m)"] = finalHsr;
     newMetricas["hsr"] = finalHsr;
 
+    newMetricas["15 - 16 km/h (Distancia)"] = Math.round(sumV1_8);
+    newMetricas["16 - 17 km/h (Distancia)"] = Math.round(sumV8_17);
     newMetricas["1 - 8 km/h (Distancia)"] = Math.round(sumV1_8);
     newMetricas["8 - 17 km/h (Distancia)"] = Math.round(sumV8_17);
     newMetricas["17 - 19,8 km/h (Distancia)"] = Math.round(sumV17_19);

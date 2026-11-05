@@ -33,7 +33,7 @@ export type GimnasioSesion = {
   notas?: string;
   videoUrl?: string; // Enlace de video de la sesión
   hora?: string; // Hora específica del evento/reporte (ej. 10:30)
-  lugar?: string; // Lugar del evento/reporte (ej. BOX49)
+  lugar?: string; // Lugar del evento/reporte (ej. GYM)
   ejercicios: GimnasioEjercicio[];
 };
 

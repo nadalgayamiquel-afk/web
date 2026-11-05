@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { resolvePlanificacionMD, getLocalStoragePlanificacionDays } from "@/app/lib/planificacionMd";
 import Link from 'next/link';
 import {
   GimnasioEjercicio,
@@ -170,21 +171,27 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
         }
       }
 
-      const savedCal = localStorage.getItem('planificacion_days_v5');
-      if (savedCal) {
-        const parsed = JSON.parse(savedCal);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          if (!parsed.some(d => d.fecha === '2026-10-10')) {
-            parsed.push({
-              id: 'dia_2026-10-10',
-              fecha: '2026-10-10',
-              dia_semana: 'Sábado',
-              md: '-2MD',
-              meso_nombre: 'COMPETITIVO',
-            } as any);
-          }
-          setAllDays(parsed);
+      const localCal = getLocalStoragePlanificacionDays();
+      if (localCal && localCal.length > 0) {
+        const cleaned = localCal.map((d: any) => {
+          const m = resolvePlanificacionMD(d.fecha, localCal);
+          return m ? { ...d, md: m } : d;
+        });
+        if (!cleaned.some((d: any) => d.fecha === '2026-10-10')) {
+          cleaned.push({
+            id: 'dia_2026-10-10',
+            fecha: '2026-10-10',
+            dia_semana: 'Sábado',
+            md: '-2MD',
+            meso_nombre: 'COMPETITIVO',
+          } as any);
         }
+        setAllDays(cleaned);
+        try {
+          localStorage.setItem("planificacion_days_v5", JSON.stringify(cleaned));
+          localStorage.setItem("planificacion_days_v2", JSON.stringify(cleaned));
+          localStorage.setItem("planificacion_days_v1", JSON.stringify(cleaned));
+        } catch {}
       }
       const savedBloques = localStorage.getItem('eventos_bloques_map_v5') || localStorage.getItem('eventos_bloques_map_v4');
       if (savedBloques) {
@@ -1091,7 +1098,7 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
     if (!day) {
       return {
         hora: '8:00',
-        lugar: 'BOX49',
+        lugar: 'GYM',
         duracion: String(sesion?.duracionMin || 45),
         orientacion: sesion?.categoria || 'RECUPERACION',
         tipo: 'COADYUVANTE',
@@ -1171,10 +1178,10 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
 
     // Extraer lugar limpio (si la sesión tiene lugar editado, usarlo)
     let lugar = (sesion?.lugar && sesion.lugar.trim()) || coEvent?.lugar || (day as any).lugar || (day as any).campo || '';
-    if (lugar) {
+    if (lugar && lugar.trim().toUpperCase() !== 'BOX49') {
       lugar = lugar.trim().toUpperCase();
     } else {
-      lugar = 'BOX49';
+      lugar = 'GYM';
     }
 
     // Extraer duración
@@ -1276,6 +1283,7 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
 
   const handlePrintReport = () => {
     if (typeof window === 'undefined') return;
+    setToastMessage(null);
     const prevTitle = document.title;
     const pdfTitle = getPdfExportTitle();
     document.title = pdfTitle;
@@ -1301,7 +1309,7 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
     <div style={{ minHeight: '100vh', background: '#f8fafc', color: '#0f172a', fontFamily: 'inherit' }}>
       {/* Toast */}
       {toastMessage && (
-        <div style={{
+        <div className="no-print" style={{
           position: 'fixed',
           top: '20px',
           right: '24px',
@@ -1916,7 +1924,8 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                   Contexto MD
                 </th>
                 {diasFiltrados.map(day => {
-                  const badge = getMdBadgeStyle(day.md);
+                  const effectiveMd = resolvePlanificacionMD(day.fecha, allDays) || day.md || '—';
+                  const badge = getMdBadgeStyle(effectiveMd);
                   return (
                     <th
                       key={day.id}
@@ -1929,16 +1938,19 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                         borderBottom: '1px solid #e2e8f0',
                       }}
                     >
-                      <span style={{
-                        fontSize: '9.5px',
-                        fontWeight: 900,
-                        padding: '1px 5px',
-                        borderRadius: '10px',
-                        background: badge.bg,
-                        color: badge.text,
-                        border: '1px solid ' + badge.border,
-                      }}>
-                        {day.md || '—'}
+                      <span
+                        suppressHydrationWarning
+                        style={{
+                          fontSize: '9.5px',
+                          fontWeight: 900,
+                          padding: '1px 5px',
+                          borderRadius: '10px',
+                          background: badge.bg,
+                          color: badge.text,
+                          border: '1px solid ' + badge.border,
+                        }}
+                      >
+                        {effectiveMd || '—'}
                       </span>
                     </th>
                   );
@@ -2513,7 +2525,7 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                   <label style={{ display: 'block', fontSize: '10.5px', fontWeight: 800, color: '#1e3a8a', marginBottom: '2px' }}>📍 Lugar Reporte</label>
                   <input
                     type="text"
-                    placeholder="BOX49"
+                    placeholder="GYM"
                     value={modalSesion.lugar || ''}
                     onChange={e => setModalSesion({ ...modalSesion, lugar: e.target.value })}
                     style={{ width: '100%', padding: '6px 8px', borderRadius: '5px', border: '1px solid #cbd5e1', fontSize: '12px', fontWeight: 700 }}
@@ -3214,18 +3226,20 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
 
       {/* VISTA PREVIA E IMPRESIÓN DEL REPORTE (IDÉNTICO A LA FOTO ADJUNTA) */}
       {showReportPreviewModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: '#e2e8f0',
-          zIndex: 999999,
-          overflowY: 'auto',
-          display: 'flex',
-          flexDirection: 'column',
-        }}>
+        <div
+          className="gym-print-modal-overlay"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: '#e2e8f0',
+            zIndex: 999999,
+            overflowY: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+          }}>
           {/* Barra de Controles Superior (Oculta al Imprimir) */}
           <div className="no-print" style={{
             background: '#0f172a',
@@ -3290,12 +3304,82 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
           </div>
 
           {/* CONTENEDOR DE FICHAS IMPRIMIBLES (ESTILO FOTO ADJUNTA) */}
-          <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '24px' }}>
+          <div
+            className="gym-print-sheets-container"
+            style={{ padding: '24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '24px' }}>
             <style jsx global>{`
               @media print {
-                body { background: #ffffff !important; margin: 0 !important; }
-                .no-print { display: none !important; }
-                .report-page-break { page-break-after: always !important; break-after: page !important; margin-bottom: 0 !important; box-shadow: none !important; border: none !important; }
+                @page {
+                  size: A4 portrait !important;
+                  margin: 6mm 6mm 6mm 6mm !important;
+                }
+                html, body {
+                  background: #ffffff !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                  width: 100% !important;
+                  height: auto !important;
+                  -webkit-print-color-adjust: exact !important;
+                  print-color-adjust: exact !important;
+                }
+                .no-print {
+                  display: none !important;
+                }
+                .gym-print-modal-overlay {
+                  position: static !important;
+                  background: #ffffff !important;
+                  padding: 0 !important;
+                  margin: 0 !important;
+                  width: 100% !important;
+                  height: auto !important;
+                  overflow: visible !important;
+                  display: block !important;
+                }
+                .gym-print-sheets-container {
+                  padding: 0 !important;
+                  margin: 0 !important;
+                  width: 100% !important;
+                  gap: 0 !important;
+                  display: block !important;
+                }
+                .report-page-break {
+                  page-break-after: always !important;
+                  break-after: page !important;
+                  page-break-inside: avoid !important;
+                  break-inside: avoid !important;
+                  width: 100% !important;
+                  max-width: 100% !important;
+                  margin: 0 auto !important;
+                  padding: 3mm 5mm !important;
+                  box-sizing: border-box !important;
+                  box-shadow: none !important;
+                  border: none !important;
+                }
+                .report-page-break:last-child {
+                  page-break-after: auto !important;
+                  break-after: auto !important;
+                }
+                .report-page-break .gym-header-top {
+                  margin-bottom: 8px !important;
+                }
+                .report-page-break .gym-yellow-bar {
+                  margin-bottom: 6px !important;
+                  padding: 4px 8px !important;
+                }
+                .report-page-break .gym-comment-block {
+                  margin-bottom: 5px !important;
+                  padding-bottom: 2px !important;
+                }
+                .report-page-break table {
+                  margin-bottom: 4px !important;
+                  width: 100% !important;
+                  table-layout: fixed !important;
+                }
+                .report-page-break th,
+                .report-page-break td {
+                  -webkit-print-color-adjust: exact !important;
+                  print-color-adjust: exact !important;
+                }
               }
             `}</style>
 
@@ -3332,7 +3416,7 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                   }}
                 >
                   {/* CABECERA TOP: TEXTO/EQUIPO IZQUIERDA - FOTO Y NOMBRE CENTRO - ESCUDO DERECHA */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px', gap: '12px' }}>
+                  <div className="gym-header-top" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', gap: '12px' }}>
                     {/* Izquierda: Título real de la sesión (auto-ajustable a longitud) y Datos del Club */}
                     <div style={{ minWidth: '180px', maxWidth: '240px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '14px' }}>
                       {(() => {
@@ -3440,10 +3524,10 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                     const durVal = item.sesion.duracionMin ? String(item.sesion.duracionMin) : evCo.duracion;
 
                     return (
-                      <div style={{
+                      <div className="gym-yellow-bar" style={{
                         background: '#fef08a',
                         borderRadius: '4px',
-                        padding: '8px 14px',
+                        padding: '6px 12px',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
@@ -3460,23 +3544,21 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                           <span>{formatFechaCol(item.sesion.fecha).diaSem}</span>
                           <span>{formatFechaCol(item.sesion.fecha).diaMes}/26</span>
                           <span style={{ textTransform: 'uppercase', color: '#1e293b' }}>
-                            {item.sesion.md || item.day?.periodo || 'COMPETITIVO'}
+                            {resolvePlanificacionMD(item.sesion.fecha, allDays) || item.day?.md || item.sesion.md || 'MD'}
                           </span>
                         </div>
 
                         {/* Zona Central: Título real de la sesión (auto-ajustable a longitud) */}
                         <div style={{
-                          flex: 1,
-                          minWidth: 0,
+                          flex: 2,
+                          minWidth: '160px',
                           textAlign: 'center',
                           fontWeight: 900,
-                          fontSize: sTitle.length > 28 ? '10px' : sTitle.length > 20 ? '11px' : sTitle.length > 14 ? '12px' : '13px',
+                          fontSize: sTitle.length > 32 ? '11px' : sTitle.length > 22 ? '12px' : '13.5px',
                           textTransform: 'uppercase',
                           letterSpacing: '0.8px',
                           color: '#0f172a',
-                          padding: '0 8px',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
+                          padding: '0 12px',
                           whiteSpace: 'nowrap',
                         }} title={sTitle}>
                           {sTitle}
@@ -3509,11 +3591,11 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
 
                   {/* COMENTARIO DE LA SESIÓN Y BOTÓN DE VIDEO ENTRE BLOQUE AMARILLO Y TABLA (SIN RECUADRO) */}
                   {(Boolean(item.sesion.notas?.trim()) || Boolean(hasReportVideo(item.sesion.videoUrl))) && (
-                    <div style={{
+                    <div className="gym-comment-block" style={{
                       background: 'transparent',
                       border: 'none',
-                      padding: '2px 0 8px 0',
-                      marginBottom: '12px',
+                      padding: '2px 0 6px 0',
+                      marginBottom: '8px',
                       display: 'flex',
                       alignItems: 'flex-start',
                       justifyContent: 'space-between',
@@ -3596,7 +3678,7 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                 }}
               >
                 {/* CABECERA TOP GRUPAL: TEXTO/EQUIPO IZQUIERDA - TITULO CENTRO - ESCUDO DERECHA */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px', gap: '12px' }}>
+                <div className="gym-header-top" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', gap: '12px' }}>
                   {/* Izquierda: Título real de la sesión (auto-ajustable a longitud) y Datos del Club */}
                   <div style={{ minWidth: '180px', maxWidth: '240px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '14px' }}>
                     {(() => {
@@ -3692,23 +3774,21 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                         <span>{formatFechaCol(reportData.teamSheet.sesion.fecha).diaSem}</span>
                         <span>{formatFechaCol(reportData.teamSheet.sesion.fecha).diaMes}/26</span>
                         <span style={{ textTransform: 'uppercase', color: '#1e293b' }}>
-                          {reportData.teamSheet.sesion.md || reportData.teamSheet.day?.periodo || 'COMPETITIVO'}
+                          {resolvePlanificacionMD(reportData.teamSheet.sesion.fecha, allDays) || reportData.teamSheet.day?.md || reportData.teamSheet.sesion.md || 'MD'}
                         </span>
                       </div>
 
                       {/* Zona Central: Título real de la sesión (auto-ajustable a longitud) */}
                       <div style={{
-                        flex: 1,
-                        minWidth: 0,
+                        flex: 2,
+                        minWidth: '160px',
                         textAlign: 'center',
                         fontWeight: 900,
-                        fontSize: tTitle.length > 28 ? '10px' : tTitle.length > 20 ? '11px' : tTitle.length > 14 ? '12px' : '13px',
+                        fontSize: tTitle.length > 32 ? '11px' : tTitle.length > 22 ? '12px' : '13.5px',
                         textTransform: 'uppercase',
                         letterSpacing: '0.8px',
                         color: '#0f172a',
-                        padding: '0 8px',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
+                        padding: '0 12px',
                         whiteSpace: 'nowrap',
                       }} title={tTitle}>
                         {tTitle}
@@ -3904,29 +3984,33 @@ function ReportExerciseTable({ sesion }: { sesion: GimnasioSesion }) {
     cols.push({
       id: 'bloq',
       label: 'Bloq',
-      align: 'left',
-      width: '55px',
+      align: 'center',
+      width: '38px',
       renderCell: (ej) => (
-        <span style={{ fontWeight: 700, color: '#475569', whiteSpace: 'nowrap' }}>
+        <span style={{ fontWeight: 800, color: '#475569', fontSize: '10px', whiteSpace: 'nowrap' }}>
           {ej.bloque || '—'}
         </span>
       ),
     });
   }
 
-  // Ejercicio siempre visible con ajuste de longitud y wrapping
+  // Ejercicio siempre visible con ancho horizontal amplio y proporcionado
   cols.push({
     id: 'ejercicio',
     label: 'Ejercicio',
     align: 'left',
+    width: '210px',
     renderCell: (ej) => (
       <div style={{
         fontWeight: 900,
         color: '#0f172a',
         textTransform: 'uppercase',
-        lineHeight: 1.3,
-        wordBreak: 'break-word',
+        lineHeight: 1.25,
+        fontSize: '10.5px',
+        wordBreak: 'normal',
+        overflowWrap: 'break-word',
         whiteSpace: 'normal',
+        minWidth: '180px',
       }}>
         {ej.nombre || 'Ejercicio'}
       </div>
@@ -3938,9 +4022,9 @@ function ReportExerciseTable({ sesion }: { sesion: GimnasioSesion }) {
       id: 'series',
       label: 'Nº Series',
       align: 'center',
-      width: '75px',
+      width: '46px',
       renderCell: (ej) => (
-        <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+        <span style={{ fontWeight: 700, fontSize: '10px', whiteSpace: 'nowrap' }}>
           {ej.series || '—'}
         </span>
       ),
@@ -3952,9 +4036,9 @@ function ReportExerciseTable({ sesion }: { sesion: GimnasioSesion }) {
       id: 'reps',
       label: 'Rep',
       align: 'center',
-      width: '65px',
+      width: '48px',
       renderCell: (ej) => (
-        <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+        <span style={{ fontWeight: 700, fontSize: '10px', whiteSpace: 'nowrap' }}>
           {ej.reps || '—'}
         </span>
       ),
@@ -3966,9 +4050,9 @@ function ReportExerciseTable({ sesion }: { sesion: GimnasioSesion }) {
       id: 'carga',
       label: 'Carga',
       align: 'center',
-      width: '85px',
+      width: '46px',
       renderCell: (ej) => (
-        <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+        <span style={{ fontWeight: 700, fontSize: '10px', whiteSpace: 'nowrap' }}>
           {ej.pesoKg || '—'}
         </span>
       ),
@@ -3980,9 +4064,9 @@ function ReportExerciseTable({ sesion }: { sesion: GimnasioSesion }) {
       id: 'vel',
       label: 'Vel',
       align: 'center',
-      width: '80px',
+      width: '58px',
       renderCell: (ej) => (
-        <span style={{ color: '#475569', whiteSpace: 'nowrap' }}>
+        <span style={{ color: '#475569', fontSize: '9.5px', whiteSpace: 'nowrap' }}>
           {ej.velocidad || ej.variablesPersonalizadas?.['Velocidad'] || ej.variablesPersonalizadas?.['Vel'] || '—'}
         </span>
       ),
@@ -3994,13 +4078,14 @@ function ReportExerciseTable({ sesion }: { sesion: GimnasioSesion }) {
       id: 'material',
       label: 'Material',
       align: 'left',
-      width: '140px',
+      width: '78px',
       renderCell: (ej) => (
         <div style={{
           color: '#334155',
           fontWeight: 600,
-          lineHeight: 1.3,
-          wordBreak: 'break-word',
+          fontSize: '9.5px',
+          lineHeight: 1.25,
+          wordBreak: 'normal',
           whiteSpace: 'normal',
         }}>
           {ej.material || ej.variablesPersonalizadas?.['Material'] || '—'}
@@ -4014,9 +4099,9 @@ function ReportExerciseTable({ sesion }: { sesion: GimnasioSesion }) {
       id: 'rpe',
       label: 'RPE',
       align: 'center',
-      width: '60px',
+      width: '44px',
       renderCell: (ej) => (
-        <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+        <span style={{ fontWeight: 700, fontSize: '10px', whiteSpace: 'nowrap' }}>
           {ej.rpe != null ? ej.rpe : '—'}
         </span>
       ),
@@ -4028,13 +4113,14 @@ function ReportExerciseTable({ sesion }: { sesion: GimnasioSesion }) {
       id: `cust_${k}`,
       label: k,
       align: 'center',
-      width: '90px',
+      width: '52px',
       renderCell: (ej) => (
         <div style={{
           color: '#334155',
           fontWeight: 600,
-          lineHeight: 1.3,
-          wordBreak: 'break-word',
+          fontSize: '9.5px',
+          lineHeight: 1.25,
+          wordBreak: 'normal',
           whiteSpace: 'normal',
         }}>
           {ej.variablesPersonalizadas?.[k] || '—'}
@@ -4048,7 +4134,7 @@ function ReportExerciseTable({ sesion }: { sesion: GimnasioSesion }) {
       id: 'video',
       label: 'Video',
       align: 'center',
-      width: '65px',
+      width: '54px',
       renderCell: (ej) => (
         hasReportVideo(ej.videoUrl) ? (
           <a
@@ -4058,21 +4144,24 @@ function ReportExerciseTable({ sesion }: { sesion: GimnasioSesion }) {
             style={{
               display: 'inline-flex',
               alignItems: 'center',
-              gap: '3px',
-              padding: '2px 7px',
+              justifyContent: 'center',
+              gap: '2px',
+              padding: '2px 5px',
               borderRadius: '3px',
               background: '#dc2626',
               color: '#ffffff',
               textDecoration: 'none',
-              fontSize: '9.5px',
+              fontSize: '8.5px',
               fontWeight: 800,
               boxShadow: '0 1px 2px rgba(220, 38, 38, 0.2)',
               whiteSpace: 'nowrap',
               cursor: 'pointer',
+              width: '44px',
+              boxSizing: 'border-box',
             }}
             title="Ver video de este ejercicio"
           >
-            <span style={{ fontSize: '8px' }}>▶</span>
+            <span style={{ fontSize: '7px' }}>▶</span>
             <span>Video</span>
           </a>
         ) : null
@@ -4084,20 +4173,22 @@ function ReportExerciseTable({ sesion }: { sesion: GimnasioSesion }) {
     <table style={{
       width: '100%',
       borderCollapse: 'collapse',
-      fontSize: '11.5px',
-      marginBottom: '16px',
+      fontSize: '10.5px',
+      marginBottom: '8px',
       tableLayout: 'auto',
     }}>
       <thead>
-        <tr style={{ borderBottom: '2px solid #0f172a', height: '32px', color: '#0f172a' }}>
+        <tr style={{ borderBottom: '2px solid #0f172a', height: '28px', color: '#0f172a' }}>
           {cols.map(c => (
             <th
               key={c.id}
               style={{
                 textAlign: c.align,
-                padding: c.id === 'ejercicio' ? '5px 12px' : '5px 8px',
+                padding: c.id === 'ejercicio' ? '4px 6px' : '4px 3px',
                 fontWeight: 900,
+                fontSize: '10px',
                 ...(c.width ? { width: c.width } : {}),
+                ...(c.id === 'ejercicio' ? { minWidth: '180px' } : {}),
                 whiteSpace: 'nowrap',
               }}
             >
@@ -4110,16 +4201,17 @@ function ReportExerciseTable({ sesion }: { sesion: GimnasioSesion }) {
         {ejs.map((ej) => (
           <React.Fragment key={ej.id}>
             <tr style={{
-              height: '30px',
+              height: '24px',
               borderBottom: (ej.notas && hasReportValue(ej.notas)) ? 'none' : '1px solid #f1f5f9',
             }}>
               {cols.map(c => (
                 <td
                   key={c.id}
                   style={{
-                    padding: c.id === 'ejercicio' ? '6px 12px' : '6px 8px',
+                    padding: c.id === 'ejercicio' ? '4px 6px' : '4px 3px',
                     textAlign: c.align,
                     verticalAlign: 'middle',
+                    ...(c.id === 'ejercicio' ? { minWidth: '180px' } : {}),
                   }}
                 >
                   {c.renderCell(ej)}
@@ -4136,12 +4228,12 @@ function ReportExerciseTable({ sesion }: { sesion: GimnasioSesion }) {
                     <td
                       colSpan={cols.length - 1}
                       style={{
-                        padding: '2px 12px 8px 12px',
-                        fontSize: '10.5px',
+                        padding: '1px 6px 4px 6px',
+                        fontSize: '9.5px',
                         color: '#64748b',
                         fontStyle: 'italic',
-                        lineHeight: 1.4,
-                        wordBreak: 'break-word',
+                        lineHeight: 1.3,
+                        wordBreak: 'normal',
                         whiteSpace: 'normal',
                       }}
                     >
@@ -4152,12 +4244,12 @@ function ReportExerciseTable({ sesion }: { sesion: GimnasioSesion }) {
                   <td
                     colSpan={cols.length}
                     style={{
-                      padding: '2px 12px 8px 12px',
-                      fontSize: '10.5px',
+                      padding: '1px 6px 4px 6px',
+                      fontSize: '9.5px',
                       color: '#64748b',
                       fontStyle: 'italic',
-                      lineHeight: 1.4,
-                      wordBreak: 'break-word',
+                      lineHeight: 1.3,
+                      wordBreak: 'normal',
                       whiteSpace: 'normal',
                     }}
                   >

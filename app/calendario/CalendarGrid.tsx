@@ -484,6 +484,11 @@ function recalculateMDForDays(daysList: SesionDia[], eventBlocksMap?: Record<str
       const distNext = nextMatchIdx - idx;
       const distPrev = idx - prevMatchIdx;
 
+      // La MD+1 siempre se prioriza sobre el partido siguiente
+      if (distPrev === 1) {
+        return { ...d, md: "+1 MD", resultado_partido: res || d.resultado_partido || null };
+      }
+
       // Priorizar -4 MD (y -1, -2, -3 MD) sobre +3 MD (+3, +4, etc.)
       if (distNext <= 4 || distNext <= distPrev || (distNext === 5 && distPrev >= 3)) {
         const diff = -distNext;
@@ -503,6 +508,9 @@ function recalculateMDForDays(daysList: SesionDia[], eventBlocksMap?: Record<str
       return { ...d, md: `${diff} MD`, resultado_partido: res || d.resultado_partido || null };
     } else if (prevMatchIdx !== undefined) {
       const diff = idx - prevMatchIdx; // positivo (+1 MD, +2 MD, etc.)
+      if (diff > 3) {
+        return { ...d, md: null, resultado_partido: res || d.resultado_partido || null };
+      }
       return { ...d, md: `+${diff} MD`, resultado_partido: res || d.resultado_partido || null };
     }
 

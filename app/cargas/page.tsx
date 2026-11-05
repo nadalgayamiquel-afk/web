@@ -4,11 +4,12 @@ import React, { useState, useEffect, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import * as XLSX from "xlsx";
-import { fetchLiveWellnessSheet, getActiveJugadores, getAllJugadoresIncludingArchived, saveGpsDatosBatch, getAllGpsDatos, getEstadoDiarioConFechas, syncAllDownloadsGpsFiles } from "@/app/actions";
+import { fetchLiveWellnessSheet, getActiveJugadores, getAllJugadoresIncludingArchived, saveGpsDatosBatch, getAllGpsDatos, getEstadoDiarioConFechas, syncAllDownloadsGpsFiles, getSesionesDiaRange } from "@/app/actions";
 import { getDisponibilidadInfo } from "@/app/lib/disponibilidad";
 import { useClubConfig } from "@/app/lib/useClubConfig";
 import { ExternalDatabaseLinks, DEFAULT_EXTERNAL_LINKS } from "@/app/lib/externalLinks";
 import CargaExternaSection from "./CargaExternaSection";
+import { resolvePlanificacionMD, getLocalStoragePlanificacionDays } from "@/app/lib/planificacionMd";
 import { findMatchingJugador, extractPlayerNameFromRow, extractDatesFromRow, isRowMatchingDate, normalizeDateStr } from "@/app/lib/playerMatching";
 
 const teamsBySeason: Record<string, string[]> = {
@@ -432,6 +433,27 @@ function CargasContent() {
   };
   const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
   const [manualMD, setManualMD] = useState<Record<string, string>>({});
+  const [planificacionDays, setPlanificacionDays] = useState<any[]>([]);
+  const [mounted, setMounted] = useState<boolean>(false);
+
+  useEffect(() => {
+    setMounted(true);
+    let isMounted = true;
+    const local = getLocalStoragePlanificacionDays();
+    if (local && local.length > 0) {
+      setPlanificacionDays(local);
+    }
+    getSesionesDiaRange()
+      .then((data) => {
+        if (isMounted && Array.isArray(data) && data.length > 0) {
+          setPlanificacionDays(data);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -744,6 +766,37 @@ function CargasContent() {
   useEffect(() => {
     loadDbGpsRecords();
   }, []);
+
+  const [isGpsSyncing, setIsGpsSyncing] = useState<boolean>(false);
+
+  const handleUpdateGps = async () => {
+    setIsGpsSyncing(true);
+    setGpsUploadStatus({ message: "Actualizando datos GPS...", isError: false });
+    try {
+      // 1. Intentar sincronizar archivos nuevos de GPS si existen en Downloads
+      let extraCount = 0;
+      try {
+        const syncRes = await syncAllDownloadsGpsFiles();
+        if (syncRes && syncRes.success && syncRes.totalRecords) {
+          extraCount = syncRes.totalRecords;
+        }
+      } catch (err) {}
+
+      // 2. Recargar todos los registros frescos de GPS desde Supabase
+      await loadDbGpsRecords();
+
+      const now = new Date().toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      const extraMsg = extraCount > 0 ? ` (${extraCount} nuevos sincronizados)` : "";
+      setGpsUploadStatus({
+        message: `✓ GPS actualizado a las ${now}${extraMsg}`,
+        isError: false,
+      });
+    } catch (e: any) {
+      setGpsUploadStatus({ message: e.message || "Error al actualizar GPS", isError: true });
+    } finally {
+      setIsGpsSyncing(false);
+    }
+  };
 
   const handleSyncDownloadsGps = async () => {
     setIsGpsUploading(true);
@@ -1477,82 +1530,144 @@ function CargasContent() {
             <span>📄</span> Exportar PDF
           </button>
 
-          {/* BOTÓN SIMPLE DE ACTUALIZAR RESPUESTAS + TRES PUNTOS PARA CAMBIAR ENLACE */}
+          {/* BOTONES DE ACCIÓN SEGÚN SECCIÓN (CARGA INTERNA: WELLNESS | CARGA EXTERNA: GPS) */}
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }} className="no-print">
-            {syncStatus && (
-              <span style={{ fontSize: "11.5px", fontWeight: 700, color: syncStatus.isError ? "#dc2626" : "#16a34a", marginRight: "4px" }}>
-                {syncStatus.message}
-              </span>
+            {tab === "interna" ? (
+              <>
+                {syncStatus && (
+                  <span style={{ fontSize: "11.5px", fontWeight: 700, color: syncStatus.isError ? "#dc2626" : "#16a34a", marginRight: "4px" }}>
+                    {syncStatus.message}
+                  </span>
+                )}
+
+                {/* BOTÓN DIRECTO BBDD WELLNESS EXTERNA */}
+                {extLinks.wellness?.url ? (
+                  <a
+                    href={extLinks.wellness.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={extLinks.wellness.nombre || "Abrir Base de Datos Wellness"}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "5px",
+                      background: "#f0fdf4",
+                      color: "#166534",
+                      border: "1px solid #bbf7d0",
+                      padding: "6px 12px",
+                      borderRadius: "6px",
+                      fontSize: "12px",
+                      fontWeight: 800,
+                      textDecoration: "none",
+                    }}
+                  >
+                    <span>📊</span>
+                    <span>BBDD Wellness ↗</span>
+                  </a>
+                ) : null}
+
+                {/* BOTÓN: ACTUALIZAR WELLNESS */}
+                <button
+                  type="button"
+                  onClick={handleUpdateDatabase}
+                  disabled={isSyncing}
+                  style={{
+                    background: "#1e3a8a",
+                    color: "#ffffff",
+                    border: "none",
+                    padding: "6px 14px",
+                    borderRadius: "6px",
+                    fontSize: "12px",
+                    fontWeight: 800,
+                    cursor: isSyncing ? "wait" : "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    boxShadow: "0 1px 4px rgba(30,58,138,0.2)",
+                  }}
+                >
+                  <span>🔄</span> {isSyncing ? "Actualizando..." : "Actualizar Wellness"}
+                </button>
+
+                {/* TRES PUNTOS SENCILLOS PARA CAMBIAR ENLACE SI ES NECESARIO */}
+                <button
+                  type="button"
+                  onClick={() => setShowConfigMenu(!showConfigMenu)}
+                  title="Cambiar enlace de Google Sheets"
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: "6px",
+                    border: "1px solid #cbd5e1",
+                    background: showConfigMenu ? "#e0f2fe" : "#f8fafc",
+                    color: showConfigMenu ? "#0284c7" : "#475569",
+                    cursor: "pointer",
+                    fontSize: "14px",
+                    fontWeight: 900,
+                    lineHeight: 1,
+                  }}
+                >
+                  ···
+                </button>
+              </>
+            ) : (
+              <>
+                {gpsUploadStatus && (
+                  <span style={{ fontSize: "11.5px", fontWeight: 700, color: gpsUploadStatus.isError ? "#dc2626" : "#16a34a", marginRight: "4px" }}>
+                    {gpsUploadStatus.message}
+                  </span>
+                )}
+
+                {/* BOTÓN DIRECTO BBDD GPS EXTERNA */}
+                {extLinks.gps?.url ? (
+                  <a
+                    href={extLinks.gps.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={extLinks.gps.nombre || "Abrir Base de Datos GPS"}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "5px",
+                      background: "#fff7ed",
+                      color: "#9a3412",
+                      border: "1px solid #fed7aa",
+                      padding: "6px 12px",
+                      borderRadius: "6px",
+                      fontSize: "12px",
+                      fontWeight: 800,
+                      textDecoration: "none",
+                    }}
+                  >
+                    <span>⚡</span>
+                    <span>BBDD GPS ↗</span>
+                  </a>
+                ) : null}
+
+                {/* BOTÓN: ACTUALIZAR GPS */}
+                <button
+                  type="button"
+                  onClick={handleUpdateGps}
+                  disabled={isGpsSyncing || isGpsUploading}
+                  style={{
+                    background: (isGpsSyncing || isGpsUploading) ? "#94a3b8" : "#ea580c",
+                    color: "#ffffff",
+                    border: "none",
+                    padding: "6px 14px",
+                    borderRadius: "6px",
+                    fontSize: "12px",
+                    fontWeight: 800,
+                    cursor: (isGpsSyncing || isGpsUploading) ? "wait" : "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    boxShadow: "0 1px 4px rgba(234,88,12,0.25)",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  <span>🔄</span> {(isGpsSyncing || isGpsUploading) ? "Actualizando GPS..." : "Actualizar GPS"}
+                </button>
+              </>
             )}
-
-            {/* BOTÓN DIRECTO BBDD WELLNESS EXTERNA */}
-            {extLinks.wellness?.url ? (
-              <a
-                href={extLinks.wellness.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                title={extLinks.wellness.nombre || "Abrir Base de Datos Wellness"}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "5px",
-                  background: "#f0fdf4",
-                  color: "#166534",
-                  border: "1px solid #bbf7d0",
-                  padding: "6px 12px",
-                  borderRadius: "6px",
-                  fontSize: "12px",
-                  fontWeight: 800,
-                  textDecoration: "none",
-                }}
-              >
-                <span>📊</span>
-                <span>BBDD Wellness ↗</span>
-              </a>
-            ) : null}
-
-            {/* BOTÓN SENCILLO: ACTUALIZAR RESPUESTAS */}
-            <button
-              type="button"
-              onClick={handleUpdateDatabase}
-              disabled={isSyncing}
-              style={{
-                background: "#1e3a8a",
-                color: "#ffffff",
-                border: "none",
-                padding: "6px 14px",
-                borderRadius: "6px",
-                fontSize: "12px",
-                fontWeight: 800,
-                cursor: isSyncing ? "wait" : "pointer",
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-                boxShadow: "0 1px 4px rgba(30,58,138,0.2)",
-              }}
-            >
-              <span>🔄</span> {isSyncing ? "Actualizando..." : "Actualizar respuestas"}
-            </button>
-
-            {/* TRES PUNTOS SENCILLOS PARA CAMBIAR ENLACE SI ES NECESARIO */}
-            <button
-              type="button"
-              onClick={() => setShowConfigMenu(!showConfigMenu)}
-              title="Cambiar enlace de Google Sheets"
-              style={{
-                padding: "6px 10px",
-                borderRadius: "6px",
-                border: "1px solid #cbd5e1",
-                background: showConfigMenu ? "#e0f2fe" : "#f8fafc",
-                color: showConfigMenu ? "#0284c7" : "#475569",
-                cursor: "pointer",
-                fontSize: "14px",
-                fontWeight: 900,
-                lineHeight: 1,
-              }}
-            >
-              ···
-            </button>
           </div>
 
           {/* DESPLEGABLE POPUP AL HACER CLIC EN TRES PUNTOS (···) */}
@@ -1606,19 +1721,10 @@ function CargasContent() {
               const dd = String(dateObj.getDate()).padStart(2, "0");
               const mm = String(dateObj.getMonth() + 1).padStart(2, "0");
               const autoDay = `${dayName} ${dd}/${mm}`;
-              const mdMap: Record<number, string> = { 0: "MD+1", 1: "MD-5", 2: "MD-4", 3: "MD-3", 4: "MD-2", 5: "MD-1", 6: "MD" };
-              let realMD = "";
-              try {
-                const rawPlanif = typeof window !== "undefined" ? (localStorage.getItem("planificacion_sesiones_v1") || localStorage.getItem("planificacion_calendario_v1")) : null;
-                if (rawPlanif) {
-                  const list = JSON.parse(rawPlanif);
-                  const found = list.find((s: any) => s && (s.fecha === selectedDate || s.id === selectedDate));
-                  if (found?.md) realMD = String(found.md).trim();
-                }
-              } catch {}
-              const autoMD = manualMD[selectedDate] !== undefined 
+              const planMD = mounted ? resolvePlanificacionMD(selectedDate, planificacionDays) : "MD";
+              const autoMD = (mounted && manualMD[selectedDate] !== undefined)
                 ? manualMD[selectedDate] 
-                : (realMD || (mdMap[dateObj.getDay()] ?? "MD"));
+                : (planMD || "MD");
 
               return (
                 <div>
@@ -1672,7 +1778,7 @@ function CargasContent() {
                         <div style={{ display: "flex", gap: "8px", alignItems: "center", justifyContent: "flex-end", whiteSpace: "nowrap" }}>
                           <div style={{ display: "inline-flex", alignItems: "center", gap: "3px" }}>
                             <span style={{ fontSize: "11px", fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: "0.2px" }}>Día:</span>
-                            <span className="print-only" style={{ fontSize: "11px", fontWeight: 800, color: "#0f172a" }}>
+                            <span suppressHydrationWarning className="print-only" style={{ fontSize: "11px", fontWeight: 800, color: "#0f172a" }}>
                               {autoDay}
                             </span>
                             <input
@@ -1685,10 +1791,15 @@ function CargasContent() {
                           </div>
                           <div style={{ display: "inline-flex", alignItems: "center", gap: "3px" }}>
                             <span style={{ fontSize: "11px", fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: "0.2px" }}>MD:</span>
-                            <span className="print-only" style={{ fontSize: "11px", fontWeight: 800, color: autoMD === "MD" ? "#dc2626" : "#0f172a" }}>
+                            <span
+                              suppressHydrationWarning
+                              className="print-only"
+                              style={{ fontSize: "11px", fontWeight: 800, color: autoMD === "MD" ? "#dc2626" : "#0f172a" }}
+                            >
                               {autoMD}
                             </span>
                             <input
+                              suppressHydrationWarning
                               type="text"
                               value={autoMD}
                               onChange={(e) => {
@@ -1704,7 +1815,7 @@ function CargasContent() {
                                 });
                               }}
                               className="clean-header-input no-print"
-                              style={{ fontSize: "11.5px", fontWeight: 800, padding: "2px 4px", borderRadius: "4px", border: "1px solid #cbd5e1", background: "#f8fafc", color: autoMD === "MD" ? "#dc2626" : "#0f172a", outline: "none", width: "44px", textAlign: "center" }}
+                              style={{ fontSize: "11.5px", fontWeight: 800, padding: "2px 4px", borderRadius: "4px", border: "1px solid #cbd5e1", background: "#f8fafc", color: autoMD === "MD" ? "#dc2626" : "#0f172a", outline: "none", width: "52px", textAlign: "center" }}
                             />
                           </div>
                         </div>
@@ -2220,6 +2331,7 @@ function CargasContent() {
         {/* CONTENIDOS CARGA EXTERNA (REPLANTEADA ORDENADA Y PRECISA) */}
         {tab === "externa" && (
           <CargaExternaSection
+            planificacionDays={planificacionDays}
             gpsRecords={gpsRecords}
             jugadores={filteredJugadores}
             selectedDate={selectedDate}
@@ -2228,6 +2340,7 @@ function CargasContent() {
             handleGpsCsvUpload={handleGpsCsvUpload}
             handleSyncDownloadsGps={handleSyncDownloadsGps}
             gpsUploadStatus={gpsUploadStatus}
+            handleUpdateGps={handleUpdateGps}
             loadDbGpsRecords={loadDbGpsRecords}
             renderDisponibilidadBadge={renderDisponibilidadBadge}
           />

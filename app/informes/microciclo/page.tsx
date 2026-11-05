@@ -7,6 +7,7 @@ import React, { useEffect, useState, useRef, useMemo, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { getActiveJugadores, getGpsDatosReport, getOptimizadorSessionNumber } from "@/app/actions";
+import { resolvePlanificacionMD } from "@/app/lib/planificacionMd";
 import { DISPONIBILIDADES, DisponibilidadCodigo, getSemaforoEstilos } from "@/app/lib/disponibilidad";
 import { getLiveClientSessionNumber } from "@/app/lib/sessionCounter";
 import { ReportNav } from "@/app/informes/ReportNav";
@@ -1137,25 +1138,9 @@ function InformeGpsDiarioContent() {
     });
 
     const getMDForDateStr = (dateStr: string) => {
-      // 1º Planificación en localStorage
-      if (typeof window !== "undefined") {
-        try {
-          const planKeys = ["planificacion_days_v5", "planificacion_days_v2", "planificacion_days_v1"];
-          for (const k of planKeys) {
-            const raw = localStorage.getItem(k);
-            if (raw) {
-              const days = JSON.parse(raw);
-              const found = (Array.isArray(days) ? days : Object.values(days)).find(
-                (d: any) => d && (d.fecha === dateStr || d.id === dateStr)
-              );
-              if (found?.md && typeof found.md === "string" && found.md.trim()) {
-                const clean = found.md.trim();
-                return /^[-+]?\d+\s*MD$/i.test(clean) ? `MD${clean.replace(/MD/i, "").trim()}` : clean;
-              }
-            }
-          }
-        } catch (e) {}
-      }
+      // 1º Planificación oficial
+      const fromPlan = resolvePlanificacionMD(dateStr);
+      if (fromPlan) return fromPlan;
 
       // 2º Registro GPS en BBDD
       const record = teamGpsRecords.find(r => r.fecha === dateStr && r.match_day && r.match_day.trim());
@@ -1840,7 +1825,7 @@ function InformeGpsDiarioContent() {
                             })()}
                             readOnly
                             className="clean-header-input no-print"
-                            style={{ fontSize: "11.5px", fontWeight: 800, padding: "2px 4px", borderRadius: "4px", border: "1px solid #cbd5e1", background: "#f8fafc", color: "#0f172a", outline: "none", width: "44px", textAlign: "center" }}
+                            style={{ fontSize: "11.5px", fontWeight: 800, padding: "2px 4px", borderRadius: "4px", border: "1px solid #cbd5e1", background: "#f8fafc", color: "#0f172a", outline: "none", width: "52px", textAlign: "center" }}
                           />
                         </div>
                       </div>
@@ -2488,7 +2473,7 @@ function InformeGpsDiarioContent() {
                               })()}
                               readOnly
                               className="clean-header-input no-print"
-                              style={{ fontSize: "11.5px", fontWeight: 800, padding: "2px 4px", borderRadius: "4px", border: "1px solid #cbd5e1", background: "#f8fafc", color: matchDay === "MD" ? "#dc2626" : "#0f172a", outline: "none", width: "44px", textAlign: "center" }}
+                              style={{ fontSize: "11.5px", fontWeight: 800, padding: "2px 4px", borderRadius: "4px", border: "1px solid #cbd5e1", background: "#f8fafc", color: matchDay === "MD" ? "#dc2626" : "#0f172a", outline: "none", width: "52px", textAlign: "center" }}
                             />
                           </div>
                         </div>
@@ -3064,7 +3049,7 @@ function InformeGpsDiarioContent() {
                               })()}
                               readOnly
                               className="clean-header-input no-print"
-                              style={{ fontSize: "11.5px", fontWeight: 800, padding: "2px 4px", borderRadius: "4px", border: "1px solid #cbd5e1", background: "#f8fafc", color: "#0f172a", outline: "none", width: "44px", textAlign: "center" }}
+                              style={{ fontSize: "11.5px", fontWeight: 800, padding: "2px 4px", borderRadius: "4px", border: "1px solid #cbd5e1", background: "#f8fafc", color: "#0f172a", outline: "none", width: "52px", textAlign: "center" }}
                             />
                           </div>
                         </div>

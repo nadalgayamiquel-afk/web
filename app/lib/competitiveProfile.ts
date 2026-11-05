@@ -5,6 +5,7 @@ export interface AnalyzedMatchPart {
   minutos: number;
   dist: number;
   rawTask: any;
+  fecha?: string;
 }
 
 export interface AnalyzedMatch {
@@ -99,13 +100,48 @@ export function isRecordSimulado(record: any): boolean {
   );
 }
 
-export function isMatchHalfTask(taskName?: string): boolean {
+export function isFirstHalfTask(taskName?: string): boolean {
   if (!taskName) return false;
   const n = String(taskName).trim().toUpperCase();
-  if (n.includes("PREPARTIDO") || n.includes("CALENTAMIENTO") || n.includes("ACTIVACI")) return false;
-  if (n.includes("PRIMERA PART") || n.includes("PRIMERA PARTE") || n.includes("1ª PART") || n.includes("1A PART")) return true;
-  if (n.includes("SEGONA PART") || n.includes("SEGUNDA PARTE") || n.includes("2ª PART") || n.includes("2A PART")) return true;
-  return false;
+  if (n.includes("PREPARTIDO") || n.includes("CALENTAMIENTO") || n.includes("ACTIVACI") || n.includes("CARRERAS") || n.includes("BTB")) return false;
+  return (
+    n.includes("PRIMERA") ||
+    n.includes("1ª") ||
+    n.includes("1A") ||
+    n.includes("1ER") ||
+    n.includes("1R") ||
+    n.includes("1º") ||
+    n.includes("1 TEMPS") ||
+    n.includes("1 TIEMPO") ||
+    n.includes("FIRST") ||
+    n.includes("1ST")
+  );
+}
+
+export function isSecondHalfTask(taskName?: string): boolean {
+  if (!taskName) return false;
+  const n = String(taskName).trim().toUpperCase();
+  if (n.includes("PREPARTIDO") || n.includes("CALENTAMIENTO") || n.includes("ACTIVACI") || n.includes("CARRERAS") || n.includes("BTB")) return false;
+  return (
+    n.includes("SEGUNDA") ||
+    n.includes("SEGONA") ||
+    n.includes("2ª") ||
+    n.includes("2A") ||
+    n.includes("2DO") ||
+    n.includes("2N") ||
+    n.includes("2ON") ||
+    n.includes("2NA") ||
+    n.includes("2DA") ||
+    n.includes("2º") ||
+    n.includes("2 TEMPS") ||
+    n.includes("2 TIEMPO") ||
+    n.includes("SECOND") ||
+    n.includes("2ND")
+  );
+}
+
+export function isMatchHalfTask(taskName?: string): boolean {
+  return isFirstHalfTask(taskName) || isSecondHalfTask(taskName);
 }
 
 export function isRateOrPeak(key: string): boolean {
@@ -163,9 +199,22 @@ export function getCompactMetricHeader(key: string, rawLabel?: string): string {
     return "Vmax";
   }
 
-  // 6. Sprints Count -> Sprints
-  if (k.includes("sprints count") || l.includes("sprints")) {
-    return "Sprints";
+  // 5.5 Métricas de Máxima Velocidad (+28 km/h)
+  if (k.includes("28") || l.includes("28")) {
+    if (k.includes("num") || k.includes("count") || l.includes("acciones") || l.includes("nº")) {
+      return "Nº Sprints 28";
+    }
+    return "Sprint 28";
+  }
+
+  // 6. Sprints Count (+24 km/h)
+  if (k.includes("sprints count") || l.includes("nº de sprints") || l.includes("sprints count")) {
+    return "Nº Sprints";
+  }
+
+  // 7. Sprint (+24 km/h) Distancia
+  if (k.includes("+ 24") || k.includes("+24") || l.includes("+24") || k.includes("sprint (m)") || l.includes("sprint")) {
+    return "Sprint 24";
   }
 
   return rawLabel || key;
@@ -226,7 +275,7 @@ export function computeCompetitiveProfiles({
           fecha: r.fecha,
           minutos: dur,
           dist,
-          parts: [{ nombre: "Partido Completo", minutos: dur, dist, rawTask: r.metricas || r }],
+          parts: [{ nombre: "Partido Completo", minutos: dur, dist, rawTask: r.metricas || r, fecha: r.fecha }],
         });
       }
       return;
@@ -247,6 +296,7 @@ export function computeCompetitiveProfiles({
         minutos: pMin,
         dist: pDist,
         rawTask: t,
+        fecha: r.fecha,
       };
     });
 
@@ -313,10 +363,10 @@ export function computeCompetitiveProfiles({
       // CASO 1: Varios partidos de 90 min -> (Máximo + Promedio) / 2
       p.category = "real_varios";
       p.isReal = true;
-      p.badgeText = "90' (Máx+Prom)/2";
+      p.badgeText = "90' (Máx+Prom sin máx)/2";
       p.shortBadgeText = "90'";
       p.asterisk = "";
-      p.detailText = `${fullMatches.length} partidos oficiales de 90' ((Máx+Prom)/2)`;
+      p.detailText = `${fullMatches.length} partidos oficiales de 90' ((Máx+Prom sin máx)/2)`;
 
       varsToCompute.forEach((v) => {
         const isRate = isRateOrPeak(v.key);
@@ -356,8 +406,16 @@ export function computeCompetitiveProfiles({
 
         const vList = matchBreakdowns.map((mb) => mb.totalMatchVal);
         const maxVal = Math.max(...vList);
-        const avgVal = vList.reduce((a, b) => a + b, 0) / vList.length;
-        const calcVal = isRate ? Math.round(((maxVal + avgVal) / 2) * 10) / 10 : Math.round((maxVal + avgVal) / 2);
+        const maxIdx = vList.indexOf(maxVal);
+        const listWithoutMax = vList.filter((_, idx) => idx !== maxIdx);
+        const avgWithoutMax = listWithoutMax.length > 0
+          ? listWithoutMax.reduce((a, b) => a + b, 0) / listWithoutMax.length
+          : maxVal;
+
+        const calcVal = isRate
+          ? Math.round(((maxVal + avgWithoutMax) / 2) * 10) / 10
+          : Math.round((maxVal + avgWithoutMax) / 2);
+
         const isOverridden = overrides[v.key] !== undefined;
         const finalVal = isOverridden ? overrides[v.key] : calcVal;
 
@@ -365,7 +423,7 @@ export function computeCompetitiveProfiles({
 
         const label = getCompactMetricHeader(v.key, v.label);
         const unit = v.unit || "";
-        const avgFormatted = isRate ? avgVal.toFixed(1) : Math.round(avgVal).toString();
+        const avgWithoutMaxFormatted = isRate ? avgWithoutMax.toFixed(1) : Math.round(avgWithoutMax).toString();
 
         const steps: string[] = [
           `1. Partidos completos detectados: ${fullMatches.length} partidos oficiales de 90 minutos.`,
@@ -373,8 +431,8 @@ export function computeCompetitiveProfiles({
             matchBreakdowns.map((mb) => `${mb.fecha} (${mb.totalMatchVal} ${unit})`).join(", ") +
             `.`,
           `3. Máximo registrado en un partido = ${maxVal} ${unit}.`,
-          `4. Promedio de los partidos = ${avgFormatted} ${unit}.`,
-          `5. Cálculo oficial ((Máx + Prom) / 2): (${maxVal} + ${avgFormatted}) / 2 = ${calcVal} ${unit}.`,
+          `4. Promedio excluyendo la máxima = ${avgWithoutMaxFormatted} ${unit}.`,
+          `5. Cálculo oficial (Máxima + Promedio sin máxima) / 2: (${maxVal} + ${avgWithoutMaxFormatted}) / 2 = ${calcVal} ${unit}.`,
         ];
 
         if (isOverridden) {
@@ -390,8 +448,8 @@ export function computeCompetitiveProfiles({
           overrideVal: isOverridden ? overrides[v.key] : null,
           calculatedVal: calcVal,
           finalVal,
-          summary: `Calculado a partir de ${fullMatches.length} partidos de 90' aplicando la fórmula oficial (Máximo + Promedio) / 2.`,
-          formula: `(Máx: ${maxVal} + Prom: ${avgFormatted}) / 2 = ${calcVal} ${unit}`,
+          summary: `Calculado a partir de ${fullMatches.length} partidos de 90' aplicando la fórmula oficial: (Máxima + Promedio sin máxima) / 2.`,
+          formula: `(Máx: ${maxVal} + Prom. sin máx: ${avgWithoutMaxFormatted}) / 2 = ${calcVal} ${unit}`,
           steps,
           matches: matchBreakdowns,
         };
@@ -399,7 +457,7 @@ export function computeCompetitiveProfiles({
 
       p.dist = (p.values["Distance(m)"] as number) || 10200;
       p.hsr = (p.values["Distance +21 (m)"] as number) || (p.values["HSR Abs (m)"] as number) || 650;
-      p.sprint = (p.values["Sprint (m)"] as number) || 180;
+      p.sprint = (p.values["+ 24 km/h (Distancia)"] as number) || (p.values["Sprint (m)"] as number) || 180;
       p.accDec = (p.values["Acc+Dec"] as number) || 85;
       p.load = (p.values["Player Load"] as number) || 850;
       p.mMin = (p.values["Distancia / Min"] as number) || 113;
@@ -493,7 +551,7 @@ export function computeCompetitiveProfiles({
 
       p.dist = (p.values["Distance(m)"] as number) || 10200;
       p.hsr = (p.values["Distance +21 (m)"] as number) || (p.values["HSR Abs (m)"] as number) || 650;
-      p.sprint = (p.values["Sprint (m)"] as number) || 180;
+      p.sprint = (p.values["+ 24 km/h (Distancia)"] as number) || (p.values["Sprint (m)"] as number) || 180;
       p.accDec = (p.values["Acc+Dec"] as number) || 85;
       p.load = (p.values["Player Load"] as number) || 850;
       p.mMin = (p.values["Distancia / Min"] as number) || 113;
@@ -505,35 +563,113 @@ export function computeCompetitiveProfiles({
       if (!positionProfilesMap.has(pos)) positionProfilesMap.set(pos, []);
       positionProfilesMap.get(pos)!.push(p);
     } else if (halfParts.length > 0) {
-      // CASO 3: <90 min pero al menos 45 min en una parte -> ESE 45 min x 2 (*)
+      // CASO 3: <90 min pero al menos 45 min en una o varias partes
+      // Si tiene varias partes de ~45 min, promediamos aplicando la fórmula oficial (Máx + Prom sin máx)/2 proyectado a 90 min (x2)
       p.category = "estimado_45";
       p.isReal = false;
-      p.badgeText = "45' x 2 *";
-      p.shortBadgeText = "45'*";
       p.asterisk = "*";
-      const best45 = [...halfParts].sort((a, b) => (b.minutos || 0) - (a.minutos || 0))[0];
-      p.detailText = `Estimado: parte ${best45.nombre || "1ª parte"} (${best45.minutos}') x 2 (No real *)`;
+
+      if (halfParts.length > 1) {
+        p.badgeText = `45' x 2 (${halfParts.length} partes) *`;
+        p.shortBadgeText = `45'* (${halfParts.length})`;
+        p.detailText = `Estimado: promedio oficial de ${halfParts.length} partes de ~45' x 2 (No real *)`;
+      } else {
+        const singlePart = halfParts[0];
+        p.badgeText = "45' x 2 *";
+        p.shortBadgeText = "45'*";
+        p.detailText = `Estimado: parte ${singlePart.nombre || "1ª parte"} (${singlePart.minutos}') x 2 (No real *)`;
+      }
 
       varsToCompute.forEach((v) => {
         const isRate = isRateOrPeak(v.key);
-        let partVal: number;
+        const label = getCompactMetricHeader(v.key, v.label);
+        const unit = v.unit || "";
+
+        // Calcular valor proyectado a 90 min (o directo si es intensidad/ritmo) para cada parte de 45 min
+        const partProjects: Array<{
+          nombre: string;
+          fecha: string;
+          minutos: number;
+          partVal: number;
+          projectedVal: number;
+        }> = halfParts.map((hp) => {
+          let pVal: number;
+          let projVal: number;
+          if (v.key === "Distancia / Min" || v.key.toLowerCase().includes("m/min")) {
+            pVal = hp.minutos > 0 ? Math.round((hp.dist / hp.minutos) * 10) / 10 : 0;
+            projVal = pVal;
+          } else if (isRate) {
+            const raw = calculateGpsMetricValue(hp.rawTask, v.key, derivedVariables);
+            pVal = Math.round(raw * 10) / 10;
+            projVal = pVal;
+          } else {
+            const raw = calculateGpsMetricValue(hp.rawTask, v.key, derivedVariables);
+            pVal = Math.round(raw);
+            projVal = Math.round(raw * 2);
+          }
+          return {
+            nombre: hp.nombre,
+            fecha: hp.fecha || "",
+            minutos: hp.minutos,
+            partVal: pVal,
+            projectedVal: projVal,
+          };
+        });
+
         let calcVal: number;
         let formulaText: string;
+        let steps: string[] = [];
 
-        if (v.key === "Distancia / Min" || v.key.toLowerCase().includes("m/min")) {
-          partVal = best45.minutos > 0 ? Math.round((best45.dist / best45.minutos) * 10) / 10 : 0;
-          calcVal = partVal;
-          formulaText = `Ritmo directo de la parte (${best45.minutos}') = ${calcVal} m/min*`;
-        } else if (isRate) {
-          const raw = calculateGpsMetricValue(best45.rawTask, v.key, derivedVariables);
-          partVal = Math.round(raw * 10) / 10;
-          calcVal = partVal;
-          formulaText = `Intensidad / Pico directo de la parte = ${calcVal} ${v.unit || ""}*`;
+        if (halfParts.length > 1) {
+          const vList = partProjects.map((p) => p.projectedVal);
+          const maxVal = Math.max(...vList);
+          const maxIdx = vList.indexOf(maxVal);
+          const listWithoutMax = vList.filter((_, idx) => idx !== maxIdx);
+          const avgWithoutMax = listWithoutMax.length > 0
+            ? listWithoutMax.reduce((a, b) => a + b, 0) / listWithoutMax.length
+            : maxVal;
+
+          calcVal = isRate
+            ? Math.round(((maxVal + avgWithoutMax) / 2) * 10) / 10
+            : Math.round((maxVal + avgWithoutMax) / 2);
+
+          const avgWithoutMaxFormatted = isRate ? avgWithoutMax.toFixed(1) : Math.round(avgWithoutMax).toString();
+
+          formulaText = isRate
+            ? `(Máx: ${maxVal} + Prom. sin máx: ${avgWithoutMaxFormatted}) / 2 = ${calcVal} ${unit}*`
+            : `(Máx proyectada: ${maxVal} + Prom. sin máx: ${avgWithoutMaxFormatted}) / 2 = ${calcVal} ${unit}*`;
+
+          steps = [
+            `1. El jugador no ha disputado 90' completos pero tiene ${halfParts.length} partes oficiales de ~45 minutos.`,
+            `2. Partes detectadas: ` +
+              partProjects.map((p) => `${p.nombre}${p.fecha ? " (" + p.fecha + ")" : ""} [${p.partVal} ${unit} ${!isRate ? "-> Proy. 90': " + p.projectedVal + " " + unit : ""}]`).join(", ") +
+              `.`,
+            isRate
+              ? `3. Máxima intensidad registrada = ${maxVal} ${unit}.`
+              : `3. Máxima parte proyectada a 90' = ${maxVal} ${unit}.`,
+            `4. Promedio excluyendo la máxima = ${avgWithoutMaxFormatted} ${unit}.`,
+            `5. Cálculo oficial (Máxima + Promedio sin máxima) / 2: (${maxVal} + ${avgWithoutMaxFormatted}) / 2 = ${calcVal} ${unit}*.`,
+            `6. Se indica con asterisco (*) porque proviene de proyección de partes de 45'.`,
+          ];
         } else {
-          const raw = calculateGpsMetricValue(best45.rawTask, v.key, derivedVariables);
-          partVal = Math.round(raw);
-          calcVal = Math.round(raw * 2);
-          formulaText = `Parte de ${best45.minutos}' × 2 = ${partVal} × 2 = ${calcVal} ${v.unit || ""}*`;
+          // Solo 1 parte de 45 min
+          const best45 = partProjects[0];
+          calcVal = best45.projectedVal;
+          formulaText = isRate
+            ? `Intensidad / Pico directo de la parte = ${calcVal} ${unit}*`
+            : `Parte de ${best45.minutos}' × 2 = ${best45.partVal} × 2 = ${calcVal} ${unit}*`;
+
+          steps = [
+            `1. El jugador no ha disputado 90' completos en ningún partido oficial.`,
+            `2. Única parte oficial registrada: ${best45.nombre} (${best45.minutos} minutos).`,
+            isRate
+              ? `3. Al ser una métrica de intensidad/ritmo, se toma el valor directo registrado en la parte (${best45.partVal} ${unit}).`
+              : `3. Volumen acumulado en la parte: ${best45.partVal} ${unit}.`,
+            isRate
+              ? `4. Resultado proyectado = ${calcVal} ${unit}*.`
+              : `4. Proyección a 90' multiplicando por 2: ${best45.partVal} × 2 = ${calcVal} ${unit}*.`,
+            `5. Se indica con asterisco (*) porque no corresponde a un partido real de 90'.`,
+          ];
         }
 
         const isOverridden = overrides[v.key] !== undefined;
@@ -541,24 +677,11 @@ export function computeCompetitiveProfiles({
 
         p.values[v.key] = finalVal;
 
-        const label = getCompactMetricHeader(v.key, v.label);
-        const unit = v.unit || "";
-
-        const steps: string[] = [
-          `1. El jugador no ha disputado 90' completos en ningún partido oficial.`,
-          `2. Mejor parte oficial registrada: ${best45.nombre} (${best45.minutos} minutos).`,
-          isRate
-            ? `3. Al ser una métrica de intensidad/ritmo, se toma el valor directo registrado en la parte (${partVal} ${unit}).`
-            : `3. Volumen acumulado en la parte: ${partVal} ${unit}.`,
-          isRate
-            ? `4. Resultado proyectado = ${calcVal} ${unit}*.`
-            : `4. Proyección a 90' multiplicando por 2: ${partVal} × 2 = ${calcVal} ${unit}*.`,
-          `5. Se indica con asterisco (*) porque no corresponde a un partido real de 90'.`,
-        ];
-
         if (isOverridden) {
           steps.push(`✏️ Ajuste manual activo: ${finalVal} ${unit} (Valor calculado: ${calcVal} ${unit}).`);
         }
+
+        const bestPart = [...partProjects].sort((a, b) => b.projectedVal - a.projectedVal)[0];
 
         p.explanations[v.key] = {
           key: v.key,
@@ -569,21 +692,23 @@ export function computeCompetitiveProfiles({
           overrideVal: isOverridden ? overrides[v.key] : null,
           calculatedVal: calcVal,
           finalVal,
-          summary: `Estimación proyectada a partir de su mejor parte disputada (${best45.nombre}, ${best45.minutos}').`,
+          summary: halfParts.length > 1
+            ? `Calculado a partir de ${halfParts.length} partes de ~45' proyectadas a 90' con la fórmula oficial (Máx + Prom sin máx) / 2.`
+            : `Estimación proyectada a partir de su parte disputada (${bestPart.nombre}, ${bestPart.minutos}').`,
           formula: formulaText,
           steps,
           best45: {
-            nombre: best45.nombre,
-            minutos: best45.minutos,
-            partVal,
+            nombre: bestPart.nombre,
+            minutos: bestPart.minutos,
+            partVal: bestPart.partVal,
             factor: isRate ? 1 : 2,
           },
         };
       });
 
-      p.dist = (p.values["Distance(m)"] as number) || Math.round(best45.dist * 2);
+      p.dist = (p.values["Distance(m)"] as number) || 10200;
       p.hsr = (p.values["Distance +21 (m)"] as number) || (p.values["HSR Abs (m)"] as number) || 650;
-      p.sprint = (p.values["Sprint (m)"] as number) || 180;
+      p.sprint = (p.values["+ 24 km/h (Distancia)"] as number) || (p.values["Sprint (m)"] as number) || 180;
       p.accDec = (p.values["Acc+Dec"] as number) || 85;
       p.load = (p.values["Player Load"] as number) || 850;
       p.mMin = (p.values["Distancia / Min"] as number) || 113;
@@ -640,7 +765,7 @@ export function computeCompetitiveProfiles({
         });
         p.dist = overrides["Distance(m)"] ?? overrides.dist ?? 0;
         p.hsr = overrides["Distance +21 (m)"] ?? overrides.hsr ?? 0;
-        p.sprint = overrides["Sprint (m)"] ?? overrides.sprint ?? 0;
+        p.sprint = overrides["+ 24 km/h (Distancia)"] ?? overrides["Sprint (m)"] ?? overrides.sprint ?? 0;
         p.accDec = overrides["Acc+Dec"] ?? overrides.accDec ?? 0;
         p.load = overrides["Player Load"] ?? overrides.load ?? 0;
         p.mMin = overrides["Distancia / Min"] ?? overrides.mMin ?? 0;
@@ -741,11 +866,73 @@ export function computeCompetitiveProfiles({
 
       p.dist = (p.values["Distance(m)"] as number) || 10200;
       p.hsr = (p.values["Distance +21 (m)"] as number) || (p.values["HSR Abs (m)"] as number) || 650;
-      p.sprint = (p.values["Sprint (m)"] as number) || 180;
+      p.sprint = (p.values["+ 24 km/h (Distancia)"] as number) || (p.values["Sprint (m)"] as number) || 180;
       p.accDec = (p.values["Acc+Dec"] as number) || 85;
       p.load = (p.values["Player Load"] as number) || 850;
       p.mMin = (p.values["Distancia / Min"] as number) || 113;
       p.maxSpeed = (p.values["MAX Speed(km/h)"] as number) || 28.5;
+    }
+  });
+
+
+  // ── ASEGURAR QUE PARA TODOS LOS JUGADORES, LA VELOCIDAD MÁXIMA SEA SU MÁXIMA REAL ALCANZADA (NO DE PARTIDO) ──
+  profiles.forEach((p, jId) => {
+    const playerAllRealRecords = realGps.filter((r) => r.jugador_id === jId);
+    let allTimeMaxSpeed = 0;
+    let allTimeMaxSpeedDate = "";
+    let allTimeMaxSpeedSession = "";
+
+    playerAllRealRecords.forEach((r) => {
+      const spd = calculateGpsMetricValue(r.metricas || r, "MAX Speed(km/h)", derivedVariables);
+      if (spd > allTimeMaxSpeed) {
+        allTimeMaxSpeed = spd;
+        allTimeMaxSpeedDate = r.fecha || "";
+        allTimeMaxSpeedSession = r.tarea || r.metricas?.tipo_sesion || "Sesión";
+      }
+      if (Array.isArray(r.metricas?.tareas)) {
+        r.metricas.tareas.forEach((t: any) => {
+          const tSpd = calculateGpsMetricValue(t, "MAX Speed(km/h)", derivedVariables);
+          if (tSpd > allTimeMaxSpeed) {
+            allTimeMaxSpeed = tSpd;
+            allTimeMaxSpeedDate = r.fecha || "";
+            allTimeMaxSpeedSession = t.nombre || t.name || r.tarea || "Tarea";
+          }
+        });
+      }
+    });
+
+    const overrides = customOverrides[jId] || {};
+    const isSpeedOverridden = overrides["MAX Speed(km/h)"] !== undefined || overrides["Vel Max"] !== undefined || overrides.maxSpeed !== undefined;
+    const finalMaxSpeed = isSpeedOverridden
+      ? Number(overrides["MAX Speed(km/h)"] ?? overrides["Vel Max"] ?? overrides.maxSpeed)
+      : (allTimeMaxSpeed > 0 ? allTimeMaxSpeed : p.maxSpeed);
+
+    if (allTimeMaxSpeed > 0 || isSpeedOverridden) {
+      const speedKeys = ["MAX Speed(km/h)", "Vel Max", "max_speed", "Velocidad Máxima", "velocidad maxima"];
+      speedKeys.forEach((sKey) => {
+        p.values[sKey] = finalMaxSpeed;
+      });
+      p.maxSpeed = finalMaxSpeed;
+      p.explanations["MAX Speed(km/h)"] = {
+        key: "MAX Speed(km/h)",
+        label: "Vel. Max",
+        unit: "km/h",
+        category: "real_uno",
+        isOverridden: isSpeedOverridden,
+        overrideVal: isSpeedOverridden ? finalMaxSpeed : null,
+        calculatedVal: allTimeMaxSpeed,
+        finalVal: finalMaxSpeed,
+        summary: `Máxima velocidad real alcanzada por el jugador en cualquiera de sus sesiones GPS registradas (${allTimeMaxSpeed} km/h el ${allTimeMaxSpeedDate}).`,
+        formula: `Pico real alcanzado = ${finalMaxSpeed} km/h (${allTimeMaxSpeedDate})`,
+        steps: [
+          `1. Se analizan todas las sesiones reales registradas del jugador (${playerAllRealRecords.length} sesiones).`,
+          `2. Máxima velocidad pico absoluta alcanzada = ${allTimeMaxSpeed} km/h (Fecha: ${allTimeMaxSpeedDate}${allTimeMaxSpeedSession ? `, ${allTimeMaxSpeedSession}` : ""}).`,
+          `3. Como exige la metodología, la velocidad máxima no se extrae de partido ni se promedia: refleja su máxima real alcanzada.`,
+        ],
+        matches: [],
+      };
+      p.explanations["Vel Max"] = { ...p.explanations["MAX Speed(km/h)"], key: "Vel Max" };
+      p.explanations["max_speed"] = { ...p.explanations["MAX Speed(km/h)"], key: "max_speed" };
     }
   });
 

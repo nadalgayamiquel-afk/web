@@ -15,6 +15,18 @@ import {
 } from "../../lib/competitiveProfile";
 import { useRouter } from "next/navigation";
 import {
+  MicrocycleType,
+  MICROCICLE_TYPE_CONFIG,
+  CustomMicrocycleDef,
+  getStoredMicrocycles,
+  saveStoredMicrocycles,
+  saveMicrocycleTypeOverride,
+  getMicrocycleType,
+  extractMicrocyclesFromGpsData,
+  getMicrocycleForDate,
+  parseDateStrToISO,
+} from "../../lib/microciclos";
+import {
   ResponsiveContainer,
   LineChart,
   Line,
@@ -1125,19 +1137,23 @@ export default function PlayerDetailTabs({
   // Variables activas en la fila del perfil competitivo de este jugador (según las favoritas del usuario)
   const [playerCompVariables, setPlayerCompVariables] = useState<string[]>(() => {
     if (initialPlayerCompVariables && initialPlayerCompVariables.length > 0) {
-      return initialPlayerCompVariables;
+      return initialPlayerCompVariables.filter((k) => k !== "derived_1791992159697" && k !== "derived_undefined");
     }
     if (typeof window !== "undefined") {
       try {
         const stored = localStorage.getItem(`player_comp_vars_${jugador.id}`);
         if (stored) {
           const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed.filter((k: string) => k !== "derived_1791992159697" && k !== "derived_undefined");
+          }
         }
         const teamFavs = localStorage.getItem("gps_profile_selected_fav_keys");
         if (teamFavs) {
           const parsed = JSON.parse(teamFavs);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed.filter((k: string) => k !== "derived_1791992159697" && k !== "derived_undefined");
+          }
         }
       } catch {}
     }
@@ -1416,23 +1432,143 @@ export default function PlayerDetailTabs({
 
   const [gpsProfileMode, setGpsProfileMode] = useState<"promedio" | "maximos" | "competitivo">("promedio");
 
-  const mdColumns = ["-5 MD", "-4 MD", "-3 MD", "-2 MD", "-1 MD", "MD", "+1 MD", "+2 MD"];
+  // 4 Tipos de Microciclos: Corto (6d), Media (7d), Largo (8d), Doble Partido
+  const [gpsSubjectMode, setGpsSubjectMode] = useState<"jugador" | "equipo">("jugador");
+  const [gpsMicrocycleTypeFilter, setGpsMicrocycleTypeFilter] = useState<MicrocycleType>("todos");
+  const [gpsDataSourceMode, setGpsDataSourceMode] = useState<"reales" | "todos">(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("gps_player_data_source_mode");
+        if (stored === "reales" || stored === "todos") return stored;
+      } catch {}
+    }
+    return "reales";
+  });
+
+  const handleSetGpsDataSourceMode = (mode: "reales" | "todos") => {
+    setGpsDataSourceMode(mode);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("gps_player_data_source_mode", mode);
+      } catch {}
+    }
+  };
+  const [showTotalColumn, setShowTotalColumn] = useState<boolean>(true);
+
+  // Una semana media (7 días entre MD) y una semana corta (6d) NO tienen MD-5
+  const mdColumns = useMemo(() => {
+    if (gpsMicrocycleTypeFilter === "media" || gpsMicrocycleTypeFilter === "corto" || gpsMicrocycleTypeFilter === "doble_partido") {
+      return ["-4 MD", "-3 MD", "-2 MD", "-1 MD", "MD", "+1 MD", "+2 MD"];
+    }
+    return ["-5 MD", "-4 MD", "-3 MD", "-2 MD", "-1 MD", "MD", "+1 MD", "+2 MD"];
+  }, [gpsMicrocycleTypeFilter]);
 
   // Función para normalizar nombres de Match Day procedentes de gps_datos
   const normalizeMD = (rawMD?: string, tipoSesion?: string): string | null => {
     const combined = `${rawMD || ""} ${tipoSesion || ""}`.trim().toUpperCase().replace(/\s+/g, "");
-    if (combined.includes("-5") || combined.includes("5MD") || combined.includes("MD5")) return "-5 MD";
+
+    // 1. REGLA CLAVE: MD+1 y +1MD son exactamente lo mismo (Prioridad máxima)
+    if (combined.includes("+1") || combined.includes("MD+1") || combined.includes("+1MD") || combined.includes("1+MD") || combined.includes("MD+1.0")) return "+1 MD";
+
+    // 2. REGLA CLAVE: MD+2 y +2MD son exactamente lo mismo
+    if (combined.includes("+2") || combined.includes("MD+2") || combined.includes("+2MD") || combined.includes("2+MD")) return "+2 MD";
+
+    // 3. REGLA CLAVE: Una semana media (7d) y corta (6d) NO tienen MD-5
+    if (combined.includes("-5") || combined.includes("5MD") || combined.includes("MD5")) {
+      if (gpsMicrocycleTypeFilter === "media" || gpsMicrocycleTypeFilter === "corto") {
+        return "-4 MD";
+      }
+      return "-5 MD";
+    }
+
     if (combined.includes("-4") || combined.includes("4MD") || combined.includes("MD4")) return "-4 MD";
     if (combined.includes("-3") || combined.includes("3MD") || combined.includes("MD3")) return "-3 MD";
     if (combined.includes("-2") || combined.includes("2MD") || combined.includes("MD2")) return "-2 MD";
     if (combined.includes("-1") || combined.includes("1MD") || combined.includes("MD1")) return "-1 MD";
-    if (combined.includes("+1") || combined.includes("MD+1") || combined.includes("+1MD")) return "+1 MD";
-    if (combined.includes("+2") || combined.includes("MD+2") || combined.includes("+2MD")) return "+2 MD";
     if (combined.includes("MD") || combined.includes("PARTIDO") || combined.includes("MATCH")) return "MD";
     return null;
   };
+  const [showWeeksPicker, setShowWeeksPicker] = useState<boolean>(false);
+  const [microcycleRefreshKey, setMicrocycleRefreshKey] = useState<number>(0);
 
-  // Filtrar registros reales de GPS de este jugador
+  // Microciclos detectados y auto-ajustados según sesiones de partido y fechas
+  const availableMicrocycles = useMemo(() => {
+    const stored = getStoredMicrocycles();
+    return extractMicrocyclesFromGpsData(allGpsRecords, stored);
+  }, [allGpsRecords, microcycleRefreshKey]);
+
+  // Microciclos que corresponden al tipo actualmente seleccionado en el filtro
+  const relevantMicrocyclesForCurrentFilter = useMemo(() => {
+    if (gpsMicrocycleTypeFilter === "todos") return availableMicrocycles;
+    return availableMicrocycles.filter((m) => getMicrocycleType(m) === gpsMicrocycleTypeFilter);
+  }, [availableMicrocycles, gpsMicrocycleTypeFilter, microcycleRefreshKey]);
+
+  // Semanas desmarcadas por el usuario por cada tipo de microciclo
+  const [unselectedWeeksByType, setUnselectedWeeksByType] = useState<Record<string, string[]>>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("gps_unselected_weeks_by_type");
+        if (stored) return JSON.parse(stored);
+      } catch {}
+    }
+    return {};
+  });
+
+  const isWeekActive = (weekId: string): boolean => {
+    const unselected = unselectedWeeksByType[gpsMicrocycleTypeFilter] || [];
+    return !unselected.includes(weekId);
+  };
+
+  const handleToggleWeek = (weekId: string) => {
+    setUnselectedWeeksByType((prev) => {
+      const typeKey = gpsMicrocycleTypeFilter;
+      const currentUnselected = prev[typeKey] || [];
+      let updated: string[];
+      if (currentUnselected.includes(weekId)) {
+        updated = currentUnselected.filter((id) => id !== weekId);
+      } else {
+        updated = [...currentUnselected, weekId];
+      }
+      const nextMap = { ...prev, [typeKey]: updated };
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("gps_unselected_weeks_by_type", JSON.stringify(nextMap));
+        } catch {}
+      }
+      return nextMap;
+    });
+  };
+
+  const handleSelectAllWeeksOfCurrentType = () => {
+    setUnselectedWeeksByType((prev) => {
+      const nextMap = { ...prev, [gpsMicrocycleTypeFilter]: [] };
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("gps_unselected_weeks_by_type", JSON.stringify(nextMap));
+        } catch {}
+      }
+      return nextMap;
+    });
+  };
+
+  const handleUnselectAllWeeksOfCurrentType = () => {
+    const allIds = relevantMicrocyclesForCurrentFilter.map((m) => m.id);
+    setUnselectedWeeksByType((prev) => {
+      const nextMap = { ...prev, [gpsMicrocycleTypeFilter]: allIds };
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("gps_unselected_weeks_by_type", JSON.stringify(nextMap));
+        } catch {}
+      }
+      return nextMap;
+    });
+  };
+
+  const handleSelectMicrocycleTypeFilter = (t: MicrocycleType) => {
+    setGpsMicrocycleTypeFilter(t);
+  };
+
+  // Registros reales de GPS del jugador (todos los históricos reales)
   const playerRealGpsRecords = useMemo(() => {
     return (allGpsRecords || []).filter((r) => {
       const isSim = Boolean(
@@ -1441,7 +1577,7 @@ export default function PlayerDetailTabs({
         String(r.tipo_registro || r.metricas?.tipo_registro || "").toUpperCase() === "SIMULADO" ||
         (r.metricas?.colC && String(r.metricas?.colC).toUpperCase().includes("SIMULA"))
       );
-      if (isSim) return false;
+      if (gpsDataSourceMode === "reales" && isSim) return false;
 
       const jId = r.jugador_id || r.metricas?.jugador_id;
       if (jId === jugador.id) return true;
@@ -1452,6 +1588,45 @@ export default function PlayerDetailTabs({
       return (pName && rName === pName) || (pApodo && rName === pApodo);
     });
   }, [allGpsRecords, jugador.id, jugador.nombre, jugador.apodo]);
+
+  // Registros filtrados para la Matriz según Sujeto (Jugador o Equipo), Tipo de Microciclo y Semanas seleccionadas
+  const matrixFilteredGpsRecords = useMemo(() => {
+    return (allGpsRecords || []).filter((r) => {
+      const isSim = Boolean(
+        r.es_simulado ||
+        r.metricas?.es_simulado ||
+        String(r.tipo_registro || r.metricas?.tipo_registro || "").toUpperCase() === "SIMULADO" ||
+        (r.metricas?.colC && String(r.metricas?.colC).toUpperCase().includes("SIMULA"))
+      );
+      if (gpsDataSourceMode === "reales" && isSim) return false;
+
+      if (gpsSubjectMode === "jugador") {
+        const jId = r.jugador_id || r.metricas?.jugador_id;
+        const rName = String(r.jugador || r.metricas?.Player_Name || r.metricas?.jugador || "").trim().toLowerCase();
+        const pName = String(jugador.nombre || "").trim().toLowerCase();
+        const pApodo = String(jugador.apodo || "").trim().toLowerCase();
+        const isThisPlayer = (jId && jId === jugador.id) || (pName && rName === pName) || (pApodo && rName === pApodo);
+        if (!isThisPlayer) return false;
+      }
+
+      const mc = getMicrocycleForDate(r.fecha, availableMicrocycles);
+      if (!mc) return false;
+
+      // 1. Filtrar estrictamente por tipo de microciclo si no es 'todos'
+      const mType = getMicrocycleType(mc);
+      if (gpsMicrocycleTypeFilter !== "todos" && mType !== gpsMicrocycleTypeFilter) {
+        return false;
+      }
+
+      // 2. Comprobar si la semana concreta está activa (no desmarcada) en el selector
+      const unselected = unselectedWeeksByType[gpsMicrocycleTypeFilter] || [];
+      if (unselected.includes(mc.id)) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [allGpsRecords, gpsSubjectMode, jugador.id, jugador.nombre, jugador.apodo, availableMicrocycles, gpsMicrocycleTypeFilter, gpsDataSourceMode, unselectedWeeksByType]);
 
   // Overrides manuales para la matriz de GPS
   const [gpsMatrixCustomOverrides, setGpsMatrixCustomOverrides] = useState<Record<string, Record<string, number>>>(() => {
@@ -1464,7 +1639,23 @@ export default function PlayerDetailTabs({
     return {};
   });
 
-  // Cálculo reactivo de la matriz GPS según datos reales y variables elegidas por el usuario
+  // Conteo de días distintos por columna MD para el equipo
+  const distinctDaysByMD = useMemo(() => {
+    const res: Record<string, number> = {};
+    mdColumns.forEach((col) => {
+      const dates = new Set<string>();
+      matrixFilteredGpsRecords.forEach((r) => {
+        if (normalizeMD(r.match_day, r.tipo_sesion) === col) {
+          const iso = parseDateStrToISO(r.fecha);
+          if (iso) dates.add(iso);
+        }
+      });
+      res[col] = dates.size;
+    });
+    return res;
+  }, [matrixFilteredGpsRecords, mdColumns]);
+
+  // Cálculo reactivo de la matriz GPS según datos filtrados (Jugador o Equipo, Microciclos y Semanas)
   const realGpsMatrixByMD = useMemo(() => {
     const res: {
       promedio: Record<string, Record<string, number | null>>;
@@ -1475,7 +1666,7 @@ export default function PlayerDetailTabs({
 
     // Conteo de sesiones por columna de Match Day
     mdColumns.forEach((col) => {
-      res.sessionCounts[col] = playerRealGpsRecords.filter(
+      res.sessionCounts[col] = matrixFilteredGpsRecords.filter(
         (r) => normalizeMD(r.match_day, r.tipo_sesion) === col
       ).length;
     });
@@ -1488,14 +1679,14 @@ export default function PlayerDetailTabs({
       const isRate = isRateOrPeak(vKey);
 
       mdColumns.forEach((col) => {
-        const colRecs = playerRealGpsRecords.filter(
+        const colRecs = matrixFilteredGpsRecords.filter(
           (r) => normalizeMD(r.match_day, r.tipo_sesion) === col
         );
 
         if (colRecs.length === 0) {
           res.promedio[vKey][col] = null;
           res.maximos[vKey][col] = null;
-          if (col === "MD") {
+          if (col === "MD" && gpsSubjectMode === "jugador") {
             const compVal = playerCompProfile?.values?.[vKey];
             res.competitivo[vKey][col] = typeof compVal === "number" ? compVal : null;
           } else {
@@ -1511,30 +1702,63 @@ export default function PlayerDetailTabs({
             return dur > 0 ? dist / dur : calculateGpsMetricValue(r.metricas || r, vKey, derivedVariables);
           }
           return calculateGpsMetricValue(r.metricas || r, vKey, derivedVariables);
-        });
+        }).filter((v) => typeof v === "number" && !isNaN(v) && v > 0);
 
-        const sum = vals.reduce((a, b) => a + b, 0);
-        const avg = sum / vals.length;
+        if (vals.length === 0) {
+          res.promedio[vKey][col] = null;
+          res.maximos[vKey][col] = null;
+          res.competitivo[vKey][col] = null;
+          return;
+        }
+
         const max = Math.max(...vals);
 
-        const formattedAvg = isRate ? Math.round(avg * 10) / 10 : Math.round(avg);
-        const formattedMax = isRate ? Math.round(max * 10) / 10 : Math.round(max);
+        if (gpsSubjectMode === "jugador") {
+          const maxIdx = vals.indexOf(max);
+          const valsWithoutMax = vals.filter((_, i) => i !== maxIdx);
+          const avgWithoutMax = valsWithoutMax.length > 0
+            ? valsWithoutMax.reduce((a, b) => a + b, 0) / valsWithoutMax.length
+            : max;
 
-        res.promedio[vKey][col] = formattedAvg;
-        res.maximos[vKey][col] = formattedMax;
+          const formattedAvgWithoutMax = isRate ? Math.round(avgWithoutMax * 10) / 10 : Math.round(avgWithoutMax);
+          const formattedMax = isRate ? Math.round(max * 10) / 10 : Math.round(max);
 
-        if (col === "MD") {
-          const compVal = playerCompProfile?.values?.[vKey];
-          res.competitivo[vKey][col] = typeof compVal === "number" ? compVal : formattedMax;
+          res.promedio[vKey][col] = formattedAvgWithoutMax;
+          res.maximos[vKey][col] = formattedMax;
+
+          if (col === "MD") {
+            const compVal = playerCompProfile?.values?.[vKey];
+            if (typeof compVal === "number") {
+              res.competitivo[vKey][col] = compVal;
+            } else {
+              const compDemMD = (max + avgWithoutMax) / 2;
+              res.competitivo[vKey][col] = isRate ? Math.round(compDemMD * 10) / 10 : Math.round(compDemMD);
+            }
+          } else {
+            const compDem = (max + avgWithoutMax) / 2;
+            res.competitivo[vKey][col] = isRate ? Math.round(compDem * 10) / 10 : Math.round(compDem);
+          }
         } else {
-          const compDem = (formattedMax + formattedAvg) / 2;
-          res.competitivo[vKey][col] = isRate ? Math.round(compDem * 10) / 10 : Math.round(compDem);
+          // Modo EQUIPO: promedio global de la plantilla y máximo pico de plantilla
+          const sum = vals.reduce((a, b) => a + b, 0);
+          const avgTeam = sum / vals.length;
+          const formattedAvgTeam = isRate ? Math.round(avgTeam * 10) / 10 : Math.round(avgTeam);
+          const formattedMax = isRate ? Math.round(max * 10) / 10 : Math.round(max);
+          const compDem = (max + avgTeam) / 2;
+          const formattedComp = isRate ? Math.round(compDem * 10) / 10 : Math.round(compDem);
+
+          res.promedio[vKey][col] = formattedAvgTeam;
+          res.maximos[vKey][col] = formattedMax;
+          res.competitivo[vKey][col] = formattedComp;
         }
       });
     });
 
     return res;
-  }, [playerRealGpsRecords, playerCompVariables, mdColumns, derivedVariables, playerCompProfile]);
+  }, [matrixFilteredGpsRecords, playerCompVariables, mdColumns, derivedVariables, playerCompProfile, gpsSubjectMode]);
+
+
+
 
   // Local state for Ficha Cualitativa
   const [cualitativa, setCualitativa] = useState({
@@ -2612,7 +2836,10 @@ export default function PlayerDetailTabs({
             }
 
             // Lista de métricas a mostrar según las variables elegidas por el usuario
-            const displayMetrics = playerCompVariables.map((k) => {
+            const validDerivedSet = new Set(derivedVariables.map((d) => d.id));
+            const displayMetrics = playerCompVariables
+              .filter((k) => k !== "derived_1791992159697" && k !== "derived_undefined" && (!k.startsWith("derived_") || validDerivedSet.has(k)))
+              .map((k) => {
               const fav = favoriteVariables.find((v) => v.key === k) || ALL_GPS_VARIABLES.find((v) => v.key === k);
               const label = getCompactMetricHeader(k, fav?.label);
               const unit = fav?.unit || (k === "Distance(m)" || k.includes("(m)") ? "m" : k.includes("Speed") ? "km/h" : k.includes("Min") ? "m/min" : k.includes("Load") ? "AU" : "cnt");
@@ -2654,117 +2881,6 @@ export default function PlayerDetailTabs({
                   gap: "12px",
                 }}
               >
-                {/* ── ASIGNACIÓN DE VARIABLE HSRI INDIVIDUALIZADA PARA ESTE DEPORTISTA ── */}
-                <div
-                  style={{
-                    background: "linear-gradient(135deg, #faf5ff 0%, #fdf4ff 100%)",
-                    border: "1px solid #e9d5ff",
-                    borderRadius: "8px",
-                    padding: "8px 12px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    flexWrap: "wrap",
-                    gap: "8px",
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <span style={{ fontSize: "16px" }}>⚡</span>
-                    <div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                        <strong style={{ fontSize: "11.5px", color: "#6b21a8" }}>
-                          Variable HSRI Individualizada:
-                        </strong>
-                        <span
-                          style={{
-                            fontSize: "10.5px",
-                            fontWeight: 800,
-                            background: "#7e22ce",
-                            color: "#ffffff",
-                            padding: "2px 7px",
-                            borderRadius: "4px",
-                          }}
-                        >
-                          {allVariables.find((v) => v.key === hsriVariableKey)?.label || derivedVariables.find((d) => d.id === hsriVariableKey)?.label || hsriVariableKey}
-                        </span>
-                      </div>
-                      <p style={{ margin: "2px 0 0", fontSize: "10px", color: "#7e22ce" }}>
-                        Métrica de carrera a alta intensidad específica para {jugador.apodo || jugador.nombre}. Puedes asignarle cualquiera de las variables GPS o tus variables derivadas creadas.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                    <label style={{ fontSize: "10.5px", fontWeight: 800, color: "#6b21a8" }}>
-                      Asignar variable:
-                    </label>
-                    <select
-                      value={hsriVariableKey}
-                      onChange={(e) => handleAssignHsriVariable(e.target.value)}
-                      style={{
-                        padding: "3px 8px",
-                        borderRadius: "5px",
-                        border: "1.5px solid #c084fc",
-                        background: "#ffffff",
-                        color: "#581c87",
-                        fontSize: "11px",
-                        fontWeight: 700,
-                        outline: "none",
-                        cursor: "pointer",
-                        maxWidth: "240px",
-                      }}
-                    >
-                      {derivedVariables.length > 0 && (
-                        <optgroup label="⭐ Tus Variables Derivadas Creadas">
-                          {derivedVariables.map((d) => (
-                            <option key={d.id} value={d.id}>
-                              ⭐ {d.label} ({d.unit})
-                            </option>
-                          ))}
-                        </optgroup>
-                      )}
-                      <optgroup label="Velocidad e Intensidad (GPS)">
-                        {allVariables
-                          .filter((v) => !v.esDerivada && (v.categoria === "Velocidad e Intensidad" || v.key.includes("Distance +") || v.key.includes("km/h")))
-                          .map((v) => (
-                            <option key={v.key} value={v.key}>
-                              {v.label} ({v.unit})
-                            </option>
-                          ))}
-                      </optgroup>
-                      <optgroup label="Otras Variables GPS">
-                        {allVariables
-                          .filter((v) => !v.esDerivada && v.categoria !== "Velocidad e Intensidad" && !v.key.includes("Distance +") && !v.key.includes("km/h"))
-                          .map((v) => (
-                            <option key={v.key} value={v.key}>
-                              {v.label} ({v.unit})
-                            </option>
-                          ))}
-                      </optgroup>
-                    </select>
-
-                    {!playerCompVariables.includes(hsriVariableKey) && (
-                      <button
-                        type="button"
-                        onClick={() => handleAddVariable(hsriVariableKey)}
-                        style={{
-                          padding: "3px 8px",
-                          borderRadius: "5px",
-                          border: "1px solid #a855f7",
-                          background: "#9333ea",
-                          color: "#ffffff",
-                          fontSize: "10px",
-                          fontWeight: 800,
-                          cursor: "pointer",
-                        }}
-                        title="Añadir esta variable HSRI a la fila de variables del perfil"
-                      >
-                        + Añadir a Fila
-                      </button>
-                    )}
-                  </div>
-                </div>
-
                 {/* ── FILA SUPERIOR: TÍTULO, MÉTODO, ESTADO EN LÍNEA Y CONTROLES ── */}
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "10px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
@@ -2820,6 +2936,84 @@ export default function PlayerDetailTabs({
                           {preset.val}x
                         </button>
                       ))}
+                    </div>
+
+                    {/* Selector discreto y elegante de Variable HSRI Individual */}
+                    <div
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                        background: "#f8fafc",
+                        padding: "2px 6px",
+                        borderRadius: "6px",
+                        border: "1px solid #e2e8f0",
+                      }}
+                      title={`Variable asignada como métrica HSRI individual para ${jugador.apodo || jugador.nombre}`}
+                    >
+                      <span style={{ fontSize: "10px", fontWeight: 700, color: "#64748b" }}>HSRI:</span>
+                      <select
+                        value={hsriVariableKey}
+                        onChange={(e) => handleAssignHsriVariable(e.target.value)}
+                        style={{
+                          border: "none",
+                          background: "transparent",
+                          color: "#334155",
+                          fontSize: "10.5px",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          outline: "none",
+                          maxWidth: "130px",
+                        }}
+                      >
+                        {derivedVariables.length > 0 && (
+                          <optgroup label="Tus Variables Derivadas">
+                            {derivedVariables.map((d) => (
+                              <option key={d.id} value={d.id}>
+                                ⭐ {d.label}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        <optgroup label="Velocidad e Intensidad (GPS)">
+                          {allVariables
+                            .filter((v) => !v.esDerivada && (v.categoria === "Velocidad e Intensidad" || v.key.includes("Distance +") || v.key.includes("km/h")))
+                            .map((v) => (
+                              <option key={v.key} value={v.key}>
+                                {v.label}
+                              </option>
+                            ))}
+                        </optgroup>
+                        <optgroup label="Otras Variables GPS">
+                          {allVariables
+                            .filter((v) => !v.esDerivada && v.categoria !== "Velocidad e Intensidad" && !v.key.includes("Distance +") && !v.key.includes("km/h"))
+                            .map((v) => (
+                              <option key={v.key} value={v.key}>
+                                {v.label}
+                              </option>
+                            ))}
+                        </optgroup>
+                      </select>
+
+                      {!playerCompVariables.includes(hsriVariableKey) && (
+                        <button
+                          type="button"
+                          onClick={() => handleAddVariable(hsriVariableKey)}
+                          style={{
+                            border: "none",
+                            background: "#e2e8f0",
+                            color: "#475569",
+                            fontSize: "9.5px",
+                            fontWeight: 700,
+                            borderRadius: "3px",
+                            padding: "1px 4px",
+                            cursor: "pointer",
+                          }}
+                          title="Añadir esta variable HSRI a la fila de variables"
+                        >
+                          + fila
+                        </button>
+                      )}
                     </div>
 
                     {/* Botón Guardar Ratios Individuales */}
@@ -3768,22 +3962,42 @@ export default function PlayerDetailTabs({
           {/* ══════════════════════════════════════════════════════════════ */}
           {/* 1. PERFIL GPS REAL POR MATCH DAY (MD) SEGÚN VARIABLES ELEGIDAS */}
           {/* ══════════════════════════════════════════════════════════════ */}
+
+                    {/* ══════════════════════════════════════════════════════════════ */}
+          {/* TABLA PRINCIPAL DE DATOS GPS POR MATCH DAY                    */}
+          {/* ══════════════════════════════════════════════════════════════ */}
           <div style={{ background: "#ffffff", padding: "16px 20px", borderRadius: "10px", border: "1px solid #cbd5e1" }}>
-            {/* CABECERA CON TÍTULO, SUBTÍTULO Y SELECTORES DE MODO Y VARIABLES */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px", flexWrap: "wrap", gap: "10px" }}>
+            {/* CABECERA CON TÍTULO Y SUBTÍTULO */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px", flexWrap: "wrap", gap: "10px" }}>
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                   <span style={{ fontSize: "16px" }}>📊</span>
-                  <div style={{ fontWeight: 900, fontSize: "13.5px", color: "#0f172a", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                    DATOS GPS REALES POR MATCH DAY (MD) — {gpsProfileMode === "promedio" ? "PERFIL PROMEDIO REAL" : gpsProfileMode === "maximos" ? "PERFIL MÁXIMOS REALES" : "PERFIL COMPETITIVO ((MÁX + PROM)/2)"}
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                    <div style={{ fontWeight: 900, fontSize: "13.5px", color: "#0f172a", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      DATOS GPS POR MATCH DAY (MD) — {gpsSubjectMode === "jugador" ? "PERFIL JUGADOR" : "MEDIA DEL EQUIPO"} — {gpsProfileMode === "promedio" ? (gpsSubjectMode === "jugador" ? "PERFIL PROMEDIO (SIN MÁXIMA)" : "PROMEDIO DE EQUIPO") : gpsProfileMode === "maximos" ? "PERFIL MÁXIMOS" : "PERFIL COMPETITIVO ((MÁX + PROM SIN MÁX)/2)"}
+                    </div>
+                    <span
+                      style={{
+                        fontSize: "10px",
+                        fontWeight: 800,
+                        padding: "2px 7px",
+                        borderRadius: "4px",
+                        background: gpsDataSourceMode === "reales" ? "#f0fdf4" : "#faf5ff",
+                        color: gpsDataSourceMode === "reales" ? "#16a34a" : "#7e22ce",
+                        border: `1px solid ${gpsDataSourceMode === "reales" ? "#bbf7d0" : "#e9d5ff"}`,
+                        textTransform: "none",
+                      }}
+                    >
+                      {gpsDataSourceMode === "reales" ? "🟢 Solo Reales" : "🧪 Reales + Simulados"}
+                    </span>
                   </div>
                 </div>
                 <div style={{ fontSize: "11px", color: "#64748b", marginTop: "2px" }}>
-                  • Calculado a partir de {playerRealGpsRecords.length} sesiones reales de GPS del jugador ({activeMetricList.length} variables activas)
+                  • Calculado a partir de {matrixFilteredGpsRecords.length} sesiones ({gpsDataSourceMode === "reales" ? "Solo Reales" : "Reales + Simulados"}) · {gpsSubjectMode === "jugador" ? `👤 ${jugador.apodo || jugador.nombre}` : "👥 Media de Plantilla (Equipo)"} · {gpsMicrocycleTypeFilter === "todos" ? "🌐 Todos los microciclos" : MICROCICLE_TYPE_CONFIG[gpsMicrocycleTypeFilter]?.shortLabel} ({relevantMicrocyclesForCurrentFilter.filter((m) => isWeekActive(m.id)).length} de {relevantMicrocyclesForCurrentFilter.length} semanas activas)
                 </div>
               </div>
 
-              {/* CONTROLES: 3 BOTONES DE MODO + SELECTOR DE VARIABLES */}
+              {/* CONTROLES: 3 BOTONES DE MODO DE PERFIL */}
               <div style={{ display: "flex", alignItems: "center", gap: "6px" }} className="no-print">
                 <button
                   type="button"
@@ -3800,9 +4014,9 @@ export default function PlayerDetailTabs({
                     boxShadow: gpsProfileMode === "promedio" ? "0 1px 3px rgba(30,58,138,0.2)" : "none",
                     transition: "all 0.15s ease",
                   }}
-                  title="Mostrar promedios reales por cada día de partido (MD)"
+                  title="Promedio real de las sesiones excluyendo la máxima"
                 >
-                  Promedio Real
+                  Promedio (sin máx)
                 </button>
                 <button
                   type="button"
@@ -3838,10 +4052,348 @@ export default function PlayerDetailTabs({
                     boxShadow: gpsProfileMode === "competitivo" ? "0 1px 3px rgba(126,34,206,0.2)" : "none",
                     transition: "all 0.15s ease",
                   }}
-                  title="Mostrar perfil competitivo con el 100% Match en MD"
+                  title="Perfil Competitivo: (Máxima + Promedio sin máxima) / 2"
                 >
-                  Perfil Competitivo
+                  Perfil Competitivo ((Máx+Prom sin máx)/2)
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setShowTotalColumn(!showTotalColumn)}
+                  style={{
+                    padding: "4px 9px",
+                    borderRadius: "5px",
+                    border: showTotalColumn ? "1px solid #0284c7" : "1px solid #cbd5e1",
+                    fontSize: "11px",
+                    fontWeight: 800,
+                    cursor: "pointer",
+                    background: showTotalColumn ? "#eff6ff" : "#ffffff",
+                    color: showTotalColumn ? "#0369a1" : "#64748b",
+                    boxShadow: showTotalColumn ? "0 1px 3px rgba(2,132,199,0.15)" : "none",
+                    transition: "all 0.15s ease",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                  title="Añadir u ocultar la columna de Total y Ratio alcanzado respecto al partido"
+                >
+                  <span>📊</span>
+                  <span>Columna Total {showTotalColumn ? "(Activa)" : "(Oculta)"}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* BARRA DE FILTROS: SUJETO (JUGADOR / EQUIPO) + TIPOS DE MICROCICLO + ELECCIÓN DE SEMANAS BASE */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: "10px",
+                background: "#f8fafc",
+                border: "1px solid #e2e8f0",
+                padding: "8px 12px",
+                borderRadius: "8px",
+                marginBottom: "12px",
+              }}
+              className="no-print"
+            >
+              {/* SUJETO: ESTE JUGADOR vs MEDIA EQUIPO */}
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <span style={{ fontSize: "11px", fontWeight: 700, color: "#475569" }}>Sujeto:</span>
+                <button
+                  type="button"
+                  onClick={() => setGpsSubjectMode("jugador")}
+                  style={{
+                    padding: "4px 9px",
+                    borderRadius: "5px",
+                    border: "1px solid #cbd5e1",
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    background: gpsSubjectMode === "jugador" ? "#0284c7" : "#ffffff",
+                    color: gpsSubjectMode === "jugador" ? "#ffffff" : "#475569",
+                    transition: "all 0.15s",
+                  }}
+                >
+                  👤 {jugador.apodo || jugador.nombre}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGpsSubjectMode("equipo")}
+                  style={{
+                    padding: "4px 9px",
+                    borderRadius: "5px",
+                    border: "1px solid #cbd5e1",
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    background: gpsSubjectMode === "equipo" ? "#16a34a" : "#ffffff",
+                    color: gpsSubjectMode === "equipo" ? "#ffffff" : "#475569",
+                    transition: "all 0.15s",
+                  }}
+                >
+                  👥 Media del Equipo
+                </button>
+              </div>
+
+              {/* SEGMENTO: DATOS REALES VS TODOS (CON SIMULADOS) */}
+              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                <span style={{ fontSize: "11px", fontWeight: 700, color: "#475569" }}>Datos:</span>
+                <button
+                  type="button"
+                  onClick={() => handleSetGpsDataSourceMode("reales")}
+                  style={{
+                    padding: "3px 8px",
+                    borderRadius: "5px",
+                    border: `1px solid ${gpsDataSourceMode === "reales" ? "#0284c7" : "#cbd5e1"}`,
+                    background: gpsDataSourceMode === "reales" ? "#0284c7" : "#ffffff",
+                    color: gpsDataSourceMode === "reales" ? "#ffffff" : "#475569",
+                    fontSize: "10.5px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                  title="Calcular únicamente con datos de sesiones reales"
+                >
+                  ⚡ Solo Reales
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSetGpsDataSourceMode("todos")}
+                  style={{
+                    padding: "3px 8px",
+                    borderRadius: "5px",
+                    border: `1px solid ${gpsDataSourceMode === "todos" ? "#7e22ce" : "#cbd5e1"}`,
+                    background: gpsDataSourceMode === "todos" ? "#7e22ce" : "#ffffff",
+                    color: gpsDataSourceMode === "todos" ? "#ffffff" : "#475569",
+                    fontSize: "10.5px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                  title="Incluir también datos de sesiones simuladas"
+                >
+                  🧪 Reales + Simulados
+                </button>
+              </div>
+            </div>
+
+              {/* 4 TIPOS DE MICROCICLO */}
+              <div style={{ display: "flex", alignItems: "center", gap: "4px", flexWrap: "wrap" }}>
+                <span style={{ fontSize: "11px", fontWeight: 700, color: "#475569", marginRight: "2px" }}>Microciclo:</span>
+                <button
+                  type="button"
+                  onClick={() => handleSelectMicrocycleTypeFilter("todos")}
+                  style={{
+                    padding: "3px 8px",
+                    borderRadius: "5px",
+                    border: "1px solid #cbd5e1",
+                    fontSize: "10.5px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    background: gpsMicrocycleTypeFilter === "todos" ? "#0f172a" : "#ffffff",
+                    color: gpsMicrocycleTypeFilter === "todos" ? "#ffffff" : "#475569",
+                  }}
+                >
+                  🌐 Todos
+                </button>
+                {(["corto", "media", "largo", "doble_partido"] as const).map((t) => {
+                  const cfg = MICROCICLE_TYPE_CONFIG[t];
+                  const isActive = gpsMicrocycleTypeFilter === t;
+                  return (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => handleSelectMicrocycleTypeFilter(t)}
+                      style={{
+                        padding: "3px 8px",
+                        borderRadius: "5px",
+                        border: `1px solid ${isActive ? cfg.color : "#cbd5e1"}`,
+                        fontSize: "10.5px",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        background: isActive ? cfg.color : "#ffffff",
+                        color: isActive ? "#ffffff" : "#475569",
+                      }}
+                      title={cfg.daysDesc}
+                    >
+                      {cfg.icon} {cfg.shortLabel}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* SELECTOR DE SEMANAS SEGÚN EL TIPO ELEGIDO */}
+              <div style={{ position: "relative" }}>
+                <button
+                  type="button"
+                  onClick={() => setShowWeeksPicker(!showWeeksPicker)}
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: "6px",
+                    border: `1.5px solid ${gpsMicrocycleTypeFilter !== "todos" ? (MICROCICLE_TYPE_CONFIG[gpsMicrocycleTypeFilter]?.color || "#cbd5e1") : "#cbd5e1"}`,
+                    background: gpsMicrocycleTypeFilter !== "todos" ? (MICROCICLE_TYPE_CONFIG[gpsMicrocycleTypeFilter]?.bg || "#f8fafc") : "#ffffff",
+                    color: gpsMicrocycleTypeFilter !== "todos" ? (MICROCICLE_TYPE_CONFIG[gpsMicrocycleTypeFilter]?.color || "#0f172a") : "#334155",
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                  }}
+                  title={
+                    gpsMicrocycleTypeFilter === "media"
+                      ? "Añadir o quitar semanas medias para el cálculo de medias"
+                      : gpsMicrocycleTypeFilter === "corto"
+                      ? "Añadir o quitar semanas cortas para el cálculo de medias"
+                      : "Añadir o quitar semanas para el cálculo de medias"
+                  }
+                >
+                  <span>{gpsMicrocycleTypeFilter !== "todos" ? MICROCICLE_TYPE_CONFIG[gpsMicrocycleTypeFilter]?.icon : "📆"}</span>
+                  <span>
+                    {(() => {
+                      const total = relevantMicrocyclesForCurrentFilter.length;
+                      const active = relevantMicrocyclesForCurrentFilter.filter((m) => isWeekActive(m.id)).length;
+                      if (gpsMicrocycleTypeFilter === "media") return `Semanas Medias (${active}/${total})`;
+                      if (gpsMicrocycleTypeFilter === "corto") return `Semanas Cortas (${active}/${total})`;
+                      if (gpsMicrocycleTypeFilter === "largo") return `Semanas Largas (${active}/${total})`;
+                      if (gpsMicrocycleTypeFilter === "doble_partido") return `Semanas Doble Partido (${active}/${total})`;
+                      return `Todas las Semanas (${active}/${total})`;
+                    })()}
+                  </span>
+                  <span style={{ fontSize: "9px" }}>▼</span>
+                </button>
+
+                {showWeeksPicker && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: 0,
+                      top: "100%",
+                      marginTop: "6px",
+                      background: "#ffffff",
+                      border: "1px solid #cbd5e1",
+                      borderRadius: "10px",
+                      boxShadow: "0 10px 25px -5px rgba(0,0,0,0.2)",
+                      zIndex: 100,
+                      width: "360px",
+                      padding: "14px",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+                      <strong style={{ fontSize: "12px", color: "#0f172a" }}>
+                        {gpsMicrocycleTypeFilter === "media"
+                          ? "📅 Añadir o Quitar Semanas Medias"
+                          : gpsMicrocycleTypeFilter === "corto"
+                          ? "⚡ Añadir o Quitar Semanas Cortas"
+                          : gpsMicrocycleTypeFilter === "doble_partido"
+                          ? "⚽⚽ Añadir o Quitar Semanas Doble Partido"
+                          : "Elegir Semanas Base"}
+                      </strong>
+                      <button
+                        type="button"
+                        onClick={() => setShowWeeksPicker(false)}
+                        style={{ border: "none", background: "transparent", color: "#64748b", cursor: "pointer", fontSize: "13px", fontWeight: 700 }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    <div style={{ display: "flex", gap: "6px", marginBottom: "10px" }}>
+                      <button
+                        type="button"
+                        onClick={handleSelectAllWeeksOfCurrentType}
+                        style={{
+                          padding: "3px 8px",
+                          fontSize: "10.5px",
+                          borderRadius: "4px",
+                          border: "1px solid #0284c7",
+                          background: "#f0f9ff",
+                          color: "#0369a1",
+                          fontWeight: 700,
+                          cursor: "pointer"
+                        }}
+                      >
+                        Marcar todas ({relevantMicrocyclesForCurrentFilter.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleUnselectAllWeeksOfCurrentType}
+                        style={{
+                          padding: "3px 8px",
+                          fontSize: "10.5px",
+                          borderRadius: "4px",
+                          border: "1px solid #cbd5e1",
+                          background: "#f8fafc",
+                          color: "#64748b",
+                          fontWeight: 600,
+                          cursor: "pointer"
+                        }}
+                      >
+                        Desmarcar todas
+                      </button>
+                    </div>
+
+                    <div style={{ maxHeight: "240px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "6px" }}>
+                      {relevantMicrocyclesForCurrentFilter.length === 0 ? (
+                        <div style={{ fontSize: "11.5px", color: "#94a3b8", padding: "8px", textAlign: "center" }}>
+                          No hay microciclos de este tipo en los registros GPS.
+                        </div>
+                      ) : (
+                        relevantMicrocyclesForCurrentFilter.map((mc) => {
+                          const active = isWeekActive(mc.id);
+                          const sParts = mc.start.split("-");
+                          const eParts = mc.end.split("-");
+                          const dateLabel = `${sParts[2]}/${sParts[1]} al ${eParts[2]}/${eParts[1]}`;
+
+                          return (
+                            <label
+                              key={mc.id}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                padding: "7px 10px",
+                                borderRadius: "6px",
+                                background: active ? "#f0fdf4" : "#f8fafc",
+                                border: `1px solid ${active ? "#bbf7d0" : "#e2e8f0"}`,
+                                cursor: "pointer",
+                                fontSize: "11.5px",
+                              }}
+                            >
+                              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                <input
+                                  type="checkbox"
+                                  checked={active}
+                                  onChange={() => handleToggleWeek(mc.id)}
+                                  style={{ cursor: "pointer", width: "15px", height: "15px" }}
+                                />
+                                <div>
+                                  <strong style={{ color: active ? "#0f172a" : "#64748b" }}>{mc.nombre}</strong>
+                                  <div style={{ fontSize: "10px", color: "#64748b" }}>
+                                    📅 ${dateLabel} {mc.matchDates && mc.matchDates.length > 0 ? `· MD: ${mc.matchDates.join(", ")}` : ""}
+                                  </div>
+                                </div>
+                              </div>
+                              <span
+                                style={{
+                                  fontSize: "10px",
+                                  fontWeight: 700,
+                                  padding: "2px 6px",
+                                  borderRadius: "4px",
+                                  background: active ? "#dcfce7" : "#e2e8f0",
+                                  color: active ? "#15803d" : "#64748b",
+                                }}
+                              >
+                                {mc.sessionCount || 5} ses
+                              </span>
+                            </label>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -3858,6 +4410,7 @@ export default function PlayerDetailTabs({
                     {mdColumns.map((col) => {
                       const isMD = col === "MD";
                       const count = realGpsMatrixByMD.sessionCounts[col] || 0;
+                      const datesCount = distinctDaysByMD[col] || 0;
                       return (
                         <th
                           key={col}
@@ -3869,13 +4422,37 @@ export default function PlayerDetailTabs({
                             color: isMD ? "#dc2626" : "#0f172a",
                           }}
                         >
-                          <div>{col}</div>
+                          <div title={col === "+1 MD" ? "MD+1 (+1MD son equivalentes)" : col}>{col === "+1 MD" ? "MD+1" : col === "+2 MD" ? "MD+2" : col}</div>
                           <div style={{ fontSize: "9px", color: isMD ? "#ef4444" : "#94a3b8", fontWeight: 600 }}>
-                            ({count} {count === 1 ? "ses" : "ses"})
+                            {gpsSubjectMode === "equipo" ? (
+                              `(${count} ses · ${datesCount} d)`
+                            ) : (
+                              `(${count} ses)`
+                            )}
                           </div>
                         </th>
                       );
                     })}
+
+                    {showTotalColumn && (
+                      <th
+                        style={{
+                          padding: "6px 8px",
+                          textAlign: "center",
+                          fontWeight: 900,
+                          fontSize: "11px",
+                          color: "#1e3a8a",
+                          background: "#eff6ff",
+                          borderLeft: "2px solid #bfdbfe",
+                          minWidth: "95px",
+                        }}
+                      >
+                        <div>TOTAL</div>
+                        <div style={{ fontSize: "9px", color: "#3b82f6", fontWeight: 700 }}>
+                          ({matrixFilteredGpsRecords.length} ses)
+                        </div>
+                      </th>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -4006,6 +4583,57 @@ export default function PlayerDetailTabs({
                             </td>
                           );
                         })}
+
+                        {showTotalColumn && (() => {
+                          const isRate = isRateOrPeak(metricKey);
+                          const colVals = mdColumns
+                            .map((col) => getCellValue(metricKey, col))
+                            .filter((v): v is number => typeof v === "number");
+
+                          let totalVal: number | null = null;
+                          if (colVals.length > 0) {
+                            totalVal = isRate
+                              ? Math.max(...colVals)
+                              : colVals.reduce((a, b) => a + b, 0);
+                            totalVal = isRate ? Math.round(totalVal * 10) / 10 : Math.round(totalVal);
+                          }
+
+                          const mdVal = getCellValue(metricKey, "MD");
+                          let ratioToMd: number | null = null;
+                          if (totalVal !== null && typeof mdVal === "number" && mdVal > 0) {
+                            ratioToMd = Math.round((totalVal / mdVal) * 100) / 100;
+                          }
+
+                          return (
+                            <td
+                              style={{
+                                padding: "4px 8px",
+                                textAlign: "center",
+                                background: "#f0f9ff",
+                                borderLeft: "2px solid #bfdbfe",
+                              }}
+                            >
+                              <div style={{ fontWeight: 900, fontSize: "11.5px", color: "#0f172a" }}>
+                                {totalVal !== null ? totalVal.toLocaleString() : "—"}
+                              </div>
+                              {ratioToMd !== null ? (
+                                <div
+                                  style={{
+                                    fontSize: "10px",
+                                    fontWeight: 800,
+                                    color: ratioToMd >= 2.0 ? "#15803d" : ratioToMd >= 1.0 ? "#0284c7" : "#b45309",
+                                    marginTop: "2px",
+                                  }}
+                                  title={`Ratio alcanzado respecto a la demanda del partido (MD): ${totalVal} / ${mdVal} = ${ratioToMd}x`}
+                                >
+                                  {ratioToMd}x MD ({Math.round(ratioToMd * 100)}%)
+                                </div>
+                              ) : (
+                                <div style={{ fontSize: "9.5px", color: "#94a3b8" }}>—</div>
+                              )}
+                            </td>
+                          );
+                        })()}
                       </tr>
                     );
                   })}

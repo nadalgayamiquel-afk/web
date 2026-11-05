@@ -1,0 +1,257 @@
+[
+  {
+    "id": "ad-alcorcon",
+    "nombre": "AD ALCORCÓN",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/11596.png"
+  },
+  {
+    "id": "prat",
+    "nombre": "AE PRAT",
+    "escudoUrl": "https://cdn.prod.website-files.com/633a8e278241ee3c4e97f8b2/6346c26d0d29e4499f17f752_prat.png"
+  },
+  {
+    "id": "aguilas-fc",
+    "nombre": "ÁGUILAS FC",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/49957.png"
+  },
+  {
+    "id": "algeciras",
+    "nombre": "ALGECIRAS",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/3705.png"
+  },
+  {
+    "id": "algeciras-cf",
+    "nombre": "ALGECIRAS CF",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/3705.png"
+  },
+  {
+    "id": "antequera-cf",
+    "nombre": "ANTEQUERA CF",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/16022.png"
+  },
+  {
+    "id": "arnedo",
+    "nombre": "ARNEDO",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/59757.png"
+  },
+  {
+    "id": "atletic-lleida",
+    "nombre": "ATLETIC LLEIDA",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/92869.png"
+  },
+  {
+    "id": "atletico-madrileno",
+    "nombre": "ATLÉTICO MADRILEÑO",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/3679.png"
+  },
+  {
+    "id": "barbastro",
+    "nombre": "BARBASTRO",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/16387.png"
+  },
+  {
+    "id": "barca-atletic",
+    "nombre": "BARÇA ATLÈTIC",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/2464.png"
+  },
+  {
+    "id": "calamocha",
+    "nombre": "CALAMOCHA",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/77673.png"
+  },
+  {
+    "id": "cartagena",
+    "nombre": "CARTAGENA",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/7077.png"
+  },
+  {
+    "id": "cd-ebro",
+    "nombre": "CD EBRO",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/47880.png"
+  },
+  {
+    "id": "cd-teruel",
+    "nombre": "CD TERUEL",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/19301.png"
+  },
+  {
+    "id": "ce-europa",
+    "nombre": "CE EUROPA",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/20528.png"
+  },
+  {
+    "id": "hospitalet",
+    "nombre": "CE L'HOSPITALET",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/9477.png"
+  },
+  {
+    "id": "ce-manresa",
+    "nombre": "CE MANRESA",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/41709.png"
+  },
+  {
+    "id": "ce-sabadell",
+    "nombre": "CE SABADELL",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/11422.png"
+  },
+  {
+    "id": "rayo-majadahonda",
+    "nombre": "CF RAYO MAJADAHONDA",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/13702.png"
+  },
+  {
+    "id": "espanyol-b",
+    "nombre": "ESPANYOL B",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/10773.png"
+  },
+  {
+    "id": "fc-cartagena",
+    "nombre": "FC CARTAGENA",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/7077.png"
+  },
+  {
+    "id": "nastic",
+    "nombre": "GIMNÀSTIC DE TARRAGONA",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/5648.png"
+  },
+  {
+    "id": "girona-fc-b",
+    "nombre": "GIRONA FC B",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/38006.png"
+  },
+  {
+    "id": "fe-grama",
+    "nombre": "GRAMA",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/61118.png"
+  },
+  {
+    "id": "hercules-cf",
+    "nombre": "HÉRCULES CF",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/7971.png"
+  },
+  {
+    "id": "juventud-torremolinos",
+    "nombre": "JUVENTUD DE TORREMOLINOS CF",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/43454.png"
+  },
+  {
+    "id": "naxara",
+    "nombre": "NÁXARA",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/33818.png"
+  },
+  {
+    "id": "osasuna-promesas",
+    "nombre": "OSASUNA PROMESAS",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/8516.png"
+  },
+  {
+    "id": "pena-sport",
+    "nombre": "PEÑA SPORT",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/16596.png"
+  },
+  {
+    "id": "real-jaen",
+    "nombre": "REAL JAÉN CF",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/666.png"
+  },
+  {
+    "id": "real-madrid-castilla",
+    "nombre": "REAL MADRID CASTILLA",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/6767.png"
+  },
+  {
+    "id": "real-murcia",
+    "nombre": "REAL MURCIA CF",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/171.png"
+  },
+  {
+    "id": "real-zaragoza",
+    "nombre": "REAL ZARAGOZA",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/142.png"
+  },
+  {
+    "id": "reaud",
+    "nombre": "REAUD",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/666.png"
+  },
+  {
+    "id": "reus-fc-reddis",
+    "nombre": "REUS FC REDDIS",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/83848.png"
+  },
+  {
+    "id": "sd",
+    "nombre": "SD",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/5358.png"
+  },
+  {
+    "id": "sd-huesca",
+    "nombre": "SD HUESCA",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/5358.png"
+  },
+  {
+    "id": "sd-logrones",
+    "nombre": "SD LOGROÑÉS",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/33303.png"
+  },
+  {
+    "id": "terrassa-fc",
+    "nombre": "TERRASSA FC",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/1881.png"
+  },
+  {
+    "id": "tudelano",
+    "nombre": "TUDELANO",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/29271.png"
+  },
+  {
+    "id": "ud",
+    "nombre": "UD TORREMOLINOS",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/43454.png"
+  },
+  {
+    "id": "ud-ibiza",
+    "nombre": "UD IBIZA",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/13241.png"
+  },
+  {
+    "id": "ud-logrones-b",
+    "nombre": "UD LOGROÑÉS B",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/52109.png"
+  },
+  {
+    "id": "ue-olot",
+    "nombre": "UE OLOT",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/38456.png"
+  },
+  {
+    "id": "sant-andreu",
+    "nombre": "UE SANT ANDREU",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/12697.png"
+  },
+  {
+    "id": "utebo",
+    "nombre": "UTEBO FC",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/13244.png"
+  },
+  {
+    "id": "vilanova-cf",
+    "nombre": "VILANOVA CF",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/41558.png"
+  },
+  {
+    "id": "villarreal-b",
+    "nombre": "VILLARREAL CF B",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/11972.png"
+  },
+  {
+    "id": "ce-hospitalet",
+    "nombre": "CE HOSPITALET",
+    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/9477.png"
+  },
+  {
+    "id": "calamocha-cf",
+    "nombre": "CALAMOCHA CF",
+    "escudoUrl": "https://img.a.transfermarkt.technology/wappen/head/77673.png?lm=1789464320"
+  }
+]

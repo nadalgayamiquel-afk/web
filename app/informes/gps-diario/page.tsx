@@ -8,7 +8,8 @@ import { comparePlayersByTacticalPosition } from "@/app/lib/posiciones";
 import React, { useEffect, useState, useRef, useMemo, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { getActiveJugadores, getGpsDatosReport, getOptimizadorSessionNumber } from "@/app/actions";
+import { getActiveJugadores, getGpsDatosReport, getOptimizadorSessionNumber, getSesionesDiaRange } from "@/app/actions";
+import { resolvePlanificacionMD, getLocalStoragePlanificacionDays } from "@/app/lib/planificacionMd";
 import { DISPONIBILIDADES, DisponibilidadCodigo, getSemaforoEstilos } from "@/app/lib/disponibilidad";
 import { getLiveClientSessionNumber } from "@/app/lib/sessionCounter";
 import { ReportNav } from "@/app/informes/ReportNav";
@@ -502,6 +503,26 @@ function InformeGpsDiarioContent() {
   const searchParams = useSearchParams();
   const initialJugadorId = searchParams.get("jugadorId") || "";
 
+  const [planificacionDays, setPlanificacionDays] = useState<any[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const local = getLocalStoragePlanificacionDays();
+    if (local && local.length > 0) {
+      setPlanificacionDays(local);
+    }
+    getSesionesDiaRange()
+      .then((data) => {
+        if (isMounted && Array.isArray(data) && data.length > 0) {
+          setPlanificacionDays(data);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const [jugadores, setJugadores] = useState<Jugador[]>([]);
   const [selectedJugadorId, setSelectedJugadorId] = useState<string>(initialJugadorId);
   const [jugador, setJugador] = useState<Jugador | null>(null);
@@ -526,24 +547,8 @@ function InformeGpsDiarioContent() {
   const { favoriteKeys, favoriteVariables, allVariables, derivedVariables } = useFavoriteGpsVariables();
 
   const resolveCurrentMatchDay = (): string => {
-    if (typeof window !== "undefined") {
-      try {
-        const planKeys = ["planificacion_days_v5", "planificacion_days_v2", "planificacion_days_v1"];
-        for (const k of planKeys) {
-          const raw = localStorage.getItem(k);
-          if (raw) {
-            const days = JSON.parse(raw);
-            const found = (Array.isArray(days) ? days : Object.values(days)).find(
-              (d: any) => d && (d.fecha === selectedDate || d.id === selectedDate)
-            );
-            if (found?.md && typeof found.md === "string" && found.md.trim()) {
-              const clean = found.md.trim();
-              return /^[-+]?\d+\s*MD$/i.test(clean) ? `MD${clean.replace(/MD/i, "").trim()}` : clean;
-            }
-          }
-        }
-      } catch (e) {}
-    }
+    const fromPlan = resolvePlanificacionMD(selectedDate, planificacionDays);
+    if (fromPlan) return fromPlan;
 
     const currentRecordRaw = playerGpsRecords.find((r) => r.fecha === selectedDate);
     if (currentRecordRaw?.match_day && typeof currentRecordRaw.match_day === "string" && currentRecordRaw.match_day.trim()) {
@@ -577,34 +582,17 @@ function InformeGpsDiarioContent() {
     return `Informe ${tipo} ${sesionStr} ${sujetoStr} ${fechaStr}`.replace(/\s+/g, " ").trim();
   };
 
-  const [isPrinting, setIsPrinting] = useState(false);
-
-  useEffect(() => {
-    const handleBeforePrint = () => setIsPrinting(true);
-    const handleAfterPrint = () => setIsPrinting(false);
-
-    window.addEventListener("beforeprint", handleBeforePrint);
-    window.addEventListener("afterprint", handleAfterPrint);
-
-    return () => {
-      window.removeEventListener("beforeprint", handleBeforePrint);
-      window.removeEventListener("afterprint", handleAfterPrint);
-    };
-  }, []);
-
   const handleExportPDF = () => {
     if (typeof window === "undefined") return;
     const exportName = getExportDocumentName();
     const prevTitle = document.title;
     document.title = exportName;
-    setIsPrinting(true);
     setTimeout(() => {
       window.print();
       setTimeout(() => {
         document.title = prevTitle;
-        setIsPrinting(false);
       }, 1000);
-    }, 80);
+    }, 150);
   };
 
   useEffect(() => {
@@ -816,57 +804,67 @@ function InformeGpsDiarioContent() {
     }
   };
 
+  const favsFingerprint = favoriteKeys.filter((k) => k !== "HSR Abs (m)" && k !== "derived_1791992159697").join("|");
+
   // Sincronizar automáticamente tableMetrics y métricas de jugador con las favoritas si no hay configuración previa
   useEffect(() => {
-    const cleanFavs = favoriteKeys.filter((k) => k !== "HSR Abs (m)");
-    if (cleanFavs && cleanFavs.length > 0) {
-      setTableMetrics((prev) => {
-        if (typeof window !== "undefined") {
-          const stored = localStorage.getItem("gps_equipo_table_metrics");
-          if (stored) {
-            try {
-              const parsed = JSON.parse(stored);
-              if (Array.isArray(parsed) && parsed.length > 0) {
-                const cleaned = parsed.filter((k) => k !== "HSR Abs (m)" && cleanFavs.includes(k));
-                if (cleaned.length > 0) return cleaned;
-              }
-            } catch (e) {}
-          }
-        }
-        return cleanFavs.slice(0, 5);
-      });
+    const cleanFavs = favoriteKeys.filter((k) => k !== "HSR Abs (m)" && k !== "derived_1791992159697");
+    if (!cleanFavs || cleanFavs.length === 0) return;
 
-      setPlayerTableMetrics((prev) => {
-        if (prev.filter((k) => k !== "HSR Abs (m)" && cleanFavs.includes(k)).length > 0) {
-          return prev.filter((k) => k !== "HSR Abs (m)" && cleanFavs.includes(k));
-        }
-        if (typeof window !== "undefined") {
-          const stored = localStorage.getItem("gps_player_table_metrics");
-          if (stored) {
-            try {
-              const parsed = JSON.parse(stored);
-              if (Array.isArray(parsed) && parsed.length > 0) {
-                const cleaned = parsed.filter((k) => k !== "HSR Abs (m)" && cleanFavs.includes(k));
-                if (cleaned.length > 0) return cleaned;
-              }
-            } catch (e) {}
-          }
-        }
-        return cleanFavs.slice(0, 6);
-      });
-
+    setTableMetrics((prev) => {
+      let target = cleanFavs.slice(0, 5);
       if (typeof window !== "undefined") {
-        const m1 = localStorage.getItem("gps_player_chart_metric1");
-        if ((!m1 || m1 === "HSR Abs (m)") && cleanFavs.length >= 1) setPlayerChartMetric1(cleanFavs[0]);
-        const m2 = localStorage.getItem("gps_player_chart_metric2");
-        if ((!m2 || m2 === "HSR Abs (m)") && cleanFavs.length >= 2) setPlayerChartMetric2(cleanFavs[1]);
-        const m3 = localStorage.getItem("gps_player_chart_metric3");
-        if ((!m3 || m3 === "HSR Abs (m)") && cleanFavs.length >= 3) setPlayerChartMetric3(cleanFavs[2]);
-        const m4 = localStorage.getItem("gps_player_chart_metric4");
-        if ((!m4 || m4 === "HSR Abs (m)") && cleanFavs.length >= 4) setPlayerChartMetric4(cleanFavs[3]);
+        const stored = localStorage.getItem("gps_equipo_table_metrics");
+        if (stored) {
+          try {
+            const parsed = JSON.parse(stored);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              const cleaned = parsed.filter((k) => k !== "HSR Abs (m)" && k !== "derived_1791992159697" && cleanFavs.includes(k));
+              if (cleaned.length > 0) target = cleaned;
+            }
+          } catch (e) {}
+        }
       }
+      if (prev.length === target.length && prev.every((v, i) => v === target[i])) return prev;
+      return target;
+    });
+
+    setPlayerTableMetrics((prev) => {
+      let target = cleanFavs.slice(0, 6);
+      if (typeof window !== "undefined") {
+        const stored = localStorage.getItem("gps_player_table_metrics");
+        if (stored) {
+          try {
+            const parsed = JSON.parse(stored);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              const cleaned = parsed.filter((k) => k !== "HSR Abs (m)" && k !== "derived_1791992159697" && cleanFavs.includes(k));
+              if (cleaned.length > 0) target = cleaned;
+            }
+          } catch (e) {}
+        }
+      }
+      if (prev.length === target.length && prev.every((v, i) => v === target[i])) return prev;
+      return target;
+    });
+
+    if (typeof window !== "undefined") {
+      const m1 = localStorage.getItem("gps_player_chart_metric1");
+      const targetM1 = (!m1 || m1 === "HSR Abs (m)") && cleanFavs.length >= 1 ? cleanFavs[0] : (m1 || cleanFavs[0]);
+      if (targetM1) setPlayerChartMetric1((prev) => (prev === targetM1 ? prev : targetM1));
+
+      const m2 = localStorage.getItem("gps_player_chart_metric2");
+      const targetM2 = (!m2 || m2 === "HSR Abs (m)") && cleanFavs.length >= 2 ? cleanFavs[1] : (m2 || cleanFavs[1]);
+      if (targetM2) setPlayerChartMetric2((prev) => (prev === targetM2 ? prev : targetM2));
+
+      const m3 = localStorage.getItem("gps_player_chart_metric3");
+      const targetM3 = (!m3 || m3 === "HSR Abs (m)") && cleanFavs.length >= 3 ? cleanFavs[2] : (m3 || cleanFavs[2]);
+      if (targetM3) setPlayerChartMetric3((prev) => (prev === targetM3 ? prev : targetM3));
+
+      const m4 = localStorage.getItem("gps_player_chart_metric4");
+      const targetM4 = (!m4 || m4 === "HSR Abs (m)") && cleanFavs.length >= 4 ? cleanFavs[3] : (m4 || cleanFavs[3]);
+      if (targetM4) setPlayerChartMetric4((prev) => (prev === targetM4 ? prev : targetM4));
     }
-  }, [favoriteKeys]);
+  }, [favsFingerprint]);
 
   const [ocultarSinDatos, setOcultarSinDatos] = useState<boolean>(true);
 
@@ -1144,26 +1142,10 @@ function InformeGpsDiarioContent() {
     const currentRecord = (gpsFilter === "REAL" && isCurrentPlayerSimulado) ? null : currentRecordRaw;
     const currentRecordEffective = getEffectiveRecord(currentRecord, selectedTaskNames, availableSessionTasks, derivedVariables);
 
-    // Lectura de MD con máxima precisión: 1º Planificación (localStorage), 2º BBDD GPS (match_day)
+    // Lectura de MD con máxima precisión: 1º Planificación (BBDD / localStorage), 2º BBDD GPS (match_day)
     const resolveMatchDay = (): string => {
-      if (typeof window !== "undefined") {
-        try {
-          const planKeys = ["planificacion_days_v5", "planificacion_days_v2", "planificacion_days_v1"];
-          for (const k of planKeys) {
-            const raw = localStorage.getItem(k);
-            if (raw) {
-              const days = JSON.parse(raw);
-              const found = (Array.isArray(days) ? days : Object.values(days)).find(
-                (d: any) => d && (d.fecha === selectedDate || d.id === selectedDate)
-              );
-              if (found?.md && typeof found.md === "string" && found.md.trim()) {
-                const clean = found.md.trim();
-                return /^[-+]?\d+\s*MD$/i.test(clean) ? `MD${clean.replace(/MD/i, "").trim()}` : clean;
-              }
-            }
-          }
-        } catch (e) {}
-      }
+      const fromPlan = resolvePlanificacionMD(selectedDate, planificacionDays);
+      if (fromPlan) return fromPlan;
 
       if (currentRecordRaw?.match_day && typeof currentRecordRaw.match_day === "string" && currentRecordRaw.match_day.trim()) {
         return currentRecordRaw.match_day.trim();
@@ -1230,9 +1212,10 @@ function InformeGpsDiarioContent() {
     ) / 100;
 
     // --- 2. Gráfico 2: Vs Su media en este Match Day ---
-    const playerSameMdRecords = playerGpsRecords.filter(
-      (r) => r.match_day === currentRecord?.match_day && r.match_day != null
-    );
+    const playerSameMdRecords = playerGpsRecords.filter((r) => {
+      const rMd = (r.fecha ? resolvePlanificacionMD(r.fecha, planificacionDays) : null) || r.match_day;
+      return rMd === matchDay;
+    });
     const playerMdCount = playerSameMdRecords.length || 1;
 
     const realMdDist = Math.round(
@@ -1502,7 +1485,7 @@ function InformeGpsDiarioContent() {
       <main className="gps-report-page">
         <ReportNav />
         {/* Topbar de navegación + Botón Exportar PDF */}
-        <div className="gps-topbar" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div className="gps-topbar no-print" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
             <Link
               href="/"
@@ -1876,7 +1859,7 @@ function InformeGpsDiarioContent() {
                   </div>
 
                   <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <span className="gps-badge-md">Match Day: {matchDay}</span>
+                    <span suppressHydrationWarning className="gps-badge-md">Match Day: {matchDay}</span>
                     <span style={{ fontSize: "12px", fontWeight: 700, color: "#1e3a8a" }}>
                       📅 {formatDateDDMMAAAA(selectedDate)}
                     </span>
@@ -1942,15 +1925,16 @@ function InformeGpsDiarioContent() {
                         </div>
                         <div style={{ display: "inline-flex", alignItems: "center", gap: "3px" }}>
                           <span style={{ fontSize: "11px", fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: "0.2px" }}>MD:</span>
-                          <span className="print-only" style={{ fontSize: "11px", fontWeight: 800, color: matchDay === "MD" ? "#dc2626" : "#0f172a" }}>
+                          <span suppressHydrationWarning className="print-only" style={{ fontSize: "11px", fontWeight: 800, color: matchDay === "MD" ? "#dc2626" : "#0f172a" }}>
                             {matchDay}
                           </span>
                           <input
                             type="text"
+                            suppressHydrationWarning
                             value={matchDay}
                             readOnly
                             className="clean-header-input no-print"
-                            style={{ fontSize: "11.5px", fontWeight: 800, padding: "2px 4px", borderRadius: "4px", border: "1px solid #cbd5e1", background: "#f8fafc", color: matchDay === "MD" ? "#dc2626" : "#0f172a", outline: "none", width: "44px", textAlign: "center" }}
+                            style={{ fontSize: "11.5px", fontWeight: 800, padding: "2px 4px", borderRadius: "4px", border: "1px solid #cbd5e1", background: "#f8fafc", color: matchDay === "MD" ? "#dc2626" : "#0f172a", outline: "none", width: "52px", textAlign: "center" }}
                           />
                         </div>
                       </div>
@@ -2450,7 +2434,7 @@ function InformeGpsDiarioContent() {
                           </div>
                           <div style={{ display: "inline-flex", alignItems: "center", gap: "3px" }}>
                             <span style={{ fontSize: "11px", fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: "0.2px" }}>MD:</span>
-                            <span className="print-only" style={{ fontSize: "11px", fontWeight: 800, color: matchDay === "MD" ? "#dc2626" : "#0f172a" }}>
+                            <span suppressHydrationWarning className="print-only" style={{ fontSize: "11px", fontWeight: 800, color: matchDay === "MD" ? "#dc2626" : "#0f172a" }}>
                               {matchDay}
                             </span>
                             <input
@@ -2458,7 +2442,7 @@ function InformeGpsDiarioContent() {
                               value={matchDay}
                               readOnly
                               className="clean-header-input no-print"
-                              style={{ fontSize: "11.5px", fontWeight: 800, padding: "2px 4px", borderRadius: "4px", border: "1px solid #cbd5e1", background: "#f8fafc", color: matchDay === "MD" ? "#dc2626" : "#0f172a", outline: "none", width: "44px", textAlign: "center" }}
+                              style={{ fontSize: "11.5px", fontWeight: 800, padding: "2px 4px", borderRadius: "4px", border: "1px solid #cbd5e1", background: "#f8fafc", color: matchDay === "MD" ? "#dc2626" : "#0f172a", outline: "none", width: "52px", textAlign: "center" }}
                             />
                           </div>
                         </div>
@@ -2494,7 +2478,7 @@ function InformeGpsDiarioContent() {
                         </div>
 
                         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                          <span className="gps-badge-md">Match Day: {matchDay}</span>
+                          <span suppressHydrationWarning className="gps-badge-md">Match Day: {matchDay}</span>
                           <span style={{ fontSize: "12px", fontWeight: 700, color: "#1e3a8a" }}>
                             📅 {formatDateDDMMAAAA(selectedDate)}
                           </span>
@@ -2572,10 +2556,10 @@ function InformeGpsDiarioContent() {
                                   <XAxis dataKey="categoria" stroke="#000000" tick={false} axisLine={{ stroke: "#000000" }} />
                                   <YAxis stroke="#000000" tick={{ fontSize: 9, fontWeight: 700, fill: "#000000" }} unit={m1Def.unit || ""} domain={[0, "auto"]} />
                                   <Tooltip contentStyle={{ borderRadius: "8px", fontSize: "11px" }} />
-                                  <Bar dataKey={firstName} name={firstName} fill="#1e3a8a" radius={[4, 4, 0, 0]} barSize={32}>
+                                  <Bar isAnimationActive={false} dataKey={firstName} name={firstName} fill="#1e3a8a" radius={[4, 4, 0, 0]} barSize={32}>
                                     <LabelList dataKey={firstName} position="top" style={{ fontSize: "9.5px", fontWeight: 800, fill: "#1e3a8a" }} formatter={(val: any) => typeof val === "number" ? val.toLocaleString("es-ES") : val} />
                                   </Bar>
-                                  <Bar dataKey="Media eq." name="Media equipo" fill="#ea580c" radius={[4, 4, 0, 0]} barSize={32}>
+                                  <Bar isAnimationActive={false} dataKey="Media eq." name="Media equipo" fill="#ea580c" radius={[4, 4, 0, 0]} barSize={32}>
                                     <LabelList dataKey="Media eq." position="top" style={{ fontSize: "9.5px", fontWeight: 800, fill: "#ea580c" }} formatter={(val: any) => typeof val === "number" ? val.toLocaleString("es-ES") : val} />
                                   </Bar>
                                 </BarChart>
@@ -2608,10 +2592,10 @@ function InformeGpsDiarioContent() {
                                   <XAxis dataKey="categoria" stroke="#000000" tick={false} axisLine={{ stroke: "#000000" }} />
                                   <YAxis orientation="right" stroke="#000000" tick={{ fontSize: 9, fontWeight: 700, fill: "#000000" }} unit={m2Def.unit || ""} domain={[0, "auto"]} />
                                   <Tooltip contentStyle={{ borderRadius: "8px", fontSize: "11px" }} />
-                                  <Bar dataKey={firstName} name={firstName} fill="#1e3a8a" radius={[4, 4, 0, 0]} barSize={32}>
+                                  <Bar isAnimationActive={false} dataKey={firstName} name={firstName} fill="#1e3a8a" radius={[4, 4, 0, 0]} barSize={32}>
                                     <LabelList dataKey={firstName} position="top" style={{ fontSize: "9.5px", fontWeight: 800, fill: "#1e3a8a" }} formatter={(val: any) => typeof val === "number" ? val.toLocaleString("es-ES") : val} />
                                   </Bar>
-                                  <Bar dataKey="Media eq." name="Media equipo" fill="#ea580c" radius={[4, 4, 0, 0]} barSize={32}>
+                                  <Bar isAnimationActive={false} dataKey="Media eq." name="Media equipo" fill="#ea580c" radius={[4, 4, 0, 0]} barSize={32}>
                                     <LabelList dataKey="Media eq." position="top" style={{ fontSize: "9.5px", fontWeight: 800, fill: "#ea580c" }} formatter={(val: any) => typeof val === "number" ? val.toLocaleString("es-ES") : val} />
                                   </Bar>
                                 </BarChart>
@@ -2662,10 +2646,10 @@ function InformeGpsDiarioContent() {
                                   <XAxis dataKey="categoria" stroke="#000000" tick={false} axisLine={{ stroke: "#000000" }} />
                                   <YAxis stroke="#000000" tick={{ fontSize: 9, fontWeight: 700, fill: "#000000" }} unit={m1Def.unit || ""} domain={[0, "auto"]} />
                                   <Tooltip contentStyle={{ borderRadius: "8px", fontSize: "11px" }} />
-                                  <Bar dataKey={firstName} name={firstName} fill="#1e3a8a" radius={[4, 4, 0, 0]} barSize={32}>
+                                  <Bar isAnimationActive={false} dataKey={firstName} name={firstName} fill="#1e3a8a" radius={[4, 4, 0, 0]} barSize={32}>
                                     <LabelList dataKey={firstName} position="top" style={{ fontSize: "9.5px", fontWeight: 800, fill: "#1e3a8a" }} formatter={(val: any) => typeof val === "number" ? val.toLocaleString("es-ES") : val} />
                                   </Bar>
-                                  <Bar dataKey={`Media ${matchDay}`} name={`Media ${matchDay}`} fill="#ea580c" radius={[4, 4, 0, 0]} barSize={32}>
+                                  <Bar isAnimationActive={false} dataKey={`Media ${matchDay}`} name={`Media ${matchDay}`} fill="#ea580c" radius={[4, 4, 0, 0]} barSize={32}>
                                     <LabelList dataKey={`Media ${matchDay}`} position="top" style={{ fontSize: "9.5px", fontWeight: 800, fill: "#ea580c" }} formatter={(val: any) => typeof val === "number" ? val.toLocaleString("es-ES") : val} />
                                   </Bar>
                                 </BarChart>
@@ -2698,10 +2682,10 @@ function InformeGpsDiarioContent() {
                                   <XAxis dataKey="categoria" stroke="#000000" tick={false} axisLine={{ stroke: "#000000" }} />
                                   <YAxis orientation="right" stroke="#000000" tick={{ fontSize: 9, fontWeight: 700, fill: "#000000" }} unit={m2Def.unit || ""} domain={[0, "auto"]} />
                                   <Tooltip contentStyle={{ borderRadius: "8px", fontSize: "11px" }} />
-                                  <Bar dataKey={firstName} name={firstName} fill="#1e3a8a" radius={[4, 4, 0, 0]} barSize={32}>
+                                  <Bar isAnimationActive={false} dataKey={firstName} name={firstName} fill="#1e3a8a" radius={[4, 4, 0, 0]} barSize={32}>
                                     <LabelList dataKey={firstName} position="top" style={{ fontSize: "9.5px", fontWeight: 800, fill: "#1e3a8a" }} formatter={(val: any) => typeof val === "number" ? val.toLocaleString("es-ES") : val} />
                                   </Bar>
-                                  <Bar dataKey={`Media ${matchDay}`} name={`Media ${matchDay}`} fill="#ea580c" radius={[4, 4, 0, 0]} barSize={32}>
+                                  <Bar isAnimationActive={false} dataKey={`Media ${matchDay}`} name={`Media ${matchDay}`} fill="#ea580c" radius={[4, 4, 0, 0]} barSize={32}>
                                     <LabelList dataKey={`Media ${matchDay}`} position="top" style={{ fontSize: "9.5px", fontWeight: 800, fill: "#ea580c" }} formatter={(val: any) => typeof val === "number" ? val.toLocaleString("es-ES") : val} />
                                   </Bar>
                                 </BarChart>
@@ -2755,10 +2739,10 @@ function InformeGpsDiarioContent() {
                                   <XAxis dataKey="categoria" stroke="#000000" tick={false} axisLine={{ stroke: "#000000" }} />
                                   <YAxis stroke="#000000" tick={{ fontSize: 9, fontWeight: 700, fill: "#000000" }} unit={m3Def.unit || ""} domain={[0, "auto"]} />
                                   <Tooltip contentStyle={{ borderRadius: "8px", fontSize: "11px" }} />
-                                  <Bar dataKey={firstName} name={firstName} fill="#1e3a8a" radius={[4, 4, 0, 0]} barSize={32}>
+                                  <Bar isAnimationActive={false} dataKey={firstName} name={firstName} fill="#1e3a8a" radius={[4, 4, 0, 0]} barSize={32}>
                                     <LabelList dataKey={firstName} position="top" style={{ fontSize: "9.5px", fontWeight: 800, fill: "#1e3a8a" }} formatter={(val: any) => typeof val === "number" ? val.toLocaleString("es-ES") : val} />
                                   </Bar>
-                                  <Bar dataKey="Media eq." name="Media equipo" fill="#ea580c" radius={[4, 4, 0, 0]} barSize={32}>
+                                  <Bar isAnimationActive={false} dataKey="Media eq." name="Media equipo" fill="#ea580c" radius={[4, 4, 0, 0]} barSize={32}>
                                     <LabelList dataKey="Media eq." position="top" style={{ fontSize: "9.5px", fontWeight: 800, fill: "#ea580c" }} formatter={(val: any) => typeof val === "number" ? val.toLocaleString("es-ES") : val} />
                                   </Bar>
                                 </BarChart>
@@ -2791,10 +2775,10 @@ function InformeGpsDiarioContent() {
                                   <XAxis dataKey="categoria" stroke="#000000" tick={false} axisLine={{ stroke: "#000000" }} />
                                   <YAxis orientation="right" stroke="#000000" tick={{ fontSize: 9, fontWeight: 700, fill: "#000000" }} unit={m4Def.unit || ""} domain={[0, "auto"]} />
                                   <Tooltip contentStyle={{ borderRadius: "8px", fontSize: "11px" }} />
-                                  <Bar dataKey={firstName} name={firstName} fill="#1e3a8a" radius={[4, 4, 0, 0]} barSize={32}>
+                                  <Bar isAnimationActive={false} dataKey={firstName} name={firstName} fill="#1e3a8a" radius={[4, 4, 0, 0]} barSize={32}>
                                     <LabelList dataKey={firstName} position="top" style={{ fontSize: "9.5px", fontWeight: 800, fill: "#1e3a8a" }} formatter={(val: any) => typeof val === "number" ? val.toLocaleString("es-ES") : val} />
                                   </Bar>
-                                  <Bar dataKey="Media eq." name="Media equipo" fill="#ea580c" radius={[4, 4, 0, 0]} barSize={32}>
+                                  <Bar isAnimationActive={false} dataKey="Media eq." name="Media equipo" fill="#ea580c" radius={[4, 4, 0, 0]} barSize={32}>
                                     <LabelList dataKey="Media eq." position="top" style={{ fontSize: "9.5px", fontWeight: 800, fill: "#ea580c" }} formatter={(val: any) => typeof val === "number" ? val.toLocaleString("es-ES") : val} />
                                   </Bar>
                                 </BarChart>
@@ -2845,10 +2829,10 @@ function InformeGpsDiarioContent() {
                                   <XAxis dataKey="categoria" stroke="#000000" tick={false} axisLine={{ stroke: "#000000" }} />
                                   <YAxis stroke="#000000" tick={{ fontSize: 9, fontWeight: 700, fill: "#000000" }} unit={m3Def.unit || ""} domain={[0, "auto"]} />
                                   <Tooltip contentStyle={{ borderRadius: "8px", fontSize: "11px" }} />
-                                  <Bar dataKey={firstName} name={firstName} fill="#1e3a8a" radius={[4, 4, 0, 0]} barSize={32}>
+                                  <Bar isAnimationActive={false} dataKey={firstName} name={firstName} fill="#1e3a8a" radius={[4, 4, 0, 0]} barSize={32}>
                                     <LabelList dataKey={firstName} position="top" style={{ fontSize: "9.5px", fontWeight: 800, fill: "#1e3a8a" }} formatter={(val: any) => typeof val === "number" ? val.toLocaleString("es-ES") : val} />
                                   </Bar>
-                                  <Bar dataKey={`Media ${matchDay}`} name={`Media ${matchDay}`} fill="#ea580c" radius={[4, 4, 0, 0]} barSize={32}>
+                                  <Bar isAnimationActive={false} dataKey={`Media ${matchDay}`} name={`Media ${matchDay}`} fill="#ea580c" radius={[4, 4, 0, 0]} barSize={32}>
                                     <LabelList dataKey={`Media ${matchDay}`} position="top" style={{ fontSize: "9.5px", fontWeight: 800, fill: "#ea580c" }} formatter={(val: any) => typeof val === "number" ? val.toLocaleString("es-ES") : val} />
                                   </Bar>
                                 </BarChart>
@@ -2881,10 +2865,10 @@ function InformeGpsDiarioContent() {
                                   <XAxis dataKey="categoria" stroke="#000000" tick={false} axisLine={{ stroke: "#000000" }} />
                                   <YAxis orientation="right" stroke="#000000" tick={{ fontSize: 9, fontWeight: 700, fill: "#000000" }} unit={m4Def.unit || ""} domain={[0, "auto"]} />
                                   <Tooltip contentStyle={{ borderRadius: "8px", fontSize: "11px" }} />
-                                  <Bar dataKey={firstName} name={firstName} fill="#1e3a8a" radius={[4, 4, 0, 0]} barSize={32}>
+                                  <Bar isAnimationActive={false} dataKey={firstName} name={firstName} fill="#1e3a8a" radius={[4, 4, 0, 0]} barSize={32}>
                                     <LabelList dataKey={firstName} position="top" style={{ fontSize: "9.5px", fontWeight: 800, fill: "#1e3a8a" }} formatter={(val: any) => typeof val === "number" ? val.toLocaleString("es-ES") : val} />
                                   </Bar>
-                                  <Bar dataKey={`Media ${matchDay}`} name={`Media ${matchDay}`} fill="#ea580c" radius={[4, 4, 0, 0]} barSize={32}>
+                                  <Bar isAnimationActive={false} dataKey={`Media ${matchDay}`} name={`Media ${matchDay}`} fill="#ea580c" radius={[4, 4, 0, 0]} barSize={32}>
                                     <LabelList dataKey={`Media ${matchDay}`} position="top" style={{ fontSize: "9.5px", fontWeight: 800, fill: "#ea580c" }} formatter={(val: any) => typeof val === "number" ? val.toLocaleString("es-ES") : val} />
                                   </Bar>
                                 </BarChart>
@@ -3084,7 +3068,7 @@ function InformeGpsDiarioContent() {
                 {subView === "equipo" && (
                   <div className="team-report-card">
                     {/* CABECERA ESTÁNDAR: ESCUDO Y CLUB A LA IZQ / TÍTULO ENMEDIO / DÍA Y MD A LA DERECHA */}
-                    <div className="team-header-grid" style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: "16px", alignItems: "center", marginBottom: "10px", borderBottom: "2px solid #0f172a", paddingBottom: "10px" }}>
+                    <div className="team-header-grid" style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: "16px", alignItems: "center", marginBottom: "16px", borderBottom: "2px solid #0f172a", paddingBottom: "10px" }}>
                       {/* Arriba a la izquierda: Escudo y nombre del club */}
                       <div className="team-header-club-box" style={{ justifySelf: "start", display: "flex", flexDirection: "column", alignItems: "center", gap: "2px", minWidth: "75px" }}>
                         <img
@@ -3123,7 +3107,7 @@ function InformeGpsDiarioContent() {
                           </div>
                           <div style={{ display: "inline-flex", alignItems: "center", gap: "3px" }}>
                             <span style={{ fontSize: "11px", fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: "0.2px" }}>MD:</span>
-                            <span className="print-only" style={{ fontSize: "11px", fontWeight: 800, color: matchDay === "MD" ? "#dc2626" : "#0f172a" }}>
+                            <span suppressHydrationWarning className="print-only" style={{ fontSize: "11px", fontWeight: 800, color: matchDay === "MD" ? "#dc2626" : "#0f172a" }}>
                               {matchDay}
                             </span>
                             <input
@@ -3131,7 +3115,7 @@ function InformeGpsDiarioContent() {
                               value={matchDay}
                               readOnly
                               className="clean-header-input no-print"
-                              style={{ fontSize: "11.5px", fontWeight: 800, padding: "2px 4px", borderRadius: "4px", border: "1px solid #cbd5e1", background: "#f8fafc", color: matchDay === "MD" ? "#dc2626" : "#0f172a", outline: "none", width: "44px", textAlign: "center" }}
+                              style={{ fontSize: "11.5px", fontWeight: 800, padding: "2px 4px", borderRadius: "4px", border: "1px solid #cbd5e1", background: "#f8fafc", color: matchDay === "MD" ? "#dc2626" : "#0f172a", outline: "none", width: "52px", textAlign: "center" }}
                             />
                           </div>
                         </div>
@@ -3281,53 +3265,75 @@ function InformeGpsDiarioContent() {
                       </div>
 
                       {/* Render Recharts ComposedChart Dual-Axis */}
-                      <div className="team-chart-plot-container" style={{ width: "100%", height: isPrinting ? 98 : 260 }}>
-                        <ResponsiveContainer width="100%" height="100%">
-                          <ComposedChart data={chart1Data} margin={isPrinting ? { top: 8, right: 0, left: -15, bottom: 18 } : { top: 16, right: 0, left: 0, bottom: 25 }} barCategoryGap="2%">
-                            <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
+                      {/* 1. Versión Responsive Pantalla */}
+                      <div className="team-chart-screen-plot no-print" style={{ width: "100%", height: 245 }}>
+                        <ResponsiveContainer width="100%" height={245}>
+                          <ComposedChart data={chart1Data} margin={{ top: 16, right: 0, left: 0, bottom: 25 }} barCategoryGap="2%">
                             <XAxis
                               dataKey="name"
                               stroke="#0f172a"
                               interval={0}
-                              tick={{ fontSize: isPrinting ? 7 : 8.5, fontWeight: 600, fill: "#0f172a" }}
+                              tick={{ fontSize: 8.5, fontWeight: 600, fill: "#0f172a" }}
                               angle={-35}
                               textAnchor="end"
                             />
-                            <YAxis yAxisId="left" orientation="left" stroke="#0284c7" tick={{ fontSize: isPrinting ? 6.5 : 8.5, fontWeight: 500, fill: "#0284c7" }} />
-                            <YAxis yAxisId="right" orientation="right" stroke="#dc2626" tick={{ fontSize: isPrinting ? 6.5 : 8.5, fontWeight: 500, fill: "#dc2626" }} />
+                            <YAxis yAxisId="left" orientation="left" stroke="#0284c7" tick={{ fontSize: 8.5, fontWeight: 500, fill: "#0284c7" }} />
+                            <YAxis yAxisId="right" orientation="right" stroke="#dc2626" tick={{ fontSize: 8.5, fontWeight: 500, fill: "#dc2626" }} />
                             <Tooltip contentStyle={{ borderRadius: "6px", fontSize: "11px", fontWeight: 500 }} />
-                            {/* Variable 1 (Y): Representada en Columna (Barra azul claro brillante con valor en blanco) */}
-                            <Bar yAxisId="left" dataKey="Y1" name={m1Left.label} fill="#0284c7" radius={[3, 3, 0, 0]} barSize={isPrinting ? 14 : 24}>
-                              <LabelList dataKey="Y1" position="insideBottom" dy={-4} style={{ fontSize: isPrinting ? "6px" : "7.5px", fontWeight: 500, fill: "#ffffff" }} formatter={(val: any) => typeof val === "number" ? (val > 100 ? Math.round(val) : val) : val} />
+                            <Bar isAnimationActive={false} yAxisId="left" dataKey="Y1" name={m1Left.label} fill="#0284c7" radius={[3, 3, 0, 0]} barSize={22}>
+                              <LabelList dataKey="Y1" position="insideBottom" dy={-4} style={{ fontSize: "7.5px", fontWeight: 500, fill: "#ffffff" }} formatter={(val: any) => typeof val === "number" ? (val > 100 ? Math.round(val) : val) : val} />
                             </Bar>
-                            {/* Variable 2 (Y2): Representada en Punto rojo (Scatter/Dot) sobre la barra */}
-                            <Scatter yAxisId="right" dataKey="Y2" name={m1Right.label} fill="#dc2626" shape="circle">
-                              <LabelList dataKey="Y2" position="top" style={{ fontSize: isPrinting ? "6.5px" : "8px", fontWeight: 500, fill: "#dc2626" }} formatter={(val: any) => typeof val === "number" ? (val > 100 ? Math.round(val) : val) : val} />
+                            <Scatter isAnimationActive={false} yAxisId="right" dataKey="Y2" name={m1Right.label} fill="#dc2626" shape="circle">
+                              <LabelList dataKey="Y2" position="top" style={{ fontSize: "8px", fontWeight: 500, fill: "#dc2626" }} formatter={(val: any) => typeof val === "number" ? (val > 100 ? Math.round(val) : val) : val} />
                             </Scatter>
                           </ComposedChart>
                         </ResponsiveContainer>
                       </div>
 
+                      {/* 2. Versión Impresión / PDF (Dimensiones fijas sin ResponsiveContainer para captura instantánea) */}
+                      <div className="team-chart-print-plot print-chart-only" style={{ width: "100%", height: 235 }}>
+                        <ComposedChart width={730} height={235} data={chart1Data} margin={{ top: 16, right: 10, left: -10, bottom: 25 }} barCategoryGap="2%">
+                          <XAxis
+                            dataKey="name"
+                            stroke="#0f172a"
+                            interval={0}
+                            tick={{ fontSize: 8, fontWeight: 600, fill: "#0f172a" }}
+                            angle={-35}
+                            textAnchor="end"
+                          />
+                          <YAxis yAxisId="left" orientation="left" stroke="#0284c7" tick={{ fontSize: 8, fontWeight: 500, fill: "#0284c7" }} />
+                          <YAxis yAxisId="right" orientation="right" stroke="#dc2626" tick={{ fontSize: 8, fontWeight: 500, fill: "#dc2626" }} />
+                          <Bar isAnimationActive={false} yAxisId="left" dataKey="Y1" name={m1Left.label} fill="#0284c7" radius={[3, 3, 0, 0]} barSize={20}>
+                            <LabelList dataKey="Y1" position="insideBottom" dy={-4} style={{ fontSize: "7px", fontWeight: 500, fill: "#ffffff" }} formatter={(val: any) => typeof val === "number" ? (val > 100 ? Math.round(val) : val) : val} />
+                          </Bar>
+                          <Scatter isAnimationActive={false} yAxisId="right" dataKey="Y2" name={m1Right.label} fill="#dc2626" shape="circle">
+                            <LabelList dataKey="Y2" position="top" style={{ fontSize: "7.5px", fontWeight: 500, fill: "#dc2626" }} formatter={(val: any) => typeof val === "number" ? (val > 100 ? Math.round(val) : val) : val} />
+                          </Scatter>
+                        </ComposedChart>
+                      </div>
+
                       {/* Campo Limpio de Comentario debajo del Gráfico 1 */}
-                      <div className={`team-comment-wrapper ${!chart1Comment || !chart1Comment.trim() ? "no-print" : ""}`} style={{ marginTop: "4px" }}>
+                      <div className={`team-comment-wrapper ${!chart1Comment || !chart1Comment.trim() ? "no-print" : ""}`} style={{ marginTop: "6px" }}>
                         <textarea
                           value={chart1Comment}
                           onChange={(e) => setChart1Comment(e.target.value)}
                           placeholder="Añadir comentario explicativo para el Gráfico 1..."
-                          rows={1}
+                          rows={2}
                           className="team-report-textarea"
                           style={{
                             width: "100%",
                             padding: "4px 8px",
-                            border: "none",
+                            border: "1px solid #cbd5e1",
                             borderLeft: "3px solid #0284c7",
                             background: "#f8fafc",
-                            fontSize: "11px",
+                            fontSize: "10.5px",
                             fontWeight: 500,
                             color: "#0f172a",
                             outline: "none",
                             resize: "none",
                             fontFamily: "inherit",
+                            borderRadius: "4px",
+                            minHeight: "26px",
                           }}
                         />
                       </div>
@@ -3426,53 +3432,75 @@ function InformeGpsDiarioContent() {
                       </div>
 
                       {/* Render Recharts ComposedChart Dual-Axis */}
-                      <div className="team-chart-plot-container" style={{ width: "100%", height: isPrinting ? 98 : 260 }}>
-                        <ResponsiveContainer width="100%" height="100%">
-                          <ComposedChart data={chart2Data} margin={isPrinting ? { top: 8, right: 0, left: -15, bottom: 18 } : { top: 16, right: 0, left: 0, bottom: 25 }} barCategoryGap="2%">
-                            <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
+                      {/* 1. Versión Responsive Pantalla */}
+                      <div className="team-chart-screen-plot no-print" style={{ width: "100%", height: 245 }}>
+                        <ResponsiveContainer width="100%" height={245}>
+                          <ComposedChart data={chart2Data} margin={{ top: 16, right: 0, left: 0, bottom: 25 }} barCategoryGap="2%">
                             <XAxis
                               dataKey="name"
                               stroke="#0f172a"
                               interval={0}
-                              tick={{ fontSize: isPrinting ? 7 : 8.5, fontWeight: 600, fill: "#0f172a" }}
+                              tick={{ fontSize: 8.5, fontWeight: 600, fill: "#0f172a" }}
                               angle={-35}
                               textAnchor="end"
                             />
-                            <YAxis yAxisId="left" orientation="left" stroke="#0284c7" tick={{ fontSize: isPrinting ? 6.5 : 8.5, fontWeight: 500, fill: "#0284c7" }} />
-                            <YAxis yAxisId="right" orientation="right" stroke="#dc2626" tick={{ fontSize: isPrinting ? 6.5 : 8.5, fontWeight: 500, fill: "#dc2626" }} />
+                            <YAxis yAxisId="left" orientation="left" stroke="#0284c7" tick={{ fontSize: 8.5, fontWeight: 500, fill: "#0284c7" }} />
+                            <YAxis yAxisId="right" orientation="right" stroke="#dc2626" tick={{ fontSize: 8.5, fontWeight: 500, fill: "#dc2626" }} />
                             <Tooltip contentStyle={{ borderRadius: "6px", fontSize: "11px", fontWeight: 500 }} />
-                            {/* Variable 1 (Y): Representada en Columna (Barra azul claro brillante con valor en blanco) */}
-                            <Bar yAxisId="left" dataKey="Y1" name={m2Left.label} fill="#0284c7" radius={[3, 3, 0, 0]} barSize={isPrinting ? 14 : 24}>
-                              <LabelList dataKey="Y1" position="insideBottom" dy={-4} style={{ fontSize: isPrinting ? "6px" : "7.5px", fontWeight: 500, fill: "#ffffff" }} formatter={(val: any) => typeof val === "number" ? (val > 100 ? Math.round(val) : val) : val} />
+                            <Bar isAnimationActive={false} yAxisId="left" dataKey="Y1" name={m2Left.label} fill="#0284c7" radius={[3, 3, 0, 0]} barSize={22}>
+                              <LabelList dataKey="Y1" position="insideBottom" dy={-4} style={{ fontSize: "7.5px", fontWeight: 500, fill: "#ffffff" }} formatter={(val: any) => typeof val === "number" ? (val > 100 ? Math.round(val) : val) : val} />
                             </Bar>
-                            {/* Variable 2 (Y2): Representada en Punto rojo (Scatter/Dot) sobre la barra */}
-                            <Scatter yAxisId="right" dataKey="Y2" name={m2Right.label} fill="#dc2626" shape="circle">
-                              <LabelList dataKey="Y2" position="top" style={{ fontSize: isPrinting ? "6.5px" : "8px", fontWeight: 500, fill: "#dc2626" }} formatter={(val: any) => typeof val === "number" ? (val > 100 ? Math.round(val) : val) : val} />
+                            <Scatter isAnimationActive={false} yAxisId="right" dataKey="Y2" name={m2Right.label} fill="#dc2626" shape="circle">
+                              <LabelList dataKey="Y2" position="top" style={{ fontSize: "8px", fontWeight: 500, fill: "#dc2626" }} formatter={(val: any) => typeof val === "number" ? (val > 100 ? Math.round(val) : val) : val} />
                             </Scatter>
                           </ComposedChart>
                         </ResponsiveContainer>
                       </div>
 
+                      {/* 2. Versión Impresión / PDF (Dimensiones fijas sin ResponsiveContainer para captura instantánea) */}
+                      <div className="team-chart-print-plot print-chart-only" style={{ width: "100%", height: 235 }}>
+                        <ComposedChart width={730} height={235} data={chart2Data} margin={{ top: 16, right: 10, left: -10, bottom: 25 }} barCategoryGap="2%">
+                          <XAxis
+                            dataKey="name"
+                            stroke="#0f172a"
+                            interval={0}
+                            tick={{ fontSize: 8, fontWeight: 600, fill: "#0f172a" }}
+                            angle={-35}
+                            textAnchor="end"
+                          />
+                          <YAxis yAxisId="left" orientation="left" stroke="#0284c7" tick={{ fontSize: 8, fontWeight: 500, fill: "#0284c7" }} />
+                          <YAxis yAxisId="right" orientation="right" stroke="#dc2626" tick={{ fontSize: 8, fontWeight: 500, fill: "#dc2626" }} />
+                          <Bar isAnimationActive={false} yAxisId="left" dataKey="Y1" name={m2Left.label} fill="#0284c7" radius={[3, 3, 0, 0]} barSize={20}>
+                            <LabelList dataKey="Y1" position="insideBottom" dy={-4} style={{ fontSize: "7px", fontWeight: 500, fill: "#ffffff" }} formatter={(val: any) => typeof val === "number" ? (val > 100 ? Math.round(val) : val) : val} />
+                          </Bar>
+                          <Scatter isAnimationActive={false} yAxisId="right" dataKey="Y2" name={m2Right.label} fill="#dc2626" shape="circle">
+                            <LabelList dataKey="Y2" position="top" style={{ fontSize: "7.5px", fontWeight: 500, fill: "#dc2626" }} formatter={(val: any) => typeof val === "number" ? (val > 100 ? Math.round(val) : val) : val} />
+                          </Scatter>
+                        </ComposedChart>
+                      </div>
+
                       {/* Campo Limpio de Comentario debajo del Gráfico 2 */}
-                      <div className={`team-comment-wrapper ${!chart2Comment || !chart2Comment.trim() ? "no-print" : ""}`} style={{ marginTop: "4px" }}>
+                      <div className={`team-comment-wrapper ${!chart2Comment || !chart2Comment.trim() ? "no-print" : ""}`} style={{ marginTop: "6px" }}>
                         <textarea
                           value={chart2Comment}
                           onChange={(e) => setChart2Comment(e.target.value)}
                           placeholder="Añadir comentario explicativo para el Gráfico 2..."
-                          rows={1}
+                          rows={2}
                           className="team-report-textarea"
                           style={{
                             width: "100%",
                             padding: "4px 8px",
-                            border: "none",
+                            border: "1px solid #cbd5e1",
                             borderLeft: "3px solid #0284c7",
                             background: "#f8fafc",
-                            fontSize: "11px",
+                            fontSize: "10.5px",
                             fontWeight: 500,
                             color: "#0f172a",
                             outline: "none",
                             resize: "none",
                             fontFamily: "inherit",
+                            borderRadius: "4px",
+                            minHeight: "26px",
                           }}
                         />
                       </div>
@@ -3887,7 +3915,7 @@ function InformeGpsDiarioContent() {
           }
           @page {
             size: A4 portrait !important;
-            margin: 4mm 5mm !important;
+            margin: 6mm 7mm 6mm 7mm !important;
           }
           html, body {
             background: #ffffff !important;
@@ -3895,30 +3923,35 @@ function InformeGpsDiarioContent() {
             padding: 0 !important;
             width: 100% !important;
             height: auto !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
           .gps-report-page {
-            padding: 0 !important;
-            margin: 0 !important;
+            padding: 2mm 3mm !important;
+            margin: 0 auto !important;
             max-width: 100% !important;
+            box-sizing: border-box !important;
             box-shadow: none !important;
+          }
+          .gps-topbar {
+            display: none !important;
           }
           .team-report-card {
             width: 100% !important;
-            margin: 0 !important;
+            margin: 0 auto !important;
             padding: 0 !important;
             border: none !important;
             box-shadow: none !important;
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-            page-break-after: avoid !important;
+            page-break-inside: auto !important;
+            break-inside: auto !important;
           }
           .team-header-grid {
             display: grid !important;
             grid-template-columns: auto 1fr auto !important;
-            gap: 8px !important;
+            gap: 12px !important;
             align-items: center !important;
-            margin-bottom: 2px !important;
-            padding-bottom: 2px !important;
+            margin-bottom: 16px !important;
+            padding-bottom: 6px !important;
             border-bottom: 1.5px solid #0f172a !important;
           }
           .team-header-club-box {
@@ -3948,27 +3981,38 @@ function InformeGpsDiarioContent() {
             font-size: 8.5px !important;
             font-weight: 800 !important;
           }
+          .team-comment-wrapper.no-print {
+            display: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            height: 0 !important;
+          }
           .team-comment-wrapper {
-            margin-top: 1px !important;
-            margin-bottom: 2px !important;
+            display: block !important;
+            margin-top: 4px !important;
+            margin-bottom: 4px !important;
           }
           .team-comment-wrapper textarea,
           .team-report-textarea {
-            font-size: 7.5px !important;
-            line-height: 1.15 !important;
-            padding: 1.5px 4px !important;
-            border-left: 2px solid #0284c7 !important;
+            display: block !important;
+            font-size: 8px !important;
+            line-height: 1.25 !important;
+            padding: 3px 6px !important;
+            border: 1px solid #cbd5e1 !important;
+            border-left: 3px solid #0284c7 !important;
             background: #f8fafc !important;
             color: #0f172a !important;
             width: 100% !important;
-            border-radius: 2px !important;
-            min-height: 12px !important;
+            border-radius: 3px !important;
+            min-height: 24px !important;
             height: auto !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
           .team-chart-card {
             background: #ffffff !important;
-            padding: 2px 4px 2px 4px !important;
-            border: 1px solid #cbd5e1 !important;
+            padding: 3px 6px 3px 6px !important;
+            border: 1px solid #94a3b8 !important;
             border-radius: 4px !important;
             margin-bottom: 3px !important;
             box-shadow: none !important;
@@ -3990,27 +4034,73 @@ function InformeGpsDiarioContent() {
             font-size: 7.5px !important;
             line-height: 1 !important;
           }
-          .team-chart-plot-container {
-            height: 98px !important;
-            max-height: 98px !important;
-            width: 100% !important;
-            overflow: hidden !important;
+          .team-chart-screen-plot {
+            display: block !important;
           }
-          .team-chart-plot-container .recharts-responsive-container,
-          .team-chart-plot-container .recharts-wrapper {
-            height: 98px !important;
-            max-height: 98px !important;
-            width: 100% !important;
+          .print-chart-only {
+            display: none !important;
           }
-          .team-chart-plot-container svg.recharts-surface {
-            height: 98px !important;
-            max-height: 98px !important;
+        }
+        @media screen {
+          .print-chart-only {
+            display: none !important;
+          }
+        }
+        @media print {
+          .team-chart-screen-plot {
+            display: none !important;
+          }
+          .print-chart-only,
+          .team-chart-print-plot {
+            display: block !important;
             width: 100% !important;
+            height: 235px !important;
+            overflow: visible !important;
+          }
+          .print-chart-only .recharts-wrapper,
+          .team-chart-print-plot .recharts-wrapper {
+            width: 100% !important;
+            height: 235px !important;
+            position: relative !important;
+          }
+          .print-chart-only svg.recharts-surface,
+          .print-chart-only svg,
+          .team-chart-print-plot svg {
+            overflow: visible !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            height: 235px !important;
+            display: block !important;
+          }
+          .print-chart-only svg *,
+          .team-chart-print-plot svg * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          .recharts-bar-rectangle,
+          .recharts-bar-rectangle rect,
+          .recharts-bar-rectangle path,
+          .recharts-scatter-symbol,
+          .recharts-scatter-symbol circle,
+          .recharts-scatter-symbol path,
+          .recharts-cartesian-grid line {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            opacity: 1 !important;
+            visibility: visible !important;
+          }
+          .recharts-text,
+          .recharts-label-list text,
+          .recharts-cartesian-axis text {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            opacity: 1 !important;
+            visibility: visible !important;
           }
           .team-gps-table-card {
             background: #ffffff !important;
             padding: 2px 4px !important;
-            border: 1px solid #cbd5e1 !important;
+            border: 1px solid #94a3b8 !important;
             border-radius: 4px !important;
             margin-top: 2px !important;
             box-shadow: none !important;

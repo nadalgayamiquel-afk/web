@@ -48,20 +48,20 @@ export const BASE_GPS_VARIABLES: GpsVariableDef[] = [
     descripcion: "Ratio de metros por minuto de sesión o tarea (m/min).",
   },
   {
-    key: "1 - 8 km/h (Distancia)",
-    label: "Distancia Z1: Caminando (1 - 8 km/h)",
-    shortLabel: "Dist. 1-8 km/h",
+    key: "15 - 16 km/h (Distancia)",
+    label: "Distancia Z1: (15 - 16 km/h)",
+    shortLabel: "Dist. 15-16",
     unit: "m",
     categoria: "Volumen y Distancia",
-    descripcion: "Metros recorridos a velocidad muy baja (caminata).",
+    descripcion: "Metros recorridos en Zona 1 (15 - 16 km/h).",
   },
   {
-    key: "8 - 17 km/h (Distancia)",
-    label: "Distancia Z2: Trote (8 - 17 km/h)",
-    shortLabel: "Dist. 8-17 km/h",
+    key: "16 - 17 km/h (Distancia)",
+    label: "Distancia Z2: (16 - 17 km/h)",
+    shortLabel: "Dist. 16-17",
     unit: "m",
     categoria: "Volumen y Distancia",
-    descripcion: "Metros recorridos a ritmo moderado de carrera suave.",
+    descripcion: "Metros recorridos en Zona 2 (16 - 17 km/h).",
   },
   {
     key: "17 - 19,8 km/h (Distancia)",
@@ -92,7 +92,7 @@ export const BASE_GPS_VARIABLES: GpsVariableDef[] = [
   {
     key: "+ 24 km/h (Distancia)",
     label: "Distancia Sprint (+24 km/h)",
-    shortLabel: "Dist. >24 km/h",
+    shortLabel: "Sprint 24",
     unit: "m",
     categoria: "Velocidad e Intensidad",
     descripcion: "Metros realizados a velocidad de sprint estricto (+24 km/h).",
@@ -149,7 +149,7 @@ export const BASE_GPS_VARIABLES: GpsVariableDef[] = [
   {
     key: "+28 km/h (Distancia)",
     label: "Distancia a Máxima Velocidad (+28 km/h)",
-    shortLabel: "Dist. >28 km/h",
+    shortLabel: "Sprint 28",
     unit: "m",
     categoria: "Velocidad e Intensidad",
     descripcion: "Metros recorridos a velocidad extrema (+28 km/h).",
@@ -157,7 +157,7 @@ export const BASE_GPS_VARIABLES: GpsVariableDef[] = [
   {
     key: "+28 km/h (Num)",
     label: "Nº Acciones a Máxima Velocidad (+28 km/h)",
-    shortLabel: "Nº >28 km/h",
+    shortLabel: "Nº Sprints 28",
     unit: "nº",
     categoria: "Velocidad e Intensidad",
     descripcion: "Número de veces que el jugador supera los 28 km/h.",
@@ -169,6 +169,30 @@ export const BASE_GPS_VARIABLES: GpsVariableDef[] = [
     unit: "s",
     categoria: "Velocidad e Intensidad",
     descripcion: "Segundos acumulados por encima de 28 km/h.",
+  },
+  {
+    key: "num_hsr",
+    label: "Nº de Acciones HSR (>19,8 km/h)",
+    shortLabel: "Nº HSR",
+    unit: "nº",
+    categoria: "Velocidad e Intensidad",
+    descripcion: "Número de carreras y entradas a zona de High-Speed Running.",
+  },
+  {
+    key: "hsr_time",
+    label: "Tiempo en HSR",
+    shortLabel: "Tiempo HSR",
+    unit: "s",
+    categoria: "Velocidad e Intensidad",
+    descripcion: "Segundos acumulados en High-Speed Running.",
+  },
+  {
+    key: "hid_intervals",
+    label: "Intervalos Alta Demanda (HID Intervals)",
+    shortLabel: "HID Interv.",
+    unit: "nº",
+    categoria: "Velocidad e Intensidad",
+    descripcion: "Número de bloques o intervalos de esfuerzos de alta intensidad.",
   },
   {
     key: "average_speed",
@@ -309,6 +333,38 @@ export const BASE_GPS_VARIABLES: GpsVariableDef[] = [
 
   // 6. Métricas Relativas al Jugador (% de su máximo individual)
   {
+    key: "relative_speed_distance_0_65",
+    label: "Distancia Velocidad Relativa (0-65% de su máx)",
+    shortLabel: "Rel. 0-65%",
+    unit: "m",
+    categoria: "Métricas Relativas",
+    descripcion: "Metros recorridos hasta el 65% de la velocidad máxima individual.",
+  },
+  {
+    key: "relative_speed_distance_65_75",
+    label: "Distancia Velocidad Relativa (65-75% de su máx)",
+    shortLabel: "Rel. 65-75%",
+    unit: "m",
+    categoria: "Métricas Relativas",
+    descripcion: "Metros recorridos entre el 65% y 75% de la velocidad pico personal.",
+  },
+  {
+    key: "relative_speed_distance_75_80",
+    label: "Distancia Velocidad Relativa (75-80% de su máx)",
+    shortLabel: "Rel. 75-80%",
+    unit: "m",
+    categoria: "Métricas Relativas",
+    descripcion: "Metros recorridos entre el 75% y 80% de la velocidad pico personal.",
+  },
+  {
+    key: "relative_speed_distance_80_85",
+    label: "Distancia Velocidad Relativa (80-85% de su máx)",
+    shortLabel: "Rel. 80-85%",
+    unit: "m",
+    categoria: "Métricas Relativas",
+    descripcion: "Metros recorridos entre el 80% y 85% de la velocidad pico personal.",
+  },
+  {
     key: "relative_speed_distance_85_90",
     label: "Distancia Velocidad Relativa (85-90% de su máx)",
     shortLabel: "Rel. 85-90%",
@@ -391,26 +447,36 @@ export function getStoredFavoriteKeys(): string[] {
     const derived = getStoredDerivedVariables();
     const derivedIds = derived.map((d) => d.id);
     if (!raw) {
-      return Array.from(new Set([...DEFAULT_FAVORITE_GPS_VARIABLES, ...derivedIds])).filter((k) => k !== "HSR Abs (m)");
+      return Array.from(new Set([...DEFAULT_FAVORITE_GPS_VARIABLES, ...derivedIds])).filter(
+        (k) => k !== "HSR Abs (m)" && k !== "derived_1791992159697" && (!k.startsWith("derived_") || derivedIds.includes(k))
+      );
     }
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
-      const cleaned = parsed.filter((k) => k !== "HSR Abs (m)");
+      const cleaned = parsed.filter(
+        (k) => k !== "HSR Abs (m)" && k !== "derived_1791992159697" && (!k.startsWith("derived_") || derivedIds.includes(k))
+      );
       if (cleaned.length !== parsed.length) {
         try {
           localStorage.setItem(STORAGE_FAVORITES_KEY, JSON.stringify(cleaned));
         } catch (e) {}
       }
-      return Array.from(new Set([...cleaned, ...derivedIds]));
+      return Array.from(new Set([...cleaned, ...derivedIds])).filter(
+        (k) => k !== "derived_1791992159697" && (!k.startsWith("derived_") || derivedIds.includes(k))
+      );
     }
   } catch (e) {}
-  return DEFAULT_FAVORITE_GPS_VARIABLES.filter((k) => k !== "HSR Abs (m)");
+  return DEFAULT_FAVORITE_GPS_VARIABLES.filter((k) => k !== "HSR Abs (m)" && k !== "derived_1791992159697");
 }
 
 export function saveStoredFavoriteKeys(keys: string[]): void {
   if (typeof window === "undefined") return;
   try {
-    const cleaned = keys.filter((k) => k !== "HSR Abs (m)");
+    const derived = getStoredDerivedVariables();
+    const derivedIds = derived.map((d) => d.id);
+    const cleaned = keys.filter(
+      (k) => k !== "HSR Abs (m)" && k !== "derived_1791992159697" && (!k.startsWith("derived_") || derivedIds.includes(k))
+    );
     const val = cleaned.length > 0 ? cleaned : DEFAULT_FAVORITE_GPS_VARIABLES;
     localStorage.setItem(STORAGE_FAVORITES_KEY, JSON.stringify(val));
     window.dispatchEvent(new CustomEvent("gps_favorites_updated", { detail: val }));
@@ -494,10 +560,12 @@ function parseMetricNum(val: any): number {
 
 const RAW_ALIAS_MAP: Record<string, string[]> = {
   "distance(m)": [
+    "total_distance",
+    "total distance",
+    "total_distance(m)",
     "distance(m)",
     "distance",
     "total distance(m)",
-    "total distance",
     "distancia total(m)",
     "distancia total",
     "distancia(m)",
@@ -508,6 +576,45 @@ const RAW_ALIAS_MAP: Record<string, string[]> = {
     "volume(m)",
     "volume",
   ],
+  "total_distance": [
+    "total_distance",
+    "total distance",
+    "distance(m)",
+    "distancia total",
+    "distancia",
+    "dist",
+  ],
+  "minute_distance": [
+    "minute_distance",
+    "minute distance",
+    "distancia / min",
+    "distancia/min",
+    "m/min",
+    "m min",
+    "distancia min",
+    "dist min",
+  ],
+  "num_hsr": ["num_hsr", "num hsr", "nº hsr", "hsr count"],
+  "hsr": ["hsr", "num_hsr", "hsr abs (m)", "hsr abs", "high speed running", "hsr distance", "distancia hsr"],
+  "hsr_time": ["hsr_time", "hsr time", "tiempo hsr"],
+  "sprints": ["sprints", "num_sprints", "sprints count", "+24 km/h (num)", "sprint count"],
+  "player_load": ["player_load", "player load", "playerload", "load", "carga"],
+  "hmld_count": ["hmld_count", "hmld (num)", "hmld count"],
+  "hmld_time": ["hmld_time", "hmld time", "tiempo hmld"],
+  "hmld_relative": ["hmld_relative", "hmld relative"],
+  "num_acc": ["num_acc", "accs count", "aceleraciones", "acc + 3 m/s2 (num)", "acc"],
+  "num_acc_expl": ["num_acc_expl", "acc + 4 m/s2 (num)", "acc + 4", "acc4", "aceleraciones explosivas"],
+  "num_dec": ["num_dec", "decs count", "desaceleraciones", "dec + 3 m/s2 (num)", "dec"],
+  "num_dec_expl": ["num_dec_expl", "dec + 4 m/s2 (num)", "dec + 4", "dec4", "desaceleraciones explosivas"],
+  "max_acc": ["max_acc", "max acc", "aceleracion maxima"],
+  "max_dec": ["max_dec", "max dec", "desaceleracion maxima"],
+  "max_speed": ["max_speed", "max speed(km/h)", "vel max", "max speed", "top speed", "velocidad maxima", "v max"],
+  "num_hids": ["num_hids", "num hids", "hids"],
+  "hid_intervals": ["hid_intervals", "hid intervals"],
+  "average_speed": ["average_speed", "average speed", "velocidad media"],
+  "time": ["time", "duration(min)", "duracion min", "tiempo", "duracion", "volume(min)"],
+  "active_time": ["active_time", "active time", "tiiempo activo", "tiempo activo"],
+  "effective_time": ["effective_time", "effective time", "tiempo efectivo"],
   "total distance": [
     "distance(m)",
     "distance",
@@ -581,10 +688,13 @@ const RAW_ALIAS_MAP: Record<string, string[]> = {
     "dist min",
     "relative distance",
   ],
-  "1 - 8 km/h (distancia)": [
-    "1 - 8 km/h (distancia)",
-    "1 - 8 km/h",
-    "1 - 8",
+  "15 - 16 km/h (distancia)": [
+    "15 - 16 km/h (distancia)",
+    "15-16 km/h (distancia)",
+    "15 - 16 km/h",
+    "15-16 km/h",
+    "15 - 16",
+    "15-16",
     "z1",
     "vrange1",
     "distance_vrange1",
@@ -592,11 +702,17 @@ const RAW_ALIAS_MAP: Record<string, string[]> = {
     "distancia z1",
     "dist z1",
     "zona 1",
+    "1 - 8 km/h (distancia)",
+    "1 - 8 km/h",
+    "1 - 8",
   ],
-  "8 - 17 km/h (distancia)": [
-    "8 - 17 km/h (distancia)",
-    "8 - 17 km/h",
-    "8 - 17",
+  "16 - 17 km/h (distancia)": [
+    "16 - 17 km/h (distancia)",
+    "16-17 km/h (distancia)",
+    "16 - 17 km/h",
+    "16-17 km/h",
+    "16 - 17",
+    "16-17",
     "z2",
     "vrange2",
     "distance_vrange2",
@@ -604,6 +720,19 @@ const RAW_ALIAS_MAP: Record<string, string[]> = {
     "distancia z2",
     "dist z2",
     "zona 2",
+    "8 - 17 km/h (distancia)",
+    "8 - 17 km/h",
+    "8 - 17",
+  ],
+  "1 - 8 km/h (distancia)": [
+    "1 - 8 km/h (distancia)",
+    "15 - 16 km/h (distancia)",
+    "distance_vrange1",
+  ],
+  "8 - 17 km/h (distancia)": [
+    "8 - 17 km/h (distancia)",
+    "16 - 17 km/h (distancia)",
+    "distance_vrange2",
   ],
   "17 - 19,8 km/h (distancia)": [
     "17 - 19,8 km/h (distancia)",
@@ -656,16 +785,21 @@ const RAW_ALIAS_MAP: Record<string, string[]> = {
     "+24",
     ">24 km/h (distancia)",
     ">24 km/h",
+    "distancia sprint (+24 km/h)",
+    "distancia sprint (+24)",
+    "distancia sprint 24",
+    "dist sprint 24",
+    "sprint 24 (m)",
+    "sprint 24",
+    "dist sprint",
+    "sprint distance",
+    "distancia sprint",
     "z6",
     "vrange6",
     "distance_vrange6",
     "distance vrange6",
     "distancia z6",
     "dist z6",
-    "dist sprint",
-    "sprint distance",
-    "distancia sprint",
-    "sprints",
     "zona 6",
   ],
   "distance +21 (m)": [
@@ -680,8 +814,43 @@ const RAW_ALIAS_MAP: Record<string, string[]> = {
     "+21 km/h",
     "z5 z6",
   ],
-  "+28 km/h (distancia)": ["+28 km/h (distancia)", "+ 28 km/h (distancia)", "+28 km/h", "+ 28 km/h", "vrange7"],
-  "+28 km/h (num)": ["+28 km/h (num)", "+ 28 km/h (num)"],
+  "+28 km/h (distancia)": [
+    "+28 km/h (distancia)",
+    "+ 28 km/h (distancia)",
+    "+28 km/h",
+    "+ 28 km/h",
+    "+28",
+    "+ 28",
+    ">28 km/h (distancia)",
+    ">28 km/h",
+    "distancia a maxima velocidad (+28 km/h)",
+    "distancia a máxima velocidad (+28 km/h)",
+    "distancia maxima velocidad (+28 km/h)",
+    "distancia sprint (+28 km/h)",
+    "distancia sprint 28",
+    "dist sprint 28",
+    "sprint 28 (m)",
+    "sprint 28",
+    "vrange7",
+    "distance_vrange7",
+  ],
+  "+28 km/h (num)": [
+    "+28 km/h (num)",
+    "+ 28 km/h (num)",
+    "+28 km/h (nº)",
+    "+ 28 km/h (nº)",
+    "+28 km/h (no)",
+    "+ 28 km/h (no)",
+    "n acciones a maxima velocidad (+28 km/h)",
+    "nº acciones a maxima velocidad (+28 km/h)",
+    "nº acciones a máxima velocidad (+28 km/h)",
+    "nº de sprints (+28 km/h)",
+    "nº sprints (+28 km/h)",
+    "nº sprints 28",
+    "sprints 28",
+    "sprint 28 count",
+    "nº >28 km/h",
+  ],
   "hmld": ["hmld", "hmld distance"],
 };
 
@@ -723,6 +892,9 @@ export function calculateGpsMetricValue(
 ): number {
   if (!metricas || typeof metricas !== "object") return 0;
 
+  // Si nos pasan un registro GPS completo con la propiedad .metricas, desenvolverla automáticamente
+  const targetObj = (metricas.metricas && typeof metricas.metricas === "object") ? metricas.metricas : metricas;
+
   // 1. Comprobar si es una variable derivada por ID o por Label
   const derived =
     derivedVariablesList.find((d) => d.id === key) ||
@@ -759,17 +931,30 @@ export function calculateGpsMetricValue(
   // Helper para buscar valor directo o por alias en metricas
   const findInMetricas = (): { found: boolean; val: number } => {
     // 1. Coincidencia directa por clave exacta
-    if (metricas[key] !== undefined && metricas[key] !== null) {
-      const p = parseMetricNum(metricas[key]);
+    if (targetObj[key] !== undefined && targetObj[key] !== null) {
+      const p = parseMetricNum(targetObj[key]);
       if (p !== 0) return { found: true, val: Math.round(p * 100) / 100 };
     }
 
     const possibleAliases = ALIAS_MAP[normTarget] || [normTarget];
     let zeroFound = false;
 
-    for (const [mKey, mVal] of Object.entries(metricas)) {
+    // Reglas estrictas de aislamiento anti-confusión entre 24 y 28 km/h y entre Distancia y Conteo
+    const is28Target = normTarget.includes("28");
+    const is24Target = normTarget.includes("24");
+    const isCountTarget = normTarget.includes("num") || normTarget.includes("count") || normTarget.includes("no ");
+    const isDistTarget = normTarget.includes("dist") || normTarget.includes("(m)") || normTarget.includes("m)");
+
+    for (const [mKey, mVal] of Object.entries(targetObj)) {
       if (mKey === "tareas") continue;
       const normMKey = normalizeKey(mKey);
+
+      // Aislamiento estricto: NUNCA cruzar métricas de 28 con 24 ni conteo con distancia
+      if (is28Target && normMKey.includes("24")) continue;
+      if (is24Target && normMKey.includes("28")) continue;
+      if (isCountTarget && (normMKey.includes("dist") || normMKey.includes("(m)"))) continue;
+      if (isDistTarget && (normMKey.includes("num") || normMKey.includes("count") || normMKey.includes("no "))) continue;
+
       if (normMKey === normTarget || possibleAliases.includes(normMKey)) {
         if (mVal !== undefined && mVal !== null && mVal !== "") {
           const p = parseMetricNum(mVal);
@@ -786,6 +971,40 @@ export function calculateGpsMetricValue(
   if (directFound.found && directFound.val !== 0) return directFound.val;
 
   // 1.5 Cálculo dinámico de métricas comunes combinadas si no existen directamente
+  if (normTarget.includes("hsr 15") || normTarget.includes("+ hsr 15") || normTarget === "derived_hsr_15") {
+    const v1 = calculateGpsMetricValue(metricas, "15 - 16 km/h (Distancia)", derivedVariablesList);
+    const v2 = calculateGpsMetricValue(metricas, "16 - 17 km/h (Distancia)", derivedVariablesList);
+    const v3 = calculateGpsMetricValue(metricas, "17 - 19,8 km/h (Distancia)", derivedVariablesList);
+    const v4 = calculateGpsMetricValue(metricas, "19,8 - 21 km/h (Distancia)", derivedVariablesList);
+    const v5 = calculateGpsMetricValue(metricas, "21 - 24 km/h (Distancia)", derivedVariablesList);
+    const v6 = calculateGpsMetricValue(metricas, "+ 24 km/h (Distancia)", derivedVariablesList);
+    return Math.round((v1 + v2 + v3 + v4 + v5 + v6) * 100) / 100;
+  }
+
+  if (normTarget.includes("hsr 16") || normTarget.includes("+ hsr 16") || normTarget === "derived_hsr_16") {
+    const v2 = calculateGpsMetricValue(metricas, "16 - 17 km/h (Distancia)", derivedVariablesList);
+    const v3 = calculateGpsMetricValue(metricas, "17 - 19,8 km/h (Distancia)", derivedVariablesList);
+    const v4 = calculateGpsMetricValue(metricas, "19,8 - 21 km/h (Distancia)", derivedVariablesList);
+    const v5 = calculateGpsMetricValue(metricas, "21 - 24 km/h (Distancia)", derivedVariablesList);
+    const v6 = calculateGpsMetricValue(metricas, "+ 24 km/h (Distancia)", derivedVariablesList);
+    return Math.round((v2 + v3 + v4 + v5 + v6) * 100) / 100;
+  }
+
+  if (normTarget.includes("hsr 17") || normTarget.includes("+ hsr 17") || normTarget === "derived_hsr_17") {
+    const v3 = calculateGpsMetricValue(metricas, "17 - 19,8 km/h (Distancia)", derivedVariablesList);
+    const v4 = calculateGpsMetricValue(metricas, "19,8 - 21 km/h (Distancia)", derivedVariablesList);
+    const v5 = calculateGpsMetricValue(metricas, "21 - 24 km/h (Distancia)", derivedVariablesList);
+    const v6 = calculateGpsMetricValue(metricas, "+ 24 km/h (Distancia)", derivedVariablesList);
+    return Math.round((v3 + v4 + v5 + v6) * 100) / 100;
+  }
+
+  if (normTarget.includes("distancia 19,8") || normTarget.includes("distancia 19.8") || normTarget === "derived_hsr_19_8") {
+    const v4 = calculateGpsMetricValue(metricas, "19,8 - 21 km/h (Distancia)", derivedVariablesList);
+    const v5 = calculateGpsMetricValue(metricas, "21 - 24 km/h (Distancia)", derivedVariablesList);
+    const v6 = calculateGpsMetricValue(metricas, "+ 24 km/h (Distancia)", derivedVariablesList);
+    return Math.round((v4 + v5 + v6) * 100) / 100;
+  }
+
   if (
     normTarget === "distance +21 (m)" ||
     normTarget === "distance +21(m)" ||
@@ -830,8 +1049,8 @@ export function calculateGpsMetricValue(
 
   if (normTarget === "distance(m)" || normTarget === "distancia total" || normTarget === "total distance") {
     // Si no se encuentra Distancia Total directamente, intentar sumar zonas de velocidad
-    const v1 = calculateGpsMetricValue(metricas, "1 - 8 km/h (Distancia)", derivedVariablesList);
-    const v2 = calculateGpsMetricValue(metricas, "8 - 17 km/h (Distancia)", derivedVariablesList);
+    const v1 = calculateGpsMetricValue(metricas, "15 - 16 km/h (Distancia)", derivedVariablesList);
+    const v2 = calculateGpsMetricValue(metricas, "16 - 17 km/h (Distancia)", derivedVariablesList);
     const v3 = calculateGpsMetricValue(metricas, "17 - 19,8 km/h (Distancia)", derivedVariablesList);
     const v4 = calculateGpsMetricValue(metricas, "19,8 - 21 km/h (Distancia)", derivedVariablesList);
     const v5 = calculateGpsMetricValue(metricas, "21 - 24 km/h (Distancia)", derivedVariablesList);

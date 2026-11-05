@@ -461,7 +461,7 @@ export default function FuerzaBBDDClient({ initialRows = [], jugadores = [] }: P
     <div style={{ minHeight: '100vh', background: '#f8fafc', color: '#0f172a', fontFamily: 'inherit' }}>
       {/* Toast */}
       {toastMessage && (
-        <div style={{
+        <div className="no-print" style={{
           position: 'fixed',
           top: '20px',
           right: '24px',

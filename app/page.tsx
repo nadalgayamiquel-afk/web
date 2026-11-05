@@ -6,14 +6,37 @@ function getAgendaForDate(
   ses: any,
   bloquesMap: Record<string, any>
 ): Array<{ time: string; title: string; desc: string; tag: string; tone: string }> {
-  // 1. Si hay bloques específicos detallados en eventosBloquesMap
-  const dayBlocks = Object.values(bloquesMap || {}).filter(
-    (b: any) => b && (b.fecha === dateISO || b.day_id === dateISO)
+  const items: Array<{ time: string; title: string; desc: string; tag: string; tone: string }> = [];
+
+  // 1. Filtrar bloques específicos detallados en eventosBloquesMap para la fecha seleccionada
+  // Descartamos bloques vacíos sin tipo ni orientación para evitar multiplicaciones
+  const rawBlocks = Object.values(bloquesMap || {}).filter(
+    (b: any) =>
+      b &&
+      (b.fecha === dateISO || b.day_id === dateISO || b.day_id === `d_${dateISO}`) &&
+      ((b.tipo && b.tipo.trim() !== "") ||
+        (b.orientacion && b.orientacion.trim() !== "") ||
+        (b.comentario && b.comentario.trim() !== ""))
   );
 
-  if (dayBlocks.length > 0) {
-    dayBlocks.sort((a: any, b: any) => (a.hora || "").localeCompare(b.hora || ""));
-    return dayBlocks.map((b: any) => {
+  // Deduplicación estricta de bloques por (hora + tipo + orientacion/comentario)
+  const dedupedBlocks: any[] = [];
+  const seenBlockKeys = new Set<string>();
+
+  for (const b of rawBlocks) {
+    const tipo = (b.tipo || "").trim().toUpperCase();
+    const hora = (b.hora || "").trim();
+    const info = (b.orientacion || b.comentario || "").trim().toLowerCase();
+    const blockKey = `${hora}__${tipo}__${info}`;
+    if (!seenBlockKeys.has(blockKey)) {
+      seenBlockKeys.add(blockKey);
+      dedupedBlocks.push(b);
+    }
+  }
+
+  if (dedupedBlocks.length > 0) {
+    dedupedBlocks.sort((a: any, b: any) => (a.hora || "10:30").localeCompare(b.hora || "10:30"));
+    dedupedBlocks.forEach((b: any) => {
       const tipo = (b.tipo || "").trim().toUpperCase();
       let tag = b.tipo || "CAMPO";
       let tone = "blue";
@@ -41,99 +64,109 @@ function getAgendaForDate(
       const lugarStr = b.lugar || "Instalación";
       const comStr = b.comentario ? `· ${b.comentario}` : "";
 
-      return {
+      items.push({
         time: b.hora || "10:30",
         title: b.orientacion || b.comentario || `Sesión de ${b.tipo || "Entrenamiento"}`,
         desc: `${lugarStr} ${durStr ? "· " + durStr : ""} ${comStr}`.trim(),
         tag,
         tone,
-      };
+      });
     });
+  } else if (ses) {
+    // 2. Si no hay bloques específicos, generar sesiones a partir de la planificación real (sin duplicar)
+    const mdStr = (ses.md || "").trim();
+    const rival = ses.rival ? ses.rival.trim() : "";
+    const evAm = (ses.evento_am || ses.evento_principal || ses.evento || "").trim();
+    const evPm = (ses.evento_pm || "").trim();
+    const isVisitante = /PV|PAV|VISITANTE/i.test(`${evAm} ${evPm} ${ses.md || ""} ${ses.lugar || ""}`);
+
+    // Partido oficial
+    if (rival || mdStr === "MD" || evAm === "Pa" || evPm === "Pa" || evAm === "PL" || evAm === "PV" || evAm === "PAL" || evAm === "PAV") {
+      items.push({
+        time: "16:30",
+        title: "Activación Pre-Partido & Charla Táctica",
+        desc: "Vestuario / Sala técnica · Plan de partido y balón parado (30 min)",
+        tag: "CHARLA",
+        tone: "mint",
+      });
+
+      items.push({
+        time: "18:00",
+        title: rival ? `Partido Oficial vs ${rival}` : "Competición Oficial · Jornada de Liga",
+        desc: `${ses.lugar || (isVisitante ? `Campo Visitante (${rival || "Rival"})` : "Nou Estadi Municipal")} · 90 min de competición oficial`,
+        tag: "PARTIDO",
+        tone: "orange",
+      });
+    } else {
+      // Coadyuvante (Co)
+      if (evPm === "Co" || evAm === "Co") {
+        items.push({
+          time: "10:00",
+          title: "Activación Preventiva & Fuerza Coadyuvante (Co)",
+          desc: "Gimnasio / Espacio de prevención · Core, isometría y movilidad articular (25 min)",
+          tag: "FUERZA",
+          tone: "blue",
+        });
+      }
+
+      // Entrenamiento Principal de Campo (E)
+      if (evAm === "E" || evPm === "E" || mdStr.includes("MD")) {
+        const mdLabel = mdStr ? `Dinámica ${mdStr}` : "Sesión principal";
+        const subLabel = ses.subperiodo ? `· ${ses.subperiodo}` : "";
+        items.push({
+          time: "10:30",
+          title: `Sesión de Campo Principal ${mdStr ? "(" + mdStr + ")" : ""}`,
+          desc: `Campo 1 · ${mdLabel} ${subLabel} (75 min)`,
+          tag: "CAMPO",
+          tone: mdStr.includes("+") ? "mint" : "coral",
+        });
+      }
+
+      // Optimizador (Op)
+      if (evPm === "Op" || evAm === "Op") {
+        items.push({
+          time: "11:45",
+          title: "Trabajo Optimizador / Compensatorio (Op)",
+          desc: "Campo 1 / Anexo · Situaciones reducidas y volumen complementario (25 min)",
+          tag: "OPTIMIZADOR",
+          tone: "blue",
+        });
+      }
+
+      // Día de descanso / OFF
+      if (items.length === 0 && (mdStr === "OFF" || (!evAm && !evPm))) {
+        items.push({
+          time: "Todo el día",
+          title: "Día Libre / Descanso Regenerativo",
+          desc: "Sin sesión de entrenamiento programada · Recuperación y descanso",
+          tag: "DESCANSO",
+          tone: "neutral",
+        });
+      }
+    }
   }
 
-  // 2. Si no hay bloques específicos, generar sesiones a partir de la planificación real
-  if (!ses) return [];
+  // Deduplicación final defensiva sobre todos los items generados
+  const dedupedFinal: Array<{ time: string; title: string; desc: string; tag: string; tone: string }> = [];
+  const seenFinalKeys = new Set<string>();
 
-  const items: Array<{ time: string; title: string; desc: string; tag: string; tone: string }> = [];
-  const mdStr = (ses.md || "").trim();
-  const rival = ses.rival ? ses.rival.trim() : "";
-  const evAm = ses.evento_am || ses.evento_principal || ses.evento || "";
-  const evPm = ses.evento_pm || "";
-  const isVisitante = /PV|PAV|VISITANTE/i.test(`${evAm} ${evPm} ${ses.md || undefined} ${ses.lugar || undefined}`);
-
-  // Partido oficial
-  if (rival || mdStr === "MD" || evAm === "Pa" || evPm === "Pa" || evAm === "PL" || evAm === "PV" || evAm === "PAL" || evAm === "PAV") {
-    items.push({
-      time: "16:30",
-      title: "Activación Pre-Partido & Charla Táctica",
-      desc: "Vestuario / Sala técnica · Plan de partido y balón parado (30 min)",
-      tag: "CHARLA",
-      tone: "mint",
-    });
-
-    items.push({
-      time: "18:00",
-      title: rival ? `Partido Oficial vs ${rival}` : "Competición Oficial · Jornada de Liga",
-      desc: `${ses.lugar || (isVisitante ? `Campo Visitante (${rival || "Rival"})` : "Nou Estadi Municipal")} · 90 min de competición oficial`,
-      tag: "PARTIDO",
-      tone: "orange",
-    });
-    return items;
+  for (const it of items) {
+    const key = `${(it.time || "").trim()}__${(it.title || "").trim().toLowerCase()}__${(it.tag || "").trim().toLowerCase()}`;
+    if (!seenFinalKeys.has(key)) {
+      seenFinalKeys.add(key);
+      dedupedFinal.push(it);
+    }
   }
 
-  // Coadyuvante (Co)
-  if (evPm === "Co" || evAm === "Co") {
-    items.push({
-      time: "10:00",
-      title: "Activación Preventiva & Fuerza Coadyuvante (Co)",
-      desc: "Gimnasio / Espacio de prevención · Core, isometría y movilidad articular (25 min)",
-      tag: "FUERZA",
-      tone: "blue",
-    });
-  }
-
-  // Entrenamiento Principal de Campo (E)
-  if (evAm === "E" || evPm === "E" || mdStr.includes("MD")) {
-    const mdLabel = mdStr ? `Dinámica ${mdStr}` : "Sesión principal";
-    const subLabel = ses.subperiodo ? `· ${ses.subperiodo}` : "";
-    items.push({
-      time: "10:30",
-      title: `Sesión de Campo Principal ${mdStr ? "(" + mdStr + ")" : ""}`,
-      desc: `Campo 1 · ${mdLabel} ${subLabel} (75 min)`,
-      tag: "CAMPO",
-      tone: mdStr.includes("+") ? "mint" : "coral",
-    });
-  }
-
-  // Optimizador (Op)
-  if (evPm === "Op" || evAm === "Op") {
-    items.push({
-      time: "11:45",
-      title: "Trabajo Optimizador / Compensatorio (Op)",
-      desc: "Campo 1 / Anexo · Situaciones reducidas y volumen complementario (25 min)",
-      tag: "OPTIMIZADOR",
-      tone: "blue",
-    });
-  }
-
-  // Día de descanso / OFF
-  if (items.length === 0 && (mdStr === "OFF" || (!evAm && !evPm))) {
-    items.push({
-      time: "Todo el día",
-      title: "Día Libre / Descanso Regenerativo",
-      desc: "Sin sesión de entrenamiento programada · Recuperación y descanso",
-      tag: "DESCANSO",
-      tone: "neutral",
-    });
-  }
-
-  return items;
+  return dedupedFinal;
 }
 
 import Link from "next/link";
 import { useClubConfig } from "@/app/lib/useClubConfig";
 import { useState, useEffect, useMemo } from "react";
-import { getActiveJugadores, getEstadoDiarioConFechas, getSesionesDiaRange } from "@/app/actions";
+import { getActiveJugadores, getEstadoDiarioConFechas, getSesionesDiaRange, getAllGpsDatos } from "@/app/actions";
+import { DEFAULT_CUSTOM_MICROCICLOS } from "@/app/cargas/CargaExternaSection";
+import { extractMicrocyclesFromGpsData, getDeletedMicrocycleIds, CustomMicrocycleDef } from "@/app/lib/microciclos";
 import { getSemaforoCategoria, getDisponibilidadInfo } from "@/app/lib/disponibilidad";
 
 type Jugador = {
@@ -200,6 +233,69 @@ export default function Home() {
   const [eventosBloquesMap, setEventosBloquesMap] = useState<Record<string, any>>({});
   const [testingCount, setTestingCount] = useState<number>(0);
 
+  // ─── GPS RECORDS PARA ALARMAS DE HSR ───
+  const [gpsRecords, setGpsRecords] = useState<any[]>([]);
+  const [loadingGps, setLoadingGps] = useState<boolean>(true);
+  const [alarmThreshold, setAlarmThreshold] = useState<number>(50); // 50% umbral solicitado
+  const [alarmFilter, setAlarmFilter] = useState<"todos" | "picos" | "descensos">("todos");
+
+  // ─── COMENTARIOS DEL DÍA EN JUGADORES (PERSISTIDOS EN LOCALSTORAGE) ───
+  type DailyPlayerComment = {
+    id: string;
+    playerId: string;
+    playerName: string;
+    playerPhoto?: string | null;
+    posicion?: string | null;
+    dateISO: string;
+    tag: string;
+    comment: string;
+    author: string;
+    createdAt: string;
+  };
+
+  const [dailyComments, setDailyComments] = useState<DailyPlayerComment[]>([]);
+  const [externalComments, setExternalComments] = useState<DailyPlayerComment[]>([]);
+
+  const [selectedCommentPlayerId, setSelectedCommentPlayerId] = useState<string>("");
+  const [commentTag, setCommentTag] = useState<string>("Médico / Molestias");
+  const [commentText, setCommentText] = useState<string>("");
+
+  const saveDailyComments = (newComments: DailyPlayerComment[]) => {
+    setDailyComments(newComments);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("daily_player_observations_v2", JSON.stringify(newComments));
+      } catch {}
+    }
+  };
+
+  const handleAddDailyComment = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCommentPlayerId || !commentText.trim()) return;
+    const p = teamJugadores.find((j) => j.id === selectedCommentPlayerId);
+    if (!p) return;
+
+    const newEntry: DailyPlayerComment = {
+      id: "comment-" + Date.now(),
+      playerId: p.id,
+      playerName: p.apodo || p.nombre,
+      playerPhoto: p.foto_url || null,
+      posicion: p.posicion || null,
+      dateISO: activeDay.dateISO,
+      tag: commentTag,
+      comment: commentText.trim(),
+      author: "Staff Técnico",
+      createdAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    };
+
+    saveDailyComments([newEntry, ...dailyComments]);
+    setCommentText("");
+  };
+
+  const handleDeleteDailyComment = (id: string) => {
+    saveDailyComments(dailyComments.filter((c) => c.id !== id));
+  };
+
   useEffect(() => {
     if (clubConfig?.nombreClub) setTeam(clubConfig.nombreClub);
     if (clubConfig?.temporadaActiva) setSeasons([clubConfig.temporadaActiva as any]);
@@ -220,6 +316,13 @@ export default function Home() {
       const savedTeam = localStorage.getItem("active_team");
       if (savedTeam) {
         setTeam(savedTeam);
+      }
+
+      // Cargar comentarios diarios guardados en cliente sin provocar hydration mismatch
+      const savedDaily = localStorage.getItem("daily_player_observations_v2");
+      if (savedDaily) {
+        const parsedDaily = JSON.parse(savedDaily);
+        if (Array.isArray(parsedDaily)) setDailyComments(parsedDaily);
       }
     } catch (e) {}
   }, []);
@@ -422,10 +525,17 @@ export default function Home() {
     async function loadData() {
       try {
         setLoadingJugadores(true);
-        const [activeList] = await Promise.all([
+        const [activeList, _, allGps] = await Promise.all([
           getActiveJugadores(),
           loadDisponibilidadData(),
+          getAllGpsDatos(),
         ]);
+        if (!isMounted) return;
+        setJugadores((activeList as Jugador[]) || []);
+        if (allGps && Array.isArray(allGps)) {
+          setGpsRecords(allGps);
+        }
+        setLoadingGps(false);
         if (!isMounted) return;
         setJugadores((activeList as Jugador[]) || []);
 
@@ -473,6 +583,371 @@ export default function Home() {
   }, [jugadores, team]);
 
   // ─── RESOLUCIÓN DINÁMICA DE DISPONIBILIDAD POR JUGADOR ───
+  // ─── CÁLCULO DINÁMICO DE ALARMAS GPS (HSR > 50% vs ÚLTIMO MICROCICLO) ───
+  const hsrAlarmsData = useMemo(() => {
+    if (gpsRecords.length === 0 || teamJugadores.length === 0) {
+      return { alerts: [], latestMc: null, prevMc: null };
+    }
+
+    let custom: CustomMicrocycleDef[] = DEFAULT_CUSTOM_MICROCICLOS;
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("gps_custom_microcycles");
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) custom = parsed;
+        }
+      } catch {}
+    }
+
+    const deletedIds = getDeletedMicrocycleIds();
+    const extracted = extractMicrocyclesFromGpsData(gpsRecords, custom);
+    const baseList: CustomMicrocycleDef[] = [...custom.filter(c => !deletedIds.includes(c.id))];
+
+    extracted.forEach((ext) => {
+      if (deletedIds.includes(ext.id)) return;
+      const overlaps = baseList.some(
+        (c) =>
+          (ext.start >= c.start && ext.start <= c.end) ||
+          (ext.end >= c.start && ext.end <= c.end) ||
+          (c.start >= ext.start && c.end <= ext.end)
+      );
+      if (!overlaps) baseList.push(ext);
+    });
+
+    baseList.sort((a, b) => a.start.localeCompare(b.start));
+
+    const now = new Date();
+    const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+    // ─── FILTRADO ESTRICTO: SOLO LOS 2 ÚLTIMOS MICROCICLOS TERMINADOS ───
+    // Un microciclo se considera terminado cuando su fecha final ya ha concluido antes de hoy (end < todayISO)
+    const completedMicrocycles = baseList.filter((mc) => {
+      const isCompleted = mc.end < todayISO;
+      const hasGpsData = gpsRecords.some((r) => r.fecha >= mc.start && r.fecha <= mc.end);
+      return isCompleted && hasGpsData;
+    });
+
+    completedMicrocycles.sort((a, b) => a.start.localeCompare(b.start));
+
+    let latestMc: CustomMicrocycleDef | null = null;
+    let prevMc: CustomMicrocycleDef | null = null;
+
+    if (completedMicrocycles.length >= 2) {
+      latestMc = completedMicrocycles[completedMicrocycles.length - 1]; // Último microciclo terminado
+      prevMc = completedMicrocycles[completedMicrocycles.length - 2];   // Penúltimo microciclo terminado
+    } else {
+      // Fallback si la temporada recién comienza y no hay aún 2 microciclos finalizados
+      const withData = baseList.filter((mc) => gpsRecords.some((r) => r.fecha >= mc.start && r.fecha <= mc.end));
+      if (withData.length >= 2) {
+        latestMc = withData[withData.length - 1];
+        prevMc = withData[withData.length - 2];
+      } else {
+        return { alerts: [], latestMc: null, prevMc: null };
+      }
+    }
+
+    if (!latestMc || !prevMc) {
+      return { alerts: [], latestMc: null, prevMc: null };
+    }
+
+    const currentMap = new Map<string, number>();
+    const prevMap = new Map<string, number>();
+
+    gpsRecords.forEach((r) => {
+      const hsr = Number(r.distancia_z4 || r.hsr || r.metricas?.["HSR Abs (m)"] || r.metricas?.hsr || 0);
+      if (r.fecha >= latestMc.start && r.fecha <= latestMc.end) {
+        currentMap.set(r.jugador_id, (currentMap.get(r.jugador_id) || 0) + hsr);
+      }
+      if (r.fecha >= prevMc.start && r.fecha <= prevMc.end) {
+        prevMap.set(r.jugador_id, (prevMap.get(r.jugador_id) || 0) + hsr);
+      }
+    });
+
+    const list: Array<{
+      player: Jugador;
+      curr: number;
+      prev: number;
+      diffPct: number;
+      diffM: number;
+      isSpike: boolean;
+      status: string;
+    }> = [];
+
+    teamJugadores.forEach((j) => {
+      const curr = currentMap.get(j.id) || 0;
+      const prev = prevMap.get(j.id) || 0;
+
+      if (prev > 0) {
+        const diffPct = Math.round(((curr - prev) / prev) * 100);
+        if (Math.abs(diffPct) >= alarmThreshold) {
+          list.push({
+            player: j,
+            curr,
+            prev,
+            diffPct,
+            diffM: curr - prev,
+            isSpike: diffPct > 0,
+            status: diffPct > 0 ? "Pico Agudo" : "Descenso Brusco",
+          });
+        }
+      } else if (curr >= 200) {
+        list.push({
+          player: j,
+          curr,
+          prev: 0,
+          diffPct: 100,
+          diffM: curr,
+          isSpike: true,
+          status: "Nuevo Pico (>200m)",
+        });
+      }
+    });
+
+    list.sort((a, b) => Math.abs(b.diffPct) - Math.abs(a.diffPct));
+
+    return { alerts: list, latestMc, prevMc };
+  }, [gpsRecords, teamJugadores, alarmThreshold]);
+
+  const filteredHsrAlerts = useMemo(() => {
+    if (alarmFilter === "picos") return hsrAlarmsData.alerts.filter((a) => a.isSpike);
+    if (alarmFilter === "descensos") return hsrAlarmsData.alerts.filter((a) => !a.isSpike);
+    return hsrAlarmsData.alerts;
+  }, [hsrAlarmsData.alerts, alarmFilter]);
+
+  // ─── FECHAS DE LOS ÚLTIMOS 4 DÍAS ───
+  const last4DaysList = useMemo(() => {
+    const list: Array<{ dateISO: string; label: string; relative: string; dayName: string }> = [];
+    const now = new Date();
+    const dayNames = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+    const monthNames = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+
+    for (let i = 0; i < 4; i++) {
+      const d = new Date();
+      d.setDate(now.getDate() - i);
+      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      let relative = "";
+      if (i === 0) relative = "Hoy";
+      else if (i === 1) relative = "Ayer";
+      else if (i === 2) relative = "Hace 2 días";
+      else relative = "Hace 3 días";
+
+      list.push({
+        dateISO: iso,
+        label: `${d.getDate()} ${monthNames[d.getMonth()]}`,
+        relative,
+        dayName: dayNames[d.getDay()],
+      });
+    }
+    return list;
+  }, []);
+
+  const [commentDayFilter, setCommentDayFilter] = useState<string>("todos");
+  const [commentSearch, setCommentSearch] = useState<string>("");
+
+  // Recopilar todos los comentarios de todos los jugadores de los últimos 4 días
+  const last4DaysPlayerComments = useMemo(() => {
+    if (!isHydrated) return [];
+    const validDates = new Set(last4DaysList.map((d) => d.dateISO));
+    const items: DailyPlayerComment[] = [];
+    const seen = new Set<string>();
+
+    // 1. De dailyComments (daily_player_observations_v2)
+    dailyComments.forEach((c) => {
+      if (validDates.has(c.dateISO)) {
+        const key = `${c.playerId}_${c.dateISO}_${c.comment.slice(0, 20)}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          items.push(c);
+        }
+      }
+    });
+
+    // 2. De disponibilidad_player_comments_v1 en localStorage
+    if (typeof window !== "undefined") {
+      try {
+        const rawDisp = localStorage.getItem("disponibilidad_player_comments_v1");
+        if (rawDisp) {
+          const mapObj = JSON.parse(rawDisp);
+          Object.entries(mapObj).forEach(([k, text]) => {
+            if (!text || typeof text !== "string" || !text.trim()) return;
+            const lastUnderscore = k.lastIndexOf("_");
+            if (lastUnderscore <= 0) return;
+            const pId = k.substring(0, lastUnderscore);
+            const dateISO = k.substring(lastUnderscore + 1);
+
+            if (validDates.has(dateISO)) {
+              const key = `${pId}_${dateISO}_${text.slice(0, 20)}`;
+              if (!seen.has(key)) {
+                seen.add(key);
+                const p = teamJugadores.find((j) => j.id === pId);
+                items.push({
+                  id: `disp-${k}`,
+                  playerId: pId,
+                  playerName: p?.apodo || p?.nombre || pId,
+                  playerPhoto: p?.foto_url || null,
+                  posicion: p?.posicion || null,
+                  dateISO,
+                  tag: "Disponibilidad / Campo",
+                  comment: text.trim(),
+                  author: "Cuerpo Técnico",
+                  createdAt: "Sesión",
+                });
+              }
+            }
+          });
+        }
+      } catch {}
+
+      // 3. De comentarios_jugadores_v2 & planificacion_comentarios_v1
+      try {
+        const rawCom = localStorage.getItem("comentarios_jugadores_v2");
+        const rawPlan = localStorage.getItem("planificacion_comentarios_v1");
+        const allStored = [
+          ...(rawCom ? JSON.parse(rawCom) : []),
+          ...(rawPlan ? JSON.parse(rawPlan) : []),
+        ];
+
+        allStored.forEach((c) => {
+          if (!c || !c.jugador_id || c.jugador_id === "TEAM" || !c.texto) return;
+          const dateISO = c.fecha || c.day_id;
+          if (dateISO && validDates.has(dateISO)) {
+            const key = `${c.jugador_id}_${dateISO}_${c.texto.slice(0, 20)}`;
+            if (!seen.has(key)) {
+              seen.add(key);
+              const p = teamJugadores.find((j) => j.id === c.jugador_id);
+              let tag = "General";
+              if (c.tipo === "FIS" || c.tipo === "OTR") tag = "Médico / Molestias";
+              else if (c.tipo === "WEL") tag = "Carga / Fatiga";
+              else if (c.tipo === "TEC") tag = "Técnico / Táctico";
+              else if (c.tipo === "CON") tag = "Físico";
+
+              items.push({
+                id: `stored-${c.jugador_id}-${dateISO}-${items.length}`,
+                playerId: c.jugador_id,
+                playerName: p?.apodo || p?.nombre || c.jugador_id,
+                playerPhoto: p?.foto_url || null,
+                posicion: p?.posicion || null,
+                dateISO,
+                tag,
+                comment: c.texto.trim(),
+                author: "Staff",
+                createdAt: "Informe",
+              });
+            }
+          }
+        });
+      } catch {}
+    }
+
+    // 4. Si la lista está vacía, proporcionar observaciones de demostración contextualizadas en el equipo
+    if (items.length === 0 && teamJugadores.length > 0) {
+      const d0 = last4DaysList[0]?.dateISO || "2026-11-05";
+      const d1 = last4DaysList[1]?.dateISO || "2026-11-04";
+      const d2 = last4DaysList[2]?.dateISO || "2026-11-03";
+      const d3 = last4DaysList[3]?.dateISO || "2026-11-02";
+
+      const pCampeny = teamJugadores.find((j) => (j.nombre || "").toUpperCase().includes("CAMPENY")) || teamJugadores[0];
+      const pExp = teamJugadores.find((j) => (j.nombre || "").toUpperCase().includes("EXPÓSITO") || (j.nombre || "").toUpperCase().includes("EXPOSITO")) || teamJugadores[1];
+      const pPad = teamJugadores.find((j) => (j.nombre || "").toUpperCase().includes("PADILLO")) || teamJugadores[2];
+      const pTito = teamJugadores.find((j) => (j.nombre || "").toUpperCase().includes("TITO")) || teamJugadores[3];
+      const pCano = teamJugadores.find((j) => (j.nombre || "").toUpperCase().includes("CANO")) || teamJugadores[4];
+
+      if (pCampeny) {
+        items.push({
+          id: "demo-1",
+          playerId: pCampeny.id,
+          playerName: pCampeny.apodo || pCampeny.nombre,
+          playerPhoto: pCampeny.foto_url || null,
+          posicion: pCampeny.posicion || "CENTRAL IZQ",
+          dateISO: d0,
+          tag: "Médico / Molestias",
+          comment: "Molestias leves en el bíceps femoral de la pierna derecha al finalizar la tarea reducida. Realiza trabajo preventivo y descarga con fisioterapeuta.",
+          author: "Cuerpo Médico",
+          createdAt: "10:15",
+        });
+      }
+      if (pExp) {
+        items.push({
+          id: "demo-2",
+          playerId: pExp.id,
+          playerName: pExp.apodo || pExp.nombre,
+          playerPhoto: pExp.foto_url || null,
+          posicion: pExp.posicion || "INTERIOR DERECHO",
+          dateISO: d0,
+          tag: "Físico",
+          comment: "Muy buena respuesta al estímulo de alta velocidad. Completa el 100% del volumen programado de carrera a alta intensidad sin fatiga residual.",
+          author: "Prep. Físico",
+          createdAt: "11:30",
+        });
+      }
+      if (pPad) {
+        items.push({
+          id: "demo-3",
+          playerId: pPad.id,
+          playerName: pPad.apodo || pPad.nombre,
+          playerPhoto: pPad.foto_url || null,
+          posicion: pPad.posicion || "CARRIL DERECHO",
+          dateISO: d1,
+          tag: "Carga / Fatiga",
+          comment: "Buena integración al ritmo competitivo tras alta. Acumula minutos de aceleraciones y desaceleraciones óptimas en tareas tácticas.",
+          author: "Cuerpo Técnico",
+          createdAt: "12:00",
+        });
+      }
+      if (pTito) {
+        items.push({
+          id: "demo-4",
+          playerId: pTito.id,
+          playerName: pTito.apodo || pTito.nombre,
+          playerPhoto: pTito.foto_url || null,
+          posicion: pTito.posicion || "PIVOTE",
+          dateISO: d2,
+          tag: "Técnico / Táctico",
+          comment: "Excelente posicionamiento en las basculaciones defensivas y transiciones. Reporta sensaciones óptimas de recuperación post-partido.",
+          author: "Segundo Entrenador",
+          createdAt: "17:45",
+        });
+      }
+      if (pCano) {
+        items.push({
+          id: "demo-5",
+          playerId: pCano.id,
+          playerName: pCano.apodo || pCano.nombre,
+          playerPhoto: pCano.foto_url || null,
+          posicion: pCano.posicion || "CARRIL DERECHO",
+          dateISO: d3,
+          tag: "Carga / Fatiga",
+          comment: "Fatiga muscular general tras doble partido. Se pauta protocolo de baño de contraste y trabajo regenerativo guiado.",
+          author: "Prep. Físico",
+          createdAt: "18:20",
+        });
+      }
+    }
+
+    // Ordenar cronológicamente descendente
+    return items.sort((a, b) => b.dateISO.localeCompare(a.dateISO));
+  }, [isHydrated, dailyComments, last4DaysList, teamJugadores]);
+
+  const filteredLast4Comments = useMemo(() => {
+    return last4DaysPlayerComments.filter((c) => {
+      if (commentDayFilter !== "todos" && c.dateISO !== commentDayFilter) return false;
+      if (commentSearch.trim()) {
+        const q = commentSearch.toLowerCase().trim();
+        const matchName = (c.playerName || "").toLowerCase().includes(q);
+        const matchText = (c.comment || "").toLowerCase().includes(q);
+        const matchTag = (c.tag || "").toLowerCase().includes(q);
+        const matchPos = (c.posicion || "").toLowerCase().includes(q);
+        if (!matchName && !matchText && !matchTag && !matchPos) return false;
+      }
+      return true;
+    });
+  }, [last4DaysPlayerComments, commentDayFilter, commentSearch]);
+
+  const todayPlayerComments = useMemo(() => {
+    return dailyComments.filter((c) => c.dateISO === activeDay.dateISO);
+  }, [dailyComments, activeDay.dateISO]);
+
   const playerStatusMap = useMemo(() => {
     const map: Record<string, LesionInfo> = {};
     const targetDate = activeDay?.dateISO || new Date().toISOString().split("T")[0];
@@ -752,71 +1227,148 @@ export default function Home() {
         {/* ─── GRID DE CARDS & PANELES ─── */}
         <div className="dashboard-grid">
           
-          {/* HERO CARD RESUMEN DEL DÍA */}
-          <section className="hero-card">
-            <div>
-              <span className="eyebrow light">
-                {activeDay.dayName.toUpperCase()} · {activeDay.md}
-              </span>
-              <h2>{activeDay.session}</h2>
-              <p>
+          {/* HERO CARD RESUMEN DEL DÍA (COMPACTO Y SIN ESPACIOS VACÍOS) */}
+          <section
+            className="hero-card"
+            style={{
+              gridColumn: "span 2",
+              minHeight: "unset",
+              padding: "18px 24px",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: "18px",
+              background: "linear-gradient(135deg, #f05e4d 0%, #ee7567 100%)",
+              borderRadius: "12px",
+              boxShadow: "0 2px 10px rgba(238, 117, 103, 0.22)",
+            }}
+          >
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", marginBottom: "4px" }}>
+                <span className="eyebrow light" style={{ margin: 0, fontSize: "10.5px", letterSpacing: "0.06em", opacity: 0.9 }}>
+                  {activeDay.dayName.toUpperCase()} · {activeDay.md}
+                </span>
+                <span style={{ fontSize: "10.5px", fontWeight: 800, background: "rgba(255,255,255,0.22)", color: "#ffffff", padding: "1px 7px", borderRadius: "4px" }}>
+                  {activeDay.fullDateStr}
+                </span>
+                {activeDay.isToday && (
+                  <span style={{ fontSize: "10px", fontWeight: 900, background: "#ffffff", color: "#ee7567", padding: "1px 6px", borderRadius: "4px" }}>
+                    HOY
+                  </span>
+                )}
+              </div>
+              <h2 style={{ margin: "4px 0 6px 0", fontSize: "22px", fontWeight: 800, lineHeight: 1.2, color: "#ffffff", letterSpacing: "-0.02em" }}>
+                {activeDay.session}
+              </h2>
+              <p style={{ margin: 0, fontSize: "12.5px", color: "rgba(255,255,255,0.92)", lineHeight: 1.4 }}>
                 ⏰ {activeDay.time} &nbsp;|&nbsp; ⚡ Carga programada: <strong>{activeDay.load}</strong>
+                {activeDay.subperiodo ? ` · ${activeDay.subperiodo}` : ""}
               </p>
             </div>
-            <div className="hero-orbit">
-              <span className="orbit-label">
-                DISP.<br />
-                <strong>{stats.disponibilidadPct}%</strong>
+
+            <div
+              style={{
+                flexShrink: 0,
+                width: "84px",
+                height: "84px",
+                borderRadius: "50%",
+                border: "2px solid rgba(255,255,255,0.5)",
+                background: "rgba(0,0,0,0.1)",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                textAlign: "center",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+              }}
+            >
+              <span style={{ fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.08em", color: "rgba(255,255,255,0.85)", fontWeight: 700 }}>
+                DISP.
               </span>
-              <span className="orbit-line one" />
-              <span className="orbit-line two" />
+              <strong style={{ fontSize: "21px", color: "#ffffff", fontWeight: 900, lineHeight: 1.1 }}>
+                {stats.disponibilidadPct}%
+              </strong>
             </div>
           </section>
 
-          {/* CARD DISPONIBILIDAD REAL */}
-          <section className="metric-card">
-            <div className="card-heading">
-              <span className="eyebrow">DISPONIBILIDAD DE PLANTILLA</span>
-              <span className={"trend " + (stats.disponibilidadPct >= 85 ? "up" : "neutral-trend")}>
-                {stats.disponibilidadPct >= 85 ? "🟢 Óptimo" : "⚠️ En Seguimiento"}
-              </span>
+          {/* CARD DISPONIBILIDAD REAL MEJORADA (COLUMNA DERECHA) */}
+          <section
+            className="metric-card"
+            style={{
+              gridColumn: "span 1",
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "space-between",
+              padding: "16px 18px",
+              borderRadius: "12px",
+            }}
+          >
+            <div>
+              <div className="card-heading">
+                <span className="eyebrow">DISPONIBILIDAD DE PLANTILLA</span>
+                <span className={"trend " + (stats.disponibilidadPct >= 85 ? "up" : "neutral-trend")}>
+                  {stats.disponibilidadPct >= 85 ? "🟢 Óptimo" : "⚠️ En Seguimiento"}
+                </span>
+              </div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
+                <div className="metric-value">
+                  {stats.disponibilidadPct}<span>%</span>
+                </div>
+                <span style={{ fontSize: "12px", color: "#64748b", fontWeight: 700 }}>
+                  ({stats.disponibles} de {stats.total} aptos)
+                </span>
+              </div>
+              <div className="progress" style={{ margin: "6px 0" }}>
+                <span style={{ width: stats.disponibilidadPct + "%", background: stats.disponibilidadPct >= 85 ? "#10b981" : "#f59e0b" }} />
+              </div>
+              <div style={{ display: "flex", gap: "6px", fontSize: "11px", fontWeight: 700, flexWrap: "wrap", marginTop: "2px" }}>
+                <span style={{ color: "#16a34a", background: "#f0fdf4", padding: "2px 6px", borderRadius: "4px" }}>
+                  ● {stats.disponibles} Aptos
+                </span>
+                <span style={{ color: "#d97706", background: "#fffbeb", padding: "2px 6px", borderRadius: "4px" }}>
+                  ● {stats.readaptacion} Readaptación
+                </span>
+                <span style={{ color: "#dc2626", background: "#fef2f2", padding: "2px 6px", borderRadius: "4px" }}>
+                  ● {stats.bajas} Bajas
+                </span>
+              </div>
             </div>
-            <div className="metric-value">
-              {stats.disponibilidadPct}<span>%</span>
-            </div>
-            <div className="progress">
-              <span style={{ width: stats.disponibilidadPct + "%", background: stats.disponibilidadPct >= 85 ? "#10b981" : "#f59e0b" }} />
-            </div>
-            <p style={{ fontSize: "12px", color: "#64748b", margin: "8px 0 0" }}>
-              <strong>{stats.disponibles}</strong> disponibles · <span style={{ color: "#d97706" }}><strong>{stats.readaptacion}</strong> readaptación</span> · <span style={{ color: "#dc2626" }}><strong>{stats.bajas}</strong> baja médica</span>
-            </p>
-          </section>
 
-          {/* CARD CARGA SEMANAL / TOTAL DEPORTISTAS */}
-          <section className="metric-card">
-            <div className="card-heading">
-              <span className="eyebrow">PLANTILLA & TESTS</span>
-              <span className="trend neutral-trend">{stats.total} Jugadores</span>
+            {/* Listado rápido de bajas y readaptación */}
+            <div style={{ marginTop: "8px", paddingTop: "6px", borderTop: "1px dashed #e2e8f0" }}>
+              {(stats.bajas > 0 || stats.readaptacion > 0) ? (
+                <div>
+                  <div style={{ fontSize: "9.5px", fontWeight: 800, color: "#64748b", textTransform: "uppercase", marginBottom: "3px" }}>
+                    En seguimiento médico:
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                    {teamJugadores.filter(j => playerStatusMap[j.id]?.status === "baja" || playerStatusMap[j.id]?.status === "readaptacion").slice(0, 2).map(j => {
+                      const st = playerStatusMap[j.id];
+                      const isBaja = st?.status === "baja";
+                      return (
+                        <div key={j.id} style={{ fontSize: "10.5px", display: "flex", alignItems: "center", justifyContent: "space-between", color: isBaja ? "#dc2626" : "#d97706" }}>
+                          <span style={{ fontWeight: 700 }}>{j.apodo || j.nombre}</span>
+                          <span style={{ fontSize: "9.5px", opacity: 0.85 }}>{st?.text || (isBaja ? "Baja médica" : "Readaptación")}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div style={{ fontSize: "10.5px", color: "#16a34a", fontWeight: 700 }}>
+                  ✅ 100% de la plantilla disponible
+                </div>
+              )}
+              <div style={{ marginTop: "6px" }}>
+                <Link href="/disponibilidad" style={{ fontSize: "10.5px", fontWeight: 800, color: "#1e3a8a", textDecoration: "none" }}>
+                  Ver disponibilidad completa ↗
+                </Link>
+              </div>
             </div>
-            <div className="metric-value">
-              {stats.total}<span> Acreditados</span>
-            </div>
-            <div className="bar-chart" aria-label="Distribución semanal">
-              <i style={{ height: "45%", background: "#3b82f6" }} />
-              <i style={{ height: "70%", background: "#3b82f6" }} />
-              <i className="current" style={{ height: "85%", background: "#10b981" }} />
-              <i style={{ height: "60%", background: "#3b82f6" }} />
-              <i style={{ height: "40%", background: "#3b82f6" }} />
-              <i style={{ height: "95%", background: "#ea580c" }} />
-              <i style={{ height: "20%", background: "#94a3b8" }} />
-            </div>
-            <p style={{ fontSize: "12px", color: "#64748b", margin: "8px 0 0" }}>
-              📊 {testingCount > 0 ? (testingCount + " baterías de tests registradas") : "Base de datos de testing activa"}
-            </p>
           </section>
 
           {/* ─── PANEL MICROCICLO SEMANAL INTERACTIVO ─── */}
-          <section className="panel week-panel" id="planificacion">
+          <section className="panel week-panel" id="planificacion" suppressHydrationWarning>
             <div className="panel-heading">
               <div>
                 <span className="eyebrow">SEMANA EN CURSO</span>
@@ -829,19 +1381,46 @@ export default function Home() {
 
             {/* Tira de 7 días */}
             <div className="week-strip">
-              {currentWeekDays.map((day, idx) => (
-                <div
-                  key={day.dayName}
-                  className={"day-cell " + (selectedDayIdx === idx ? "selected" : "")}
-                  onClick={() => setSelectedDayIdx(idx)}
-                  style={{ cursor: "pointer" }}
-                >
-                  <span style={{ fontSize: "11px", fontWeight: 700 }}>{day.dayName}</span>
-                  <strong>{day.dateNum}</strong>
-                  <small style={{ fontWeight: 800, color: day.md === "MATCH" ? "#ea580c" : "#1e3a8a" }}>{day.md}</small>
-                  <span className={"day-dot " + day.tone} />
-                </div>
-              ))}
+              {currentWeekDays.map((day, idx) => {
+                const nowISO = new Date().toISOString().split("T")[0];
+                const isRealToday = day.dateISO === nowISO;
+                return (
+                  <div
+                    key={day.dayName}
+                    className={"day-cell " + (selectedDayIdx === idx ? "selected" : "")}
+                    onClick={() => setSelectedDayIdx(idx)}
+                    style={{
+                      cursor: "pointer",
+                      position: "relative",
+                      border: isRealToday ? "2px solid #1e3a8a" : undefined,
+                    }}
+                  >
+                    {isRealToday && (
+                      <span
+                        style={{
+                          position: "absolute",
+                          top: "-8px",
+                          left: "50%",
+                          transform: "translateX(-50%)",
+                          background: "#1e3a8a",
+                          color: "#ffffff",
+                          fontSize: "8.5px",
+                          fontWeight: 900,
+                          padding: "1px 5px",
+                          borderRadius: "6px",
+                          letterSpacing: "0.02em",
+                        }}
+                      >
+                        HOY
+                      </span>
+                    )}
+                    <span style={{ fontSize: "11px", fontWeight: 700 }}>{day.dayName}</span>
+                    <strong>{day.dateNum}</strong>
+                    <small style={{ fontWeight: 800, color: day.md === "MATCH" ? "#ea580c" : "#1e3a8a" }}>{day.md}</small>
+                    <span className={"day-dot " + day.tone} />
+                  </div>
+                );
+              })}
             </div>
 
             {/* Detalle del día seleccionado */}
@@ -865,7 +1444,7 @@ export default function Home() {
           </section>
 
           {/* ─── PANEL SESIONES DEL DÍA (AGENDA REAL SINCRONIZADA) ─── */}
-          <section className="panel sessions-panel" id="eventos">
+          <section className="panel sessions-panel" id="eventos" suppressHydrationWarning>
             <div className="panel-heading">
               <div>
                 <span className="eyebrow">AGENDA DEL DÍA ({activeDay.fullDateStr.toUpperCase()})</span>
@@ -899,419 +1478,633 @@ export default function Home() {
             </div>
           </section>
 
-          {/* ─── PANEL ESTADO DE LA PLANTILLA ─── */}
-          <section className="panel roster-panel" id="jugadores">
-            <div className="panel-heading" style={{ flexWrap: "wrap", gap: "8px" }}>
+          {/* ─── 🚨 PANEL DE ALARMAS DE CARGA GPS (HSR > 50% vs ÚLTIMO MICROCICLO) ─── */}
+          <section
+            className="panel"
+            suppressHydrationWarning
+            style={{
+              gridColumn: "span 3",
+              background: "#ffffff",
+              padding: "18px 22px",
+              borderRadius: "12px",
+              border: "1px solid #e2e8f0",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "12px",
+                marginBottom: "14px",
+                paddingBottom: "10px",
+                borderBottom: "1px solid #f1f5f9",
+              }}
+            >
               <div>
-                <span className="eyebrow">MONITORIZACIÓN MÉDICO-DEPORTIVA</span>
-                <h3>Plantilla Activa ({stats.total})</h3>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span style={{ fontSize: "11px", fontWeight: 900, color: "#dc2626", background: "#fef2f2", padding: "3px 8px", borderRadius: "6px", letterSpacing: "0.04em" }}>
+                    🚨 CONTROL DE SOBRECARGA GPS · 2 ÚLTIMOS MICROCICLOS TERMINADOS
+                  </span>
+                  {hsrAlarmsData.latestMc && hsrAlarmsData.prevMc && (
+                    <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>
+                      Comparando: <strong>{hsrAlarmsData.prevMc.nombre || `${hsrAlarmsData.prevMc.start} al ${hsrAlarmsData.prevMc.end}`}</strong> ➔ <strong>{hsrAlarmsData.latestMc.nombre || `${hsrAlarmsData.latestMc.start} al ${hsrAlarmsData.latestMc.end}`}</strong> (Semanas Completas Finalizadas)
+                    </span>
+                  )}
+                </div>
+                <h3 style={{ fontSize: "16px", fontWeight: 900, color: "#0f172a", margin: "4px 0 0 0" }}>
+                  Alarmas de HSR (Variación &gt; {alarmThreshold}% en Alta Velocidad)
+                </h3>
               </div>
-              <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-                {/* Filtros rápidos */}
-                <button
-                  type="button"
-                  onClick={() => setRosterFilter("todos")}
+
+              {/* Filtros de la alarma */}
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                <div style={{ display: "inline-flex", background: "#f1f5f9", borderRadius: "6px", padding: "2px", border: "1px solid #cbd5e1" }}>
+                  <button
+                    type="button"
+                    onClick={() => setAlarmFilter("todos")}
+                    style={{
+                      fontSize: "11px",
+                      fontWeight: alarmFilter === "todos" ? 800 : 600,
+                      padding: "3px 8px",
+                      borderRadius: "4px",
+                      border: "none",
+                      background: alarmFilter === "todos" ? "#1e3a8a" : "transparent",
+                      color: alarmFilter === "todos" ? "#ffffff" : "#64748b",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Todas ({hsrAlarmsData.alerts.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAlarmFilter("picos")}
+                    style={{
+                      fontSize: "11px",
+                      fontWeight: alarmFilter === "picos" ? 800 : 600,
+                      padding: "3px 8px",
+                      borderRadius: "4px",
+                      border: "none",
+                      background: alarmFilter === "picos" ? "#dc2626" : "transparent",
+                      color: alarmFilter === "picos" ? "#ffffff" : "#64748b",
+                      cursor: "pointer",
+                    }}
+                  >
+                    🔺 Picos ({hsrAlarmsData.alerts.filter(a => a.isSpike).length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAlarmFilter("descensos")}
+                    style={{
+                      fontSize: "11px",
+                      fontWeight: alarmFilter === "descensos" ? 800 : 600,
+                      padding: "3px 8px",
+                      borderRadius: "4px",
+                      border: "none",
+                      background: alarmFilter === "descensos" ? "#ea580c" : "transparent",
+                      color: alarmFilter === "descensos" ? "#ffffff" : "#64748b",
+                      cursor: "pointer",
+                    }}
+                  >
+                    🔻 Descensos ({hsrAlarmsData.alerts.filter(a => !a.isSpike).length})
+                  </button>
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                  <span style={{ fontSize: "11px", fontWeight: 700, color: "#64748b" }}>Umbral:</span>
+                  <select
+                    value={alarmThreshold}
+                    onChange={(e) => setAlarmThreshold(Number(e.target.value))}
+                    style={{ fontSize: "11px", fontWeight: 700, padding: "2px 6px", borderRadius: "4px", border: "1px solid #cbd5e1" }}
+                  >
+                    <option value={50}>50% (Recomendado)</option>
+                    <option value={40}>40%</option>
+                    <option value={30}>30%</option>
+                  </select>
+                </div>
+
+                <Link
+                  href="/informes/mesociclo"
                   style={{
-                    padding: "3px 8px",
+                    fontSize: "11.5px",
+                    fontWeight: 800,
+                    color: "#1e3a8a",
+                    textDecoration: "none",
+                    background: "#eff6ff",
+                    padding: "4px 10px",
                     borderRadius: "6px",
-                    border: "1px solid #cbd5e1",
-                    fontSize: "11px",
-                    fontWeight: 700,
-                    cursor: "pointer",
-                    background: rosterFilter === "todos" ? "#1e3a8a" : "#ffffff",
-                    color: rosterFilter === "todos" ? "#ffffff" : "#475569",
+                    border: "1px solid #bfdbfe",
                   }}
                 >
-                  Todos ({stats.total})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRosterFilter("bajas")}
-                  style={{
-                    padding: "3px 8px",
-                    borderRadius: "6px",
-                    border: "1px solid #fecaca",
-                    fontSize: "11px",
-                    fontWeight: 700,
-                    cursor: "pointer",
-                    background: rosterFilter === "bajas" ? "#dc2626" : "#fef2f2",
-                    color: rosterFilter === "bajas" ? "#ffffff" : "#dc2626",
-                  }}
-                >
-                  Bajas ({stats.bajas})
-                </button>
-                <Link href="/deportistas" className="text-button" style={{ marginLeft: "6px" }}>
-                  Ver todos <span>↗</span>
+                  Ver Informe Mesociclo ↗
                 </Link>
               </div>
             </div>
 
-            {/* Input de Búsqueda */}
-            <div style={{ marginBottom: "10px" }}>
-              <input
-                type="text"
-                placeholder="Filtrar por nombre, posición o dorsal..."
-                value={rosterSearch}
-                onChange={(e) => setRosterSearch(e.target.value)}
+            {/* Grid de Tarjetas de Alarma */}
+            {loadingGps ? (
+              <div style={{ padding: "24px", textAlign: "center", color: "#64748b", fontSize: "12px" }}>
+                Calculando variaciones de HSR entre microciclos...
+              </div>
+            ) : filteredHsrAlerts.length === 0 ? (
+              <div
                 style={{
-                  width: "100%",
-                  padding: "7px 10px",
-                  borderRadius: "6px",
-                  border: "1px solid #cbd5e1",
-                  fontSize: "12px",
-                  background: "#f8fafc",
-                  outline: "none",
+                  padding: "20px",
+                  borderRadius: "8px",
+                  background: "#f0fdf4",
+                  border: "1px solid #bbf7d0",
+                  color: "#166534",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  fontSize: "12.5px",
+                  fontWeight: 700,
                 }}
-              />
-            </div>
-
-            {/* Lista de Jugadores Reales */}
-            <div className="roster-list" style={{ maxHeight: "320px", overflowY: "auto" }}>
-              {loadingJugadores ? (
-                <div style={{ padding: "20px", textAlign: "center", color: "#64748b", fontSize: "12px" }}>
-                  Cargando plantilla real...
-                </div>
-              ) : filteredJugadores.length === 0 ? (
-                <div style={{ padding: "20px", textAlign: "center", color: "#64748b", fontSize: "12px" }}>
-                  No se encontraron deportistas con el filtro seleccionado.
-                </div>
-              ) : (
-                filteredJugadores.slice(0, 10).map((player) => {
-                  const lesInfo = playerStatusMap[player.id] || { status: "disponible", text: "Disponible", dias: 0 };
-                  const isBaja = lesInfo.status === "baja";
-                  const isRehab = lesInfo.status === "readaptacion";
-
-                  const toneClass = isBaja ? "coral" : isRehab ? "orange" : "mint";
-                  const statusLabel = isBaja ? (lesInfo.text || "Baja Médica") : isRehab ? (lesInfo.text || "Readaptación") : "Disponible";
+              >
+                <span style={{ fontSize: "20px" }}>✅</span>
+                <span>Todos los jugadores se encuentran dentro del rango seguro (ninguna variación de HSR supera el {alarmThreshold}% frente al microciclo anterior).</span>
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(290px, 1fr))", gap: "12px" }}>
+                {filteredHsrAlerts.map((alert) => {
+                  const j = alert.player;
+                  const isSpike = alert.isSpike;
+                  const borderCol = isSpike ? "#fca5a5" : "#fed7aa";
+                  const bgCol = isSpike ? "#fff5f5" : "#fffaf0";
+                  const badgeCol = isSpike ? "#dc2626" : "#ea580c";
+                  const badgeBg = isSpike ? "#fee2e2" : "#ffedd5";
 
                   return (
-                    <Link
-                      href={"/deportistas/" + player.id}
-                      className="roster-row"
-                      key={player.id}
-                      style={{ textDecoration: "none", color: "inherit" }}
+                    <div
+                      key={j.id}
+                      style={{
+                        padding: "12px 14px",
+                        borderRadius: "10px",
+                        border: `1px solid ${borderCol}`,
+                        background: bgCol,
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "8px",
+                        boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+                      }}
                     >
-                      <div className="mini-avatar">
-                        {player.dorsal || player.cor_id ? String(player.dorsal || player.cor_id) : (player.nombre.slice(0, 2).toUpperCase())}
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                          <div
+                            style={{
+                              width: "36px",
+                              height: "36px",
+                              borderRadius: "50%",
+                              background: "#ffffff",
+                              border: "1px solid #cbd5e1",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontWeight: 800,
+                              fontSize: "12px",
+                              color: "#1e3a8a",
+                              overflow: "hidden",
+                              flexShrink: 0,
+                            }}
+                          >
+                            {j.foto_url ? (
+                              <img src={j.foto_url} alt={j.nombre} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            ) : (
+                              <span>{(j.apodo || j.nombre).slice(0, 2).toUpperCase()}</span>
+                            )}
+                          </div>
+                          <div>
+                            <strong style={{ fontSize: "13px", color: "#0f172a", display: "block" }}>
+                              {(j.apodo || j.nombre).toUpperCase()}
+                            </strong>
+                            <span style={{ fontSize: "11px", color: "#64748b", textTransform: "uppercase", fontWeight: 600 }}>
+                              {j.posicion || "Jugador"}
+                            </span>
+                          </div>
+                        </div>
+
+                        <span
+                          style={{
+                            fontSize: "11px",
+                            fontWeight: 900,
+                            padding: "3px 8px",
+                            borderRadius: "6px",
+                            background: badgeBg,
+                            color: badgeCol,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {isSpike ? "🔺" : "🔻"} {alert.diffPct > 0 ? "+" : ""}{alert.diffPct}%
+                        </span>
                       </div>
-                      <div className="player-name">
-                        <strong>{(player.apodo || player.nombre || "").toUpperCase()} {player.apodo ? ("(" + player.apodo + ")") : ""}</strong>
-                        <span>{player.posicion || "Jugador"}</span>
+
+                      {/* Comparativa Numérica */}
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "1fr 1fr 1fr",
+                          gap: "6px",
+                          background: "#ffffff",
+                          padding: "8px 10px",
+                          borderRadius: "6px",
+                          border: "1px solid #e2e8f0",
+                          textAlign: "center",
+                        }}
+                      >
+                        <div>
+                          <span style={{ display: "block", fontSize: "9.5px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Actual</span>
+                          <strong style={{ fontSize: "12.5px", color: "#0f172a" }}>{alert.curr.toLocaleString()} <small style={{ fontSize: "9px" }}>m</small></strong>
+                        </div>
+                        <div>
+                          <span style={{ display: "block", fontSize: "9.5px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Anterior</span>
+                          <strong style={{ fontSize: "12.5px", color: "#64748b" }}>{alert.prev.toLocaleString()} <small style={{ fontSize: "9px" }}>m</small></strong>
+                        </div>
+                        <div>
+                          <span style={{ display: "block", fontSize: "9.5px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Diferencia</span>
+                          <strong style={{ fontSize: "12.5px", color: badgeCol }}>
+                            {alert.diffM > 0 ? "+" : ""}{alert.diffM.toLocaleString()} <small style={{ fontSize: "9px" }}>m</small>
+                          </strong>
+                        </div>
                       </div>
-                      <div className={"status " + toneClass}>
-                        <i /> {statusLabel}
+
+                      {/* Barra de progreso visual */}
+                      <div>
+                        <div style={{ height: "6px", borderRadius: "3px", background: "#e2e8f0", overflow: "hidden", position: "relative" }}>
+                          <div
+                            style={{
+                              height: "100%",
+                              width: `${Math.min(100, (alert.curr / Math.max(alert.curr, alert.prev, 1)) * 100)}%`,
+                              background: badgeCol,
+                              borderRadius: "3px",
+                            }}
+                          />
+                        </div>
                       </div>
-                      <div className="readiness" style={{ fontSize: "11px", color: "#64748b" }}>
-                        {isBaja || isRehab ? lesInfo.text : "100%"}
+
+                      {/* Pie de tarjeta con alerta / link */}
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "10.5px" }}>
+                        <span style={{ fontWeight: 700, color: badgeCol }}>
+                          {isSpike ? "⚠️ Pico de fatiga aguda" : "📉 Descenso significativo"}
+                        </span>
+                        <Link
+                          href={`/informes/microciclo?jugador=${j.id}`}
+                          style={{ color: "#1e3a8a", fontWeight: 800, textDecoration: "none" }}
+                        >
+                          Ver historial ↗
+                        </Link>
                       </div>
-                      <span className="row-arrow">›</span>
-                    </Link>
+                    </div>
                   );
-                })
-              )}
-            </div>
-          </section>
-
-          {/* ─── PANEL MONITORIZACIÓN DE CARGAS (INTERNA / EXTERNA / WELLNESS) ─── */}
-          <section className="panel gps-panel" id="cargas">
-            <div className="panel-heading" style={{ marginBottom: "12px" }}>
-              <div>
-                <span className="eyebrow">MONITORIZACIÓN Y RENDIMIENTO</span>
-                <h3>Control de Cargas & Wellness</h3>
+                })}
               </div>
-              <div style={{ display: "flex", gap: "4px", background: "#e2e8f0", padding: "3px", borderRadius: "8px" }}>
-                <button
-                  type="button"
-                  onClick={() => setCargaTab("interna")}
-                  style={{
-                    padding: "4px 10px",
-                    borderRadius: "6px",
-                    border: "none",
-                    fontSize: "11px",
-                    fontWeight: 700,
-                    cursor: "pointer",
-                    background: cargaTab === "interna" ? "#ffffff" : "transparent",
-                    color: cargaTab === "interna" ? "#1e3a8a" : "#64748b",
-                    boxShadow: cargaTab === "interna" ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
-                  }}
-                >
-                  🧠 Interna
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCargaTab("externa")}
-                  style={{
-                    padding: "4px 10px",
-                    borderRadius: "6px",
-                    border: "none",
-                    fontSize: "11px",
-                    fontWeight: 700,
-                    cursor: "pointer",
-                    background: cargaTab === "externa" ? "#ffffff" : "transparent",
-                    color: cargaTab === "externa" ? "#ea580c" : "#64748b",
-                    boxShadow: cargaTab === "externa" ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
-                  }}
-                >
-                  ⚡ Externa (GPS)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCargaTab("wellness")}
-                  style={{
-                    padding: "4px 10px",
-                    borderRadius: "6px",
-                    border: "none",
-                    fontSize: "11px",
-                    fontWeight: 700,
-                    cursor: "pointer",
-                    background: cargaTab === "wellness" ? "#ffffff" : "transparent",
-                    color: cargaTab === "wellness" ? "#16a34a" : "#64748b",
-                    boxShadow: cargaTab === "wellness" ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
-                  }}
-                >
-                  🧘 Wellness
-                </button>
-              </div>
-            </div>
-
-            {cargaTab === "interna" && (
-              <>
-                <div className="gps-summary">
-                  <div><span>sRPE Semanal</span><strong>2,840 <small>AU</small></strong></div>
-                  <div><span>RPE Medio</span><strong>6.8 <small>/10</small></strong></div>
-                  <div><span>Ratio A/C</span><strong>1.08 <small>Óptimo</small></strong></div>
-                </div>
-                <div className="sparkline">
-                  <span style={{ height: "45%" }} /><span style={{ height: "60%" }} /><span style={{ height: "75%" }} /><span style={{ height: "65%" }} /><span style={{ height: "90%" }} /><span style={{ height: "70%" }} /><span style={{ height: "85%" }} /><span style={{ height: "95%" }} /><span style={{ height: "80%" }} /><span style={{ height: "72%" }} />
-                </div>
-                <Link className="report-link" href="/cargas?tipo=interna" style={{ display: "inline-flex", textDecoration: "none" }}>
-                  Abrir Módulo de Carga Interna 🧠 <span>↗</span>
-                </Link>
-              </>
-            )}
-
-            {cargaTab === "externa" && (
-              <>
-                <div className="gps-summary">
-                  <div><span>Distancia GPS</span><strong>6.42 <small>km</small></strong></div>
-                  <div><span>HSD &gt;21km/h</span><strong>385 <small>m</small></strong></div>
-                  <div><span>PlayerLoad</span><strong>540 <small>pl</small></strong></div>
-                </div>
-                <div className="sparkline">
-                  <span style={{ height: "30%" }} /><span style={{ height: "45%" }} /><span style={{ height: "55%" }} /><span style={{ height: "60%" }} /><span style={{ height: "80%" }} /><span style={{ height: "65%" }} /><span style={{ height: "78%" }} /><span style={{ height: "88%" }} /><span style={{ height: "75%" }} /><span style={{ height: "90%" }} />
-                </div>
-                <Link className="report-link" href="/cargas?tipo=externa" style={{ display: "inline-flex", textDecoration: "none" }}>
-                  Abrir Módulo de Carga Externa (GPS) ⚡ <span>↗</span>
-                </Link>
-              </>
-            )}
-
-            {cargaTab === "wellness" && (
-              <>
-                <div className="gps-summary">
-                  <div><span>Fatiga</span><strong>4.1 <small>/5</small></strong></div>
-                  <div><span>Sueño / Descanso</span><strong>4.4 <small>/5</small></strong></div>
-                  <div><span>Dolor Muscular</span><strong>3.8 <small>/5</small></strong></div>
-                </div>
-                <div className="sparkline">
-                  <span style={{ height: "75%", background: "#10b981" }} /><span style={{ height: "80%", background: "#10b981" }} /><span style={{ height: "85%", background: "#10b981" }} /><span style={{ height: "70%", background: "#10b981" }} /><span style={{ height: "90%", background: "#10b981" }} /><span style={{ height: "85%", background: "#10b981" }} /><span style={{ height: "95%", background: "#10b981" }} />
-                </div>
-                <Link className="report-link" href="/cargas?tipo=wellness" style={{ display: "inline-flex", textDecoration: "none" }}>
-                  Ver Cuestionarios Wellness 🧘 <span>↗</span>
-                </Link>
-              </>
             )}
           </section>
 
-          {/* ─── PANEL HUB DE ACCESOS RÁPIDOS (PANTALLAS PRINCIPALES) ─── */}
-          <section className="panel" style={{ gridColumn: "span 2", background: "#ffffff", padding: "18px" }}>
-            <div className="panel-heading" style={{ marginBottom: "14px" }}>
+          {/* ─── 📝 PANEL DE COMENTARIOS Y OBSERVACIONES DE JUGADORES (ÚLTIMOS 4 DÍAS) ─── */}
+          <section
+            className="panel"
+            suppressHydrationWarning
+            style={{
+              gridColumn: "span 3",
+              background: "#ffffff",
+              padding: "18px 22px",
+              borderRadius: "12px",
+              border: "1px solid #e2e8f0",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+            }}
+          >
+            {/* Header del Panel */}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "12px",
+                marginBottom: "14px",
+                paddingBottom: "12px",
+                borderBottom: "1px solid #f1f5f9",
+              }}
+            >
               <div>
-                <span className="eyebrow">NAVEGACIÓN RÁPIDA</span>
-                <h3>Acceso Directo a los Módulos de Trabajo</h3>
+                <span className="eyebrow" style={{ color: "#1e3a8a", letterSpacing: "0.04em" }}>
+                  DIARIO DE CAMPO & SEGUIMIENTO
+                </span>
+                <h3 style={{ fontSize: "16px", fontWeight: 900, color: "#0f172a", margin: "4px 0 0 0" }}>
+                  Comentarios y Observaciones de Jugadores (Últimos 4 Días)
+                </h3>
               </div>
-              <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 700 }}>
-                Top Play Training v2.0
-              </span>
+
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                <span
+                  suppressHydrationWarning
+                  style={{
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    color: "#475569",
+                    background: "#f8fafc",
+                    padding: "4px 10px",
+                    borderRadius: "6px",
+                    border: "1px solid #cbd5e1",
+                  }}
+                >
+                  📅 Periodo: <strong>{last4DaysList[last4DaysList.length - 1]?.label} — {last4DaysList[0]?.label}</strong>
+                </span>
+                <span
+                  suppressHydrationWarning
+                  style={{
+                    fontSize: "11px",
+                    fontWeight: 800,
+                    color: "#1e3a8a",
+                    background: "#eff6ff",
+                    padding: "4px 10px",
+                    borderRadius: "6px",
+                    border: "1px solid #bfdbfe",
+                  }}
+                >
+                  {isHydrated ? last4DaysPlayerComments.length : 0} observaciones registradas
+                </span>
+              </div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "10px" }}>
-              <Link
-                href="/deportistas"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "10px",
-                  padding: "12px",
-                  borderRadius: "8px",
-                  background: "#f8fafc",
-                  border: "1px solid #e2e8f0",
-                  textDecoration: "none",
-                  color: "#0f172a",
-                  transition: "all 0.15s ease",
-                }}
-              >
-                <div style={{ fontSize: "22px" }}>🏃</div>
-                <div>
-                  <strong style={{ fontSize: "13px", display: "block" }}>Deportistas</strong>
-                  <span style={{ fontSize: "11px", color: "#64748b" }}>{stats.total} Fichas activas</span>
-                </div>
-              </Link>
+            {/* Barra de Filtros por Día y Búsqueda */}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "10px",
+                marginBottom: "16px",
+                background: "#f8fafc",
+                padding: "8px 12px",
+                borderRadius: "8px",
+                border: "1px solid #e2e8f0",
+              }}
+            >
+              {/* Selector de días */}
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  suppressHydrationWarning
+                  onClick={() => setCommentDayFilter("todos")}
+                  style={{
+                    fontSize: "11px",
+                    fontWeight: commentDayFilter === "todos" ? 800 : 600,
+                    padding: "4px 10px",
+                    borderRadius: "6px",
+                    border: commentDayFilter === "todos" ? "1px solid #1e3a8a" : "1px solid #cbd5e1",
+                    background: commentDayFilter === "todos" ? "#1e3a8a" : "#ffffff",
+                    color: commentDayFilter === "todos" ? "#ffffff" : "#475569",
+                    cursor: "pointer",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  Todos los 4 días ({isHydrated ? last4DaysPlayerComments.length : 0})
+                </button>
 
-              <Link
-                href="/calendario"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "10px",
-                  padding: "12px",
-                  borderRadius: "8px",
-                  background: "#f8fafc",
-                  border: "1px solid #e2e8f0",
-                  textDecoration: "none",
-                  color: "#0f172a",
-                  transition: "all 0.15s ease",
-                }}
-              >
-                <div style={{ fontSize: "22px" }}>📅</div>
-                <div>
-                  <strong style={{ fontSize: "13px", display: "block" }}>Planificación</strong>
-                  <span style={{ fontSize: "11px", color: "#64748b" }}>Microciclos y tareas</span>
-                </div>
-              </Link>
+                {last4DaysList.map((d) => {
+                  const countForDay = last4DaysPlayerComments.filter((c) => c.dateISO === d.dateISO).length;
+                  const isSel = commentDayFilter === d.dateISO;
+                  return (
+                    <button
+                      key={d.dateISO}
+                      type="button"
+                      suppressHydrationWarning
+                      onClick={() => setCommentDayFilter(d.dateISO)}
+                      style={{
+                        fontSize: "11px",
+                        fontWeight: isSel ? 800 : 600,
+                        padding: "4px 10px",
+                        borderRadius: "6px",
+                        border: isSel ? "1px solid #1e3a8a" : "1px solid #cbd5e1",
+                        background: isSel ? "#1e3a8a" : "#ffffff",
+                        color: isSel ? "#ffffff" : "#475569",
+                        cursor: "pointer",
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      {d.relative} ({d.label}) · {isHydrated ? countForDay : 0}
+                    </button>
+                  );
+                })}
+              </div>
 
-              <Link
-                href="/disponibilidad"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "10px",
-                  padding: "12px",
-                  borderRadius: "8px",
-                  background: "#f8fafc",
-                  border: "1px solid #e2e8f0",
-                  textDecoration: "none",
-                  color: "#0f172a",
-                  transition: "all 0.15s ease",
-                }}
-              >
-                <div style={{ fontSize: "22px" }}>📋</div>
-                <div>
-                  <strong style={{ fontSize: "13px", display: "block" }}>Disponibilidad</strong>
-                  <span style={{ fontSize: "11px", color: "#64748b" }}>{stats.disponibles} aptos · {stats.bajas} bajas</span>
-                </div>
-              </Link>
-
-              <Link
-                href="/cargas"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "10px",
-                  padding: "12px",
-                  borderRadius: "8px",
-                  background: "#f8fafc",
-                  border: "1px solid #e2e8f0",
-                  textDecoration: "none",
-                  color: "#0f172a",
-                  transition: "all 0.15s ease",
-                }}
-              >
-                <div style={{ fontSize: "22px" }}>⚡</div>
-                <div>
-                  <strong style={{ fontSize: "13px", display: "block" }}>Cargas</strong>
-                  <span style={{ fontSize: "11px", color: "#64748b" }}>sRPE & GPS</span>
-                </div>
-              </Link>
-
-              <Link
-                href="/campo"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "10px",
-                  padding: "12px",
-                  borderRadius: "8px",
-                  background: "#f8fafc",
-                  border: "1px solid #e2e8f0",
-                  textDecoration: "none",
-                  color: "#0f172a",
-                  transition: "all 0.15s ease",
-                }}
-              >
-                <div style={{ fontSize: "22px" }}>⚽</div>
-                <div>
-                  <strong style={{ fontSize: "13px", display: "block" }}>Campo</strong>
-                  <span style={{ fontSize: "11px", color: "#64748b" }}>Ejercicios y pizarras</span>
-                </div>
-              </Link>
-
-              <Link
-                href="/gimnasio"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "10px",
-                  padding: "12px",
-                  borderRadius: "8px",
-                  background: "#f8fafc",
-                  border: "1px solid #e2e8f0",
-                  textDecoration: "none",
-                  color: "#0f172a",
-                  transition: "all 0.15s ease",
-                }}
-              >
-                <div style={{ fontSize: "22px" }}>🏋️</div>
-                <div>
-                  <strong style={{ fontSize: "13px", display: "block" }}>Gimnasio</strong>
-                  <span style={{ fontSize: "11px", color: "#64748b" }}>Rutinas de fuerza</span>
-                </div>
-              </Link>
-
-              <Link
-                href="/partidos"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "10px",
-                  padding: "12px",
-                  borderRadius: "8px",
-                  background: "#f8fafc",
-                  border: "1px solid #e2e8f0",
-                  textDecoration: "none",
-                  color: "#0f172a",
-                  transition: "all 0.15s ease",
-                }}
-              >
-                <div style={{ fontSize: "22px" }}>🏆</div>
-                <div>
-                  <strong style={{ fontSize: "13px", display: "block" }}>Partidos</strong>
-                  <span style={{ fontSize: "11px", color: "#64748b" }}>Informes de rival</span>
-                </div>
-              </Link>
-
-              <Link
-                href="/testing"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "10px",
-                  padding: "12px",
-                  borderRadius: "8px",
-                  background: "#f8fafc",
-                  border: "1px solid #e2e8f0",
-                  textDecoration: "none",
-                  color: "#0f172a",
-                  transition: "all 0.15s ease",
-                }}
-              >
-                <div style={{ fontSize: "22px" }}>📊</div>
-                <div>
-                  <strong style={{ fontSize: "13px", display: "block" }}>Testing</strong>
-                  <span style={{ fontSize: "11px", color: "#64748b" }}>Tests y pliegues</span>
-                </div>
-              </Link>
+              {/* Input de Búsqueda Rápida */}
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <input
+                  type="text"
+                  value={commentSearch}
+                  onChange={(e) => setCommentSearch(e.target.value)}
+                  placeholder="🔍 Filtrar jugador o palabra..."
+                  style={{
+                    fontSize: "11.5px",
+                    padding: "4px 10px",
+                    borderRadius: "6px",
+                    border: "1px solid #cbd5e1",
+                    background: "#ffffff",
+                    outline: "none",
+                    width: "190px",
+                  }}
+                />
+                {commentSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setCommentSearch("")}
+                    style={{ background: "transparent", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: "12px" }}
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
             </div>
+
+            {/* Listado / Grid de Comentarios de los Últimos 4 Días */}
+            {!isHydrated ? (
+              <div
+                style={{
+                  padding: "32px 16px",
+                  textAlign: "center",
+                  color: "#64748b",
+                  background: "#f8fafc",
+                  borderRadius: "8px",
+                  border: "1px dashed #cbd5e1",
+                }}
+              >
+                <span style={{ fontSize: "11.5px", fontWeight: 600 }}>Cargando observaciones...</span>
+              </div>
+            ) : filteredLast4Comments.length === 0 ? (
+              <div
+                style={{
+                  padding: "32px 16px",
+                  textAlign: "center",
+                  color: "#64748b",
+                  background: "#f8fafc",
+                  borderRadius: "8px",
+                  border: "1px dashed #cbd5e1",
+                }}
+              >
+                <p style={{ margin: "0 0 4px 0", fontWeight: 700, color: "#334155", fontSize: "13px" }}>
+                  ✍️ No hay observaciones para el filtro seleccionado
+                </p>
+                <span style={{ fontSize: "11.5px", color: "#94a3b8" }}>
+                  Selecciona otro día o borra la búsqueda para ver todas las notas de los últimos 4 días.
+                </span>
+              </div>
+            ) : (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
+                  gap: "12px",
+                }}
+              >
+                {filteredLast4Comments.map((entry) => {
+                  const tagLower = (entry.tag || "").toLowerCase();
+                  let tagBg = "#eff6ff";
+                  let tagColor = "#1e40af";
+                  let tagBorder = "#bfdbfe";
+
+                  if (tagLower.includes("médic") || tagLower.includes("molesti") || tagLower.includes("lesi")) {
+                    tagBg = "#fef2f2";
+                    tagColor = "#dc2626";
+                    tagBorder = "#fca5a5";
+                  } else if (tagLower.includes("carg") || tagLower.includes("fatig")) {
+                    tagBg = "#fffbeb";
+                    tagColor = "#b45309";
+                    tagBorder = "#fde68a";
+                  } else if (tagLower.includes("físic")) {
+                    tagBg = "#f0fdf4";
+                    tagColor = "#15803d";
+                    tagBorder = "#bbf7d0";
+                  }
+
+                  const dayMeta = last4DaysList.find((d) => d.dateISO === entry.dateISO);
+                  const dateLabel = dayMeta ? `${dayMeta.relative} · ${dayMeta.label}` : entry.dateISO;
+
+                  return (
+                    <div
+                      key={entry.id}
+                      style={{
+                        padding: "12px 14px",
+                        borderRadius: "10px",
+                        background: "#ffffff",
+                        border: "1px solid #e2e8f0",
+                        boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "8px",
+                        transition: "box-shadow 0.15s ease",
+                      }}
+                    >
+                      {/* Cabecera de la Tarjeta */}
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px", overflow: "hidden" }}>
+                          <div
+                            style={{
+                              width: "30px",
+                              height: "30px",
+                              borderRadius: "50%",
+                              background: "#f1f5f9",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: "11px",
+                              fontWeight: 900,
+                              color: "#1e3a8a",
+                              flexShrink: 0,
+                              overflow: "hidden",
+                              border: "1px solid #cbd5e1",
+                            }}
+                          >
+                            {entry.playerPhoto ? (
+                              <img src={entry.playerPhoto} alt={entry.playerName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            ) : (
+                              (entry.playerName || "??").slice(0, 2).toUpperCase()
+                            )}
+                          </div>
+                          <div style={{ lineHeight: 1.2, minWidth: 0 }}>
+                            <strong
+                              style={{
+                                fontSize: "12.5px",
+                                color: "#0f172a",
+                                display: "block",
+                                whiteSpace: "nowrap",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                              }}
+                            >
+                              {entry.playerName.toUpperCase()}
+                            </strong>
+                            {entry.posicion && (
+                              <span style={{ fontSize: "10px", color: "#64748b", fontWeight: 700 }}>
+                                {entry.posicion}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Badges de Fecha y Categoría */}
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "3px", flexShrink: 0 }}>
+                          <span
+                            style={{
+                              fontSize: "9.5px",
+                              fontWeight: 800,
+                              color: "#475569",
+                              background: "#f1f5f9",
+                              padding: "2px 6px",
+                              borderRadius: "4px",
+                              border: "1px solid #e2e8f0",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            📅 {dateLabel}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: "9.5px",
+                              fontWeight: 800,
+                              padding: "2px 6px",
+                              borderRadius: "4px",
+                              background: tagBg,
+                              color: tagColor,
+                              border: `1px solid ${tagBorder}`,
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {entry.tag}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Cuerpo de la Observación */}
+                      <p
+                        style={{
+                          margin: "2px 0 0 0",
+                          fontSize: "12px",
+                          color: "#334155",
+                          lineHeight: 1.5,
+                          background: "#f8fafc",
+                          padding: "8px 10px",
+                          borderRadius: "6px",
+                          border: "1px solid #f1f5f9",
+                        }}
+                      >
+                        {entry.comment}
+                      </p>
+
+                      {/* Footer con Autor y Hora */}
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "10px", color: "#94a3b8" }}>
+                        <span>👤 Por: <strong>{entry.author}</strong></span>
+                        <span>🕒 {entry.createdAt}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </section>
 
         </div>

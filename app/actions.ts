@@ -12,7 +12,7 @@ import path from "path";
 
 function getServerSupabase() {
   const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "https://noumrtldxzmtqrfmydwz.supabase.co";
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || "sb_publishable_H3rT__cBnF3fk5QAHUFjVg_Tf1vI9Cs";
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || "sb_secret_auvqexI3sOGej22r57MSaA_Ko_YGSn-";
 
   return createClient(
     supabaseUrl,
@@ -589,7 +589,7 @@ export async function syncGoogleSheetGpsData() {
 
     const supabase = getServerSupabase();
     const { data: dbPlayers } = await supabase.from("jugadores").select("id, nombre, apodo, cor_id, equipo, activo");
-    const europaPlayers = (dbPlayers || []).filter((p: any) => (p.equipo || "").toUpperCase().includes("EUROPA") || p.activo);
+    const europaPlayers = (dbPlayers || []).filter((p: any) => ((p.equipo || "").toUpperCase().includes("EUROPA") && p.activo) || p.activo);
 
     const normalize = (s: string) => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
     const aliases: Record<string, string> = {
@@ -680,15 +680,39 @@ export async function syncGoogleSheetGpsData() {
     const datePlayerMap = new Map<string, { isoDate: string; player: any; rows: any[] }>();
     const datesFound = new Set<string>();
 
+    const getRowCol = (row: any, keys: string[], fallbackIdx?: number) => {
+      for (const k of keys) {
+        if (row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== "") {
+          return String(row[k]).trim();
+        }
+        const lower = k.toLowerCase().trim();
+        for (const [rk, rv] of Object.entries(row)) {
+          if (rk.toLowerCase().trim() === lower && rv !== undefined && rv !== null && String(rv).trim() !== "") {
+            return String(rv).trim();
+          }
+        }
+      }
+      if (fallbackIdx !== undefined && row._rawCols && row._rawCols[fallbackIdx] !== undefined) {
+        return String(row._rawCols[fallbackIdx]).trim();
+      }
+      return "";
+    };
+
     for (const r of rawRows) {
-      const playerName = r["Jugador"] || r._rawCols?.[12] || "";
-      if (!playerName || playerName.toUpperCase() === "TEAM") continue;
+      const playerName = getRowCol(r, ["player", "jugador", "deportista", "name", "nombre", "athlete"], 6) || getRowCol(r, [], 12);
+      if (!playerName || playerName.toUpperCase() === "TEAM" || playerName.toUpperCase() === "AVG") continue;
+
+      const rawDateCheck = getRowCol(r, ["date", "fecha", "session_date"], 3) || getRowCol(r, [], 9);
+      const isoDateCheck = parseDateToISO(rawDateCheck);
+      if (isoDateCheck === "2026-10-29" && (playerName.toLowerCase().includes("teto") || playerName.toLowerCase().includes("carames"))) {
+        continue;
+      }
 
       const match = matchPlayer(playerName);
 
       if (!match) continue;
 
-      const rawDate = r["Fecha"] || r._rawCols?.[9] || "";
+      const rawDate = getRowCol(r, ["date", "fecha", "session_date"], 3) || getRowCol(r, [], 9);
       const isoDate = parseDateToISO(rawDate);
       if (!isoDate) continue;
 
@@ -707,9 +731,9 @@ export async function syncGoogleSheetGpsData() {
     for (const isoDate of Array.from(datesFound)) {
       // Buscar información de MD, rival y sesión en las filas del Google Sheet para esta fecha
       const sampleDateRow = rawRows.find((r: any) => {
-        const rawD = r["Fecha"] || r._rawCols?.[9] || "";
-        return parseDateToISO(rawD) === isoDate && (r["MD"] || r._rawCols?.[5]);
-      }) || rawRows.find((r: any) => parseDateToISO(r["Fecha"] || r._rawCols?.[9] || "") === isoDate);
+        const rawD = getRowCol(r, ["date", "fecha"], 3) || getRowCol(r, [], 9);
+        return parseDateToISO(rawD) === isoDate && (getRowCol(r, ["md", "match_day"], 5));
+      }) || rawRows.find((r: any) => parseDateToISO(getRowCol(r, ["date", "fecha"], 3) || getRowCol(r, [], 9)) === isoDate);
 
       const normalizeMD = (val: string) => {
         if (!val) return "";
@@ -722,7 +746,7 @@ export async function syncGoogleSheetGpsData() {
         return s;
       };
 
-      const rawMD = (sampleDateRow?.["MD"] || sampleDateRow?._rawCols?.[5] || "").trim();
+      const rawMD = (getRowCol(sampleDateRow || {}, ["md", "match_day", "MD"], 5) || "").trim();
       const sheetMD = normalizeMD(rawMD);
       const rawRival = (sampleDateRow?.["Nº S / Nº J + RIVAL"] || sampleDateRow?._rawCols?.[4] || "").trim();
       const rawSesion = (sampleDateRow?.["Sesión"] || sampleDateRow?._rawCols?.[7] || "").trim();
@@ -730,7 +754,7 @@ export async function syncGoogleSheetGpsData() {
 
       const { data: sesionDia } = await supabase
         .from("sesiones_dia")
-        .select("id, tipo_evento, evento_am, md, rival")
+        .select("id, evento_am, md, rival")
         .eq("fecha", isoDate)
         .maybeSingle();
 
@@ -746,10 +770,10 @@ export async function syncGoogleSheetGpsData() {
           .insert({
             fecha: isoDate,
             md: cleanMD,
-            tipo_evento: tipo_sesion,
             evento_am: tipo_sesion === "PARTIDO" ? "PARTIDO" : "ENTRENAMIENTO",
             rival: cleanRival,
-            duracion: 90,
+            volumen: 90,
+            equipo: "CE EUROPA",
           })
           .select("id")
           .maybeSingle();
@@ -763,9 +787,9 @@ export async function syncGoogleSheetGpsData() {
       for (const [key, { player, rows: pRows }] of datePlayerMap.entries()) {
         if (!key.startsWith(isoDate + "_")) continue;
 
-        // FILTRO ESTRICTO: Olvidar las filas de "Total" (Columna I) y coger únicamente las tareas distintas
+        // FILTRO ESTRICTO: Olvidar las filas de "Total" y coger únicamente las tareas distintas
         const taskRows = pRows.filter((r: any) => {
-          const tName = (r["Tarea"] || r._rawCols?.[8] || "").trim().toLowerCase();
+          const tName = (getRowCol(r, ["task", "tarea", "period", "split"], 8) || r["Tarea"] || r["tarea"] || r._rawCols?.[8] || "").trim().toLowerCase();
           return tName !== "total";
         });
 
@@ -812,8 +836,8 @@ export async function syncGoogleSheetGpsData() {
           const t = parseNum(r["Tiempo"] || raw[13]);
           const tAct = parseNum(r["TIiempo Activo"] || raw[14]);
           const tEf = parseNum(r["Tiempo Efectivo"] || raw[15]);
-          const v1_8 = parseNum(r["1 - 8 km/h (Distancia)"] || raw[18]);
-          const v8_17 = parseNum(r["8 - 17 km/h (Distancia)"] || raw[19]);
+          const v1_8 = parseNum(r["15 - 16 km/h (Distancia)"] || r["15-16 km/h (Distancia)"] || r["1 - 8 km/h (Distancia)"] || raw[18]);
+          const v8_17 = parseNum(r["16 - 17 km/h (Distancia)"] || r["16-17 km/h (Distancia)"] || r["8 - 17 km/h (Distancia)"] || raw[19]);
           const v17_19 = parseNum(r["17 - 19,8 km/h (Distancia)"] || raw[20]);
           const v19_21 = parseNum(r["19,8 - 21 km/h (Distancia)"] || raw[21]);
           const v21 = parseNum(r["21 - 24 km/h (Distancia)"] || raw[22]);
@@ -902,8 +926,14 @@ export async function syncGoogleSheetGpsData() {
             hmld: Math.round(hm),
             "HMLD (num)": Math.round(hmNum),
             hmld_time: Math.round(hmTime * 100) / 100,
+            "15 - 16 km/h (Distancia)": Math.round(v1_8),
+            "16 - 17 km/h (Distancia)": Math.round(v8_17),
+            "15-16 km/h (Distancia)": Math.round(v1_8),
+            "16-17 km/h (Distancia)": Math.round(v8_17),
             "1 - 8 km/h (Distancia)": Math.round(v1_8),
             "8 - 17 km/h (Distancia)": Math.round(v8_17),
+            distance_vrange1: Math.round(v1_8),
+            distance_vrange2: Math.round(v8_17),
             "17 - 19,8 km/h (Distancia)": Math.round(v17_19),
             "19,8 - 21 km/h (Distancia)": Math.round(v19_21),
             "21 - 24 km/h (Distancia)": Math.round(v21),
@@ -940,8 +970,14 @@ export async function syncGoogleSheetGpsData() {
           "m/min": distMin,
 
           // Zonas de Velocidad
+          "15 - 16 km/h (Distancia)": Math.round(sumV1_8),
+          "16 - 17 km/h (Distancia)": Math.round(sumV8_17),
+          "15-16 km/h (Distancia)": Math.round(sumV1_8),
+          "16-17 km/h (Distancia)": Math.round(sumV8_17),
           "1 - 8 km/h (Distancia)": Math.round(sumV1_8),
           "8 - 17 km/h (Distancia)": Math.round(sumV8_17),
+          distance_vrange1: Math.round(sumV1_8),
+          distance_vrange2: Math.round(sumV8_17),
           "17 - 19,8 km/h (Distancia)": Math.round(sumV17_19),
           "19,8 - 21 km/h (Distancia)": Math.round(sumV19_21),
           "21 - 24 km/h (Distancia)": Math.round(sumV21),
@@ -1044,8 +1080,10 @@ export async function syncGoogleSheetGpsData() {
  */
 export async function syncGpsDatabaseWeb() {
   try {
-    const sheetRes = await syncGoogleSheetGpsData();
+    // 1. Primero procesar archivos de Downloads si existen
     const downloadsRes = await syncAllDownloadsGpsFiles();
+    // 2. Después procesar Google Sheet (DB GPS), asegurando que los nombres de tarea curados por el usuario tengan prioridad absoluta
+    const sheetRes = await syncGoogleSheetGpsData();
 
     const datesProcessed = Array.from(new Set([
       ...(sheetRes.datesProcessed || []),
@@ -1088,7 +1126,7 @@ export async function syncAllDownloadsGpsFiles() {
 
     const supabase = getServerSupabase();
     const { data: dbPlayers } = await supabase.from("jugadores").select("id, nombre, apodo, cor_id, equipo, activo");
-    const europaPlayers = (dbPlayers || []).filter((p: any) => (p.equipo || "").toUpperCase().includes("EUROPA") || p.activo);
+    const europaPlayers = (dbPlayers || []).filter((p: any) => ((p.equipo || "").toUpperCase().includes("EUROPA") && p.activo) || p.activo);
 
     const normalize = (s: string) => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
     const aliases: Record<string, string> = {
@@ -1181,11 +1219,23 @@ export async function syncAllDownloadsGpsFiles() {
 
       const getVal = (rowObj: Record<string, string>, possibleNames: string[]): string => {
         if (!rowObj) return "";
-        for (const [k, v] of Object.entries(rowObj)) {
-          const normK = normalize(k);
-          for (const p of possibleNames) {
-            const normP = normalize(p);
-            if (normK === normP || normK.includes(normP) || normP.includes(normK)) {
+        // 1. Prioridad: Coincidencia exacta de nombre de columna
+        for (const p of possibleNames) {
+          const normP = normalize(p);
+          for (const [k, v] of Object.entries(rowObj)) {
+            const normK = normalize(k);
+            if (normK === normP) {
+              if (v !== undefined && v !== null && v !== "") return String(v).trim();
+            }
+          }
+        }
+        // 2. Coincidencia parcial (evitando prefijos id_ si no se piden)
+        for (const p of possibleNames) {
+          const normP = normalize(p);
+          for (const [k, v] of Object.entries(rowObj)) {
+            const normK = normalize(k);
+            if (normK.startsWith("id ") && !normP.startsWith("id")) continue;
+            if (normK.includes(normP) || normP.includes(normK)) {
               if (v !== undefined && v !== null && v !== "") return String(v).trim();
             }
           }
@@ -1229,7 +1279,7 @@ export async function syncAllDownloadsGpsFiles() {
 
       const { data: sesionDia } = await supabase
         .from("sesiones_dia")
-        .select("id, tipo_evento, evento_am, md, rival")
+        .select("id, evento_am, md, rival")
         .eq("fecha", isoDate)
         .maybeSingle();
 
@@ -1241,6 +1291,12 @@ export async function syncAllDownloadsGpsFiles() {
       for (const r of rows) {
         const pRawName = getVal(r, ["player", "jugador", "deportista", "name", "nombre", "athlete"]) || r.player || r.jugador;
         if (!pRawName) continue;
+
+        // El 29/10/2026 el chaleco/dispositivo registrado como Teto Martín perteneció en realidad a Pol Caramés (no activo)
+        if (isoDate === "2026-10-29" && (pRawName.toLowerCase().includes("teto") || pRawName.toLowerCase().includes("carames"))) {
+          continue;
+        }
+
         const match = matchPlayer(pRawName);
 
         if (!match) continue;
@@ -1263,12 +1319,14 @@ export async function syncAllDownloadsGpsFiles() {
         });
 
         const buildMetrics = (r: any) => {
-          const v1 = parseNum(getVal(r, ["vrange1", "distance_vrange1", "1 - 8 km/h", "1-8 km/h", "zona 1", "z1"]));
-          const v2 = parseNum(getVal(r, ["vrange2", "distance_vrange2", "8 - 17 km/h", "8-17 km/h", "zona 2", "z2"]));
+          const v1 = parseNum(getVal(r, ["15 - 16 km/h (distancia)", "15-16 km/h (distancia)", "15 - 16 km/h", "15-16 km/h", "15 - 16", "15-16", "vrange1", "distance_vrange1", "1 - 8 km/h", "1-8 km/h", "zona 1", "z1"]));
+          const v2 = parseNum(getVal(r, ["16 - 17 km/h (distancia)", "16-17 km/h (distancia)", "16 - 17 km/h", "16-17 km/h", "16 - 17", "16-17", "vrange2", "distance_vrange2", "8 - 17 km/h", "8-17 km/h", "zona 2", "z2"]));
           const v3 = parseNum(getVal(r, ["vrange3", "distance_vrange3", "17 - 19,8", "17 - 19.8", "17-19,8", "zona 3", "z3"]));
           const v4 = parseNum(getVal(r, ["vrange4", "distance_vrange4", "19,8 - 21", "19.8 - 21", "19-21", "zona 4", "z4"]));
           const v5 = parseNum(getVal(r, ["vrange5", "distance_vrange5", "21 - 24", "21-24", "zona 5", "z5"]));
           const v6 = parseNum(getVal(r, ["vrange6", "distance_vrange6", "+ 24 km/h", "+24 km/h", "+24", "sprint distance", "distancia sprint", "zona 6", "z6"]));
+          const v7 = parseNum(getVal(r, ["vrange7", "distance_vrange7", "+ 28 km/h", "+28 km/h", "+28", "zona 7", "z7"]));
+          const sprints28 = parseNum(getVal(r, ["+28 km/h (num)", "+ 28 km/h (num)", "+28 km/h (nº)", "sprints_28", "sprints28"]));
 
           let hsr = Math.round(v4 + v5 + v6);
           const rawHsr = parseNum(getVal(r, ["hsr", "high speed running", "distancia z4", "hsr abs"]));
@@ -1297,8 +1355,14 @@ export async function syncAllDownloadsGpsFiles() {
             "Distancia / Min": distMin,
             "m/min": distMin,
             distancia_min: distMin,
+            "15 - 16 km/h (Distancia)": v1,
+            "16 - 17 km/h (Distancia)": v2,
+            "15-16 km/h (Distancia)": v1,
+            "16-17 km/h (Distancia)": v2,
             "1 - 8 km/h (Distancia)": v1,
             "8 - 17 km/h (Distancia)": v2,
+            distance_vrange1: v1,
+            distance_vrange2: v2,
             "17 - 19,8 km/h (Distancia)": v3,
             "19,8 - 21 km/h (Distancia)": v4,
             "21 - 24 km/h (Distancia)": v5,
@@ -1312,7 +1376,10 @@ export async function syncAllDownloadsGpsFiles() {
             "Player Load": load,
             player_load: load,
             "Sprints Count": sprints,
+            "+24 km/h (Num)": sprints,
             num_sprints: sprints,
+            "+28 km/h (Distancia)": v7,
+            "+28 km/h (Num)": sprints28,
             "Accs Count": acc,
             aceleraciones: acc,
             "Decs Count": dec,
@@ -1331,10 +1398,21 @@ export async function syncAllDownloadsGpsFiles() {
 
         const mainMetrics = buildMetrics(totalRow);
         if (taskRows.length > 0) {
-          (mainMetrics as any).tareas = taskRows.map((tr: any) => ({
-            nombre: getVal(tr, ["task", "tarea", "period", "split", "activity"]) || tr.task || "Tarea",
-            ...buildMetrics(tr),
-          }));
+          (mainMetrics as any).tareas = taskRows.map((tr: any) => {
+            let taskName = (getVal(tr, ["task", "tarea", "period", "split", "activity"]) || tr.task || "Tarea").trim();
+            // Mapeo automático de periodos genéricos si es partido contra Zaragoza (23/10/2026)
+            if (isoDate === "2026-10-23" || fileName.toLowerCase().includes("zaragoza")) {
+              const lowerT = taskName.toLowerCase();
+              if (lowerT === "periodo 4") taskName = "ACTIVACIÓN PREPARTIDO";
+              else if (lowerT === "periodo 1") taskName = "PRIMERA PARTE";
+              else if (lowerT === "periodo 2") taskName = "SEGUNDA PARTE";
+              else if (lowerT === "periodo 3") taskName = "CARRERAS";
+            }
+            return {
+              nombre: taskName,
+              ...buildMetrics(tr),
+            };
+          });
         }
 
         recordsToInsert.push({
@@ -1350,7 +1428,9 @@ export async function syncAllDownloadsGpsFiles() {
       }
 
       if (recordsToInsert.length > 0) {
-        await supabase.from("gps_datos").delete().eq("fecha", isoDate);
+        for (const rec of recordsToInsert) {
+          await supabase.from("gps_datos").delete().eq("fecha", isoDate).eq("jugador_id", rec.jugador_id);
+        }
         const { error: insErr } = await supabase.from("gps_datos").insert(recordsToInsert);
         if (!insErr) {
           totalInserted += recordsToInsert.length;
