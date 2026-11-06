@@ -23,7 +23,7 @@ import path from "path";
 
 function getServerSupabase() {
   const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "https://noumrtldxzmtqrfmydwz.supabase.co";
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || "sb_secret_auvqexI3sOGej22r57MSaA_Ko_YGSn-";
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || "sb_publishable_H3rT__cBnF3fk5QAHUFjVg_Tf1vI9Cs";
 
   return createClient(
     supabaseUrl,
