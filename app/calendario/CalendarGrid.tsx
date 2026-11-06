@@ -365,6 +365,8 @@ type Props = {
   initialEstados?: any[];
   initialBloques?: Record<string, any>;
   bbddPlayerAssignments?: Record<string, string>;
+  initialComentarios?: ComentarioJugadorDia[];
+  initialDisponibilidadMap?: Record<string, string>;
 };
 
 // Formato de fecha corta: "lu. 20 jul"
@@ -636,9 +638,7 @@ function groupConsecutiveWeeks(
 }
 
 export function CalendarGrid({
-
-  
- initialDays, tiposEvento, initialJugadores = [], initialEstados = [], initialBloques = {}, bbddPlayerAssignments = {} }: Props) {
+ initialDays, tiposEvento, initialJugadores = [], initialEstados = [], initialBloques = {}, bbddPlayerAssignments = {}, initialComentarios = [], initialDisponibilidadMap = {} }: Props) {
 
   useEffect(() => {
     try {
@@ -749,7 +749,7 @@ export function CalendarGrid({
 
   // Mapa local de estados de disponibilidad de deportistas: "jugadorId_sesionDiaId" -> disponibilidad
   const [estadosMap, setEstadosMap] = useState<Record<string, string>>(() => {
-    const map: Record<string, string> = {};
+    const map: Record<string, string> = { ...(initialDisponibilidadMap || {}) };
     if (typeof window !== "undefined") {
       try {
         const saved = localStorage.getItem("disponibilidad_map_v1");
@@ -1072,14 +1072,25 @@ export function CalendarGrid({
   const [showCommentsFilterPopover, setShowCommentsFilterPopover] = useState(false);
   const [showEventsFilterPopover, setShowEventsFilterPopover] = useState(false);
 
-  const [comentarios, setComentarios] = useState<ComentarioJugadorDia[]>([]);
+  const [comentarios, setComentarios] = useState<ComentarioJugadorDia[]>(() => {
+    if (initialComentarios && initialComentarios.length > 0) {
+      return deduplicateComentarios(initialComentarios);
+    }
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("comentarios_jugadores_v2");
+        if (saved) return deduplicateComentarios(JSON.parse(saved));
+      } catch (e) {}
+    }
+    return [];
+  });
 
   // Cargar comentarios desde localStorage solo en el cliente (para evitar sobrescritura por hidratación SSR)
   useEffect(() => {
     if (typeof window !== "undefined") {
       try {
         const saved = localStorage.getItem("comentarios_jugadores_v2");
-        let list: ComentarioJugadorDia[] = saved ? JSON.parse(saved) : [];
+        let list: ComentarioJugadorDia[] = saved ? JSON.parse(saved) : (initialComentarios || []);
 
         // Limpieza de duplicados residuales en cliente entre CON y WEL
         const welKeys = new Set(
@@ -1686,12 +1697,15 @@ export function CalendarGrid({
         Object.keys(dbData).forEach(k => {
           cleanDbData[k] = dbData[k];
         });
-        setEventosBloquesMap(cleanDbData);
-        if (typeof window !== "undefined") {
-          try {
-            localStorage.setItem("eventos_bloques_map_v5", JSON.stringify(cleanDbData));
-          } catch (e) {}
-        }
+        setEventosBloquesMap((prev) => {
+          const merged = { ...prev, ...cleanDbData };
+          if (typeof window !== "undefined") {
+            try {
+              localStorage.setItem("eventos_bloques_map_v5", JSON.stringify(merged));
+            } catch (e) {}
+          }
+          return merged;
+        });
       }
     }).catch(() => {});
   }, []);
@@ -1721,20 +1735,17 @@ export function CalendarGrid({
 
   // Estado para Asignación de Eventos por Jugadora: "jugadorId_dayId" -> string de códigos (ej. "Co1, Op")
   const [playerEventsMap, setPlayerEventsMap] = useState<Record<string, string>>(() => {
+    const clean: Record<string, string> = { ...(bbddPlayerAssignments || {}) };
     if (typeof window !== "undefined") {
       try {
         const saved = localStorage.getItem("player_events_map_v1");
         if (saved) {
           const parsed = JSON.parse(saved);
-          const clean: Record<string, string> = {};
-          Object.keys(parsed).forEach((k) => {
-            clean[k] = parsed[k];
-          });
-          return clean;
+          Object.assign(clean, parsed);
         }
       } catch (e) {}
     }
-    return {};
+    return clean;
   });
 
   useEffect(() => {

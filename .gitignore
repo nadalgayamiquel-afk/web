@@ -30,4 +30,6 @@ next-env.d.ts
 *.xlsm
 backups/backup_*.json
 backups/fuerza_history/
+backups/chrome_leveldb_rescue/
 *.app/
+.vercel

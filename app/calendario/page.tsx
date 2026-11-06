@@ -1,4 +1,13 @@
-import { getMasterBackupTable } from "@/app/lib/masterBackup";
+import {
+  getMasterBackupTable,
+  getMasterPlanificacionDays,
+  getMasterEventosBloquesMap,
+  getMasterPlayerEventsMap,
+  getMasterDisponibilidadMap,
+  getMasterComentarios,
+  getMasterMinutesMap,
+  getMasterBrowserData,
+} from "@/app/lib/masterBackup";
 import Link from "next/link";
 import { getSesionesDiaRange, getTiposEvento, getActiveJugadores, getEstadoDiarioJugadores, getEventosBloquesBBDD } from "../actions";
 import type { SesionDia, TipoEvento } from "./CalendarGrid";
@@ -51,23 +60,35 @@ export default async function CalendarioPage() {
     console.warn("Error fetching calendario data, falling back to backup maestro:", err);
   }
 
-  // ─── RESILIENT DATA FALLBACK: Asegurar que nunca quede vacío en producción ───
+  // ─── RESILIENT DATA FALLBACK & COMPREHENSIVE MERGE ───
+  // 1. Días: Usar planificacion completa con rivales, eventos, cargas, volúmenes
+  const masterPlanDays = getMasterPlanificacionDays();
+  const masterDaysMap = new Map<string, any>();
+  masterPlanDays.forEach((d: any) => { if (d.fecha) masterDaysMap.set(d.fecha, d); });
+
   if (!days || days.length === 0) {
-    const backupDays = getMasterBackupTable("sesiones_dia");
-    days = (backupDays || []).map((row: any) => {
-      const mainEv = row.evento_am ?? row.evento_principal ?? row.evento ?? (row.rival ? "P" : null);
+    days = masterPlanDays as SesionDia[];
+  } else {
+    days = days.map((d: any) => {
+      const m = masterDaysMap.get(d.fecha);
+      if (!m) return d;
       return {
-        ...row,
-        rival: row.rival ?? "",
-        carga: row.carga ?? null,
-        volumen: row.volumen ?? null,
-        intensidad: row.intensidad ?? null,
-        resultado_partido: row.resultado_partido ?? "",
-        evento: mainEv,
-        evento_principal: mainEv,
-        evento_am: row.evento_am ?? mainEv,
-        evento_pm: row.evento_pm ?? null,
-        evento_1: row.evento_1 ?? null,
+        ...d,
+        rival: d.rival || m.rival || "",
+        evento: d.evento || m.evento || m.evento_am || null,
+        evento_am: d.evento_am || m.evento_am || m.evento || null,
+        evento_1: d.evento_1 ?? m.evento_1 ?? null,
+        evento_2: d.evento_2 ?? m.evento_2 ?? null,
+        evento_3: d.evento_3 ?? m.evento_3 ?? null,
+        evento_4: d.evento_4 ?? m.evento_4 ?? null,
+        evento_5: d.evento_5 ?? m.evento_5 ?? null,
+        evento_6: d.evento_6 ?? m.evento_6 ?? null,
+        md: d.md || m.md || null,
+        carga: d.carga ?? m.carga ?? null,
+        volumen: d.volumen ?? m.volumen ?? null,
+        intensidad: d.intensidad ?? m.intensidad ?? null,
+        comentario_microciclo: d.comentario_microciclo || m.comentario_microciclo || null,
+        resultado_partido: d.resultado_partido || m.resultado_partido || "",
       };
     }) as SesionDia[];
   }
@@ -91,22 +112,14 @@ export default async function CalendarioPage() {
     estados = getMasterBackupTable("estado_diario_jugador");
   }
 
-  if (!bloques || Object.keys(bloques).length === 0) {
-    const backupBloques = getMasterBackupTable("sesiones_dia_bloques");
-    const map: Record<string, any> = {};
-    backupBloques.forEach((row: any) => {
-      if (row.day_id) {
-        map[`${row.day_id}_slot_${row.slot}`] = row;
-        if (row.fecha) {
-          map[`${row.fecha}_slot_${row.slot}`] = row;
-          map[`day_${row.fecha}_slot_${row.slot}`] = row;
-        }
-      }
-    });
-    bloques = map;
-  }
+  // 2. Bloques: Combinar BBDD con los bloques del backup maestro (118 bloques con horarios, tareas, lugares)
+  const masterBloques = getMasterEventosBloquesMap();
+  bloques = { ...masterBloques, ...(bloques || {}) };
 
-  // Construir mapa de asignaciones de jugadores a eventos desde BBDD para toda la temporada directamente de estado_diario_jugador
+  // 3. Asignaciones de jugadores a eventos: Combinar con las 16.626 asignaciones del backup maestro
+  const masterAssignments = getMasterPlayerEventsMap();
+  bbddAssignments = { ...masterAssignments, ...bbddAssignments };
+
   const idToFecha = new Map<string, string>();
   (days as any[]).forEach((d: any) => {
     if (d.id && d.fecha) idToFecha.set(d.id, d.fecha);
@@ -116,12 +129,22 @@ export default async function CalendarioPage() {
     if (!e.evento_asignado || !e.jugador_id) return;
     const fecha = idToFecha.get(e.sesion_dia_id);
     if (fecha) {
-      bbddAssignments[`${e.jugador_id}_${fecha}`] = e.evento_asignado;
+      if (!bbddAssignments[`${e.jugador_id}_${fecha}`]) {
+        bbddAssignments[`${e.jugador_id}_${fecha}`] = e.evento_asignado;
+      }
     }
     if (e.sesion_dia_id) {
-      bbddAssignments[`${e.jugador_id}_${e.sesion_dia_id}`] = e.evento_asignado;
+      if (!bbddAssignments[`${e.jugador_id}_${e.sesion_dia_id}`]) {
+        bbddAssignments[`${e.jugador_id}_${e.sesion_dia_id}`] = e.evento_asignado;
+      }
     }
   });
+
+  // 4. Comentarios y disponibilidades maestras
+  const masterComentarios = getMasterComentarios();
+  const masterDisponibilidad = getMasterDisponibilidadMap();
+  const masterMinutesMap = getMasterMinutesMap();
+  const masterBrowserData = getMasterBrowserData();
 
   return (
     <main
@@ -134,7 +157,6 @@ export default async function CalendarioPage() {
         minHeight: "100vh",
       }}
     >
-      {/* CABECERA DE LA PÁGINA ULTRA COMPACTA */}
       <header className="no-print" style={{ marginBottom: "10px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           <Link
@@ -161,11 +183,21 @@ export default async function CalendarioPage() {
         </div>
       </header>
 
-      {/* CONTENIDO PRINCIPAL */}
       {days.length === 0 ? (
         <GenerateDaysModal />
       ) : (
-        <CalendarWrapper initialDays={days} tiposEvento={tiposEvento} initialJugadores={jugadores} initialEstados={estados} initialBloques={bloques} bbddPlayerAssignments={bbddAssignments} />
+        <CalendarWrapper
+          initialDays={days}
+          tiposEvento={tiposEvento}
+          initialJugadores={jugadores}
+          initialEstados={estados}
+          initialBloques={bloques}
+          bbddPlayerAssignments={bbddAssignments}
+          initialComentarios={masterComentarios}
+          initialDisponibilidadMap={masterDisponibilidad}
+          initialMinutesMap={masterMinutesMap}
+          initialBrowserData={masterBrowserData}
+        />
       )}
     </main>
   );

@@ -6,7 +6,14 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
-import { getMasterBackupTable } from "@/app/lib/masterBackup";
+import {
+  getMasterBackupTable,
+  getMasterPlanificacionDays,
+  getMasterEventosBloquesMap,
+  getMasterPlayerEventsMap,
+  getMasterDisponibilidadMap,
+  getMasterComentarios,
+} from "@/app/lib/masterBackup";
 import { revalidatePath } from 'next/cache';
 import fs from "fs";
 import path from "path";
@@ -2404,10 +2411,13 @@ export async function getPlayerEventsBBDD(): Promise<Record<string, string>> {
       }
     });
 
-    return playerAssignments;
+    if (Object.keys(playerAssignments).length === 0) {
+      return getMasterPlayerEventsMap();
+    }
+    return { ...getMasterPlayerEventsMap(), ...playerAssignments };
   } catch (err: any) {
     console.error("Error getPlayerEventsBBDD:", err);
-    return {};
+    return getMasterPlayerEventsMap();
   }
 }
 
@@ -2585,10 +2595,13 @@ export async function getPlayerCommentsBBDD(): Promise<Array<{
       addComment(e.comentario_nutricion, "NUT", "nut");
     });
 
+    if (result.length === 0) {
+      return getMasterComentarios();
+    }
     return result;
   } catch (err: any) {
     console.error("Error getPlayerCommentsBBDD:", err?.message || err);
-    return [];
+    return getMasterComentarios();
   }
 }
 
@@ -2811,7 +2824,10 @@ export async function getEventosBloquesBBDD(dayIds?: string[]) {
         });
       }
     }
-    return map;
+    if (Object.keys(map).length === 0) {
+      return getMasterEventosBloquesMap();
+    }
+    return { ...getMasterEventosBloquesMap(), ...map };
   }
 
   const { count, error: errCount } = await supabase
@@ -2821,18 +2837,7 @@ export async function getEventosBloquesBBDD(dayIds?: string[]) {
 
   if (errCount) {
     console.warn("Error fetching sesiones_dia_bloques, usando backup maestro:", errCount.message);
-    const backupBloques = getMasterBackupTable("sesiones_dia_bloques");
-    const map: Record<string, any> = {};
-    backupBloques.forEach((row: any) => {
-      if (row.day_id) {
-        map[`${row.day_id}_slot_${row.slot}`] = row;
-        if (row.fecha) {
-          map[`${row.fecha}_slot_${row.slot}`] = row;
-          map[`day_${row.fecha}_slot_${row.slot}`] = row;
-        }
-      }
-    });
-    return map;
+    return getMasterEventosBloquesMap();
   }
 
   const total = count || 0;
@@ -3002,9 +3007,9 @@ export async function getDisponibilidadPlanificacionData(): Promise<Disponibilid
       supabase.from("estado_diario_jugador").select("jugador_id, sesion_dia_id, disponibilidad, evento_asignado"),
     ]);
 
-    const sesionesRaw = sesionesRes.data || [];
-    const bloquesRaw = bloquesRes.data || [];
-    const estadosRaw = estadosRes.data || [];
+    const sesionesRaw = (sesionesRes.data && sesionesRes.data.length > 0) ? sesionesRes.data : getMasterPlanificacionDays();
+    const bloquesRaw = (bloquesRes.data && bloquesRes.data.length > 0) ? bloquesRes.data : getMasterBackupTable("sesiones_dia_bloques");
+    const estadosRaw = (estadosRes.data && estadosRes.data.length > 0) ? estadosRes.data : getMasterBackupTable("estado_diario_jugador");
 
     const dateToUuidMap = new Map<string, string>();
     const uuidToDateMap = new Map<string, string>();
