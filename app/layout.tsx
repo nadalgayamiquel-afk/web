@@ -26,7 +26,7 @@ export default function RootLayout({
             __html: `
 (function() {
   try {
-    var RESTORE_FLAG = "local_storage_restored_2026_11_06_v5";
+    var RESTORE_FLAG = "local_storage_restored_2026_11_06_v6";
     window.restoreLocalBackup = function() {
       localStorage.removeItem("__local_restore_flag__");
       location.reload();
