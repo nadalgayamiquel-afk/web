@@ -1,3 +1,4 @@
+import { getMasterBackupTable } from "@/app/lib/masterBackup";
 import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
 import DeportistasGrid from "./deportistas-grid";
@@ -45,22 +46,16 @@ async function getJugadores() {
     } catch (e) {}
   }
 
-  // Si Supabase no devolvió datos o las claves no están registradas en Vercel, cargar del backup maestro
+  // Si Supabase no devolvió datos o las claves no están registradas en Vercel, cargar del backup maestro empaquetado
   if (finalJugadores.length === 0) {
     try {
-      const fs = require("fs");
-      const path = require("path");
-      const backupPath = path.join(process.cwd(), "public", "master_backup.json");
-      if (fs.existsSync(backupPath)) {
-        const parsed = JSON.parse(fs.readFileSync(backupPath, "utf8"));
-        let rows = parsed?.database_tables?.jugadores?.rows || [];
-        if (club) {
-          const clubNorm = club.toLowerCase();
-          const matches = rows.filter((j: any) => (j.equipo || "").toLowerCase().includes(clubNorm));
-          if (matches.length > 0) rows = matches;
-        }
-        finalJugadores = rows;
+      let rows = getMasterBackupTable("jugadores");
+      if (club) {
+        const clubNorm = club.toLowerCase();
+        const matches = rows.filter((j: any) => (j.equipo || "").toLowerCase().includes(clubNorm));
+        if (matches.length > 0) rows = matches;
       }
+      finalJugadores = rows;
     } catch (e) {}
   }
 

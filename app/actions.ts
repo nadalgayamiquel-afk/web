@@ -6,26 +6,13 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
+import { getMasterBackupTable } from "@/app/lib/masterBackup";
 import { revalidatePath } from 'next/cache';
 import fs from "fs";
 import path from "path";
 
 
-// ─── RESILIENT DATA FALLBACK: Si Supabase no responde o la API key no está registrada en Vercel ───
-function getMasterBackupTable(tableName: string): any[] {
-  try {
-    const backupPath = path.join(process.cwd(), "public/master_backup.json");
-    if (fs.existsSync(backupPath)) {
-      const parsed = JSON.parse(fs.readFileSync(backupPath, "utf8"));
-      const tableData = parsed?.database_tables?.[tableName];
-      if (tableData && Array.isArray(tableData.rows)) return tableData.rows;
-      if (Array.isArray(tableData)) return tableData;
-    }
-  } catch (e) {
-    console.warn(`[masterBackup] No se pudo leer la tabla ${tableName} del archivo maestro:`, e);
-  }
-  return [];
-}
+
 
 function getServerSupabase() {
   const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "https://noumrtldxzmtqrfmydwz.supabase.co";
@@ -2885,88 +2872,116 @@ export async function getEventosBloquesBBDD(dayIds?: string[]) {
  */
 
 export async function getEstadoDiarioJugadores(sesionDiaIds?: string[]) {
-  const supabase = getServerSupabase();
-  const selectFields = "jugador_id, sesion_dia_id, disponibilidad, objetivo, comentario_fisico, comentario_tecnico, comentario_lesiones, comentario_wellness, comentario_psicologico, comentario_medico, comentario_nutricion, evento_asignado, minutos";
+  try {
+    const supabase = getServerSupabase();
+    const selectFields = "jugador_id, sesion_dia_id, disponibilidad, objetivo, comentario_fisico, comentario_tecnico, comentario_lesiones, comentario_wellness, comentario_psicologico, comentario_medico, comentario_nutricion, evento_asignado, minutos";
 
-  if (!sesionDiaIds || sesionDiaIds.length === 0) {
-    const { data, error } = await supabase
-      .from("estado_diario_jugador")
-      .select(selectFields);
-    if (error || !data || data.length === 0) {
-      console.warn("Error/empty fetching estado_diario_jugador, usando backup maestro:", error?.message);
-      return getMasterBackupTable("estado_diario_jugador");
+    if (!sesionDiaIds || sesionDiaIds.length === 0) {
+      const { data, error } = await supabase
+        .from("estado_diario_jugador")
+        .select(selectFields);
+      if (error || !data || data.length === 0) {
+        console.warn("Error/empty fetching estado_diario_jugador, usando backup maestro:", error?.message);
+        return getMasterBackupTable("estado_diario_jugador");
+      }
+      return data || [];
     }
-    return data || [];
-  }
 
-  // Realizar consultas en paralelo con lotes de 25 sesiones (25 * 27 = 675 filas) para respetar el límite de 1000 filas de PostgREST
-  const chunkSize = 25;
-  const chunks: string[][] = [];
-  for (let i = 0; i < sesionDiaIds.length; i += chunkSize) {
-    chunks.push(sesionDiaIds.slice(i, i + chunkSize));
-  }
-
-  const chunkPromises = chunks.map((chunk) =>
-    supabase
-      .from("estado_diario_jugador")
-      .select(selectFields)
-      .in("sesion_dia_id", chunk)
-  );
-
-  const results = await Promise.all(chunkPromises);
-  const allResults: any[] = [];
-  for (const res of results) {
-    if (res.error) {
-      console.error("Error fetching chunk of estado_diario_jugador:", res.error);
-    } else if (res.data) {
-      allResults.push(...res.data);
+    // Realizar consultas en paralelo con lotes de 25 sesiones
+    const chunkSize = 25;
+    const chunks: string[][] = [];
+    for (let i = 0; i < sesionDiaIds.length; i += chunkSize) {
+      chunks.push(sesionDiaIds.slice(i, i + chunkSize));
     }
+
+    const chunkPromises = chunks.map((chunk) =>
+      supabase
+        .from("estado_diario_jugador")
+        .select(selectFields)
+        .in("sesion_dia_id", chunk)
+    );
+
+    const results = await Promise.all(chunkPromises);
+    const allResults: any[] = [];
+    for (const res of results) {
+      if (res.error) {
+        console.error("Error fetching chunk of estado_diario_jugador:", res.error);
+      } else if (res.data) {
+        allResults.push(...res.data);
+      }
+    }
+
+    if (allResults.length > 0) return allResults;
+  } catch (err: any) {
+    console.warn("Exception getEstadoDiarioJugadores, usando backup maestro:", err?.message);
   }
-  return allResults;
+
+  const backup = getMasterBackupTable("estado_diario_jugador");
+  if (sesionDiaIds && sesionDiaIds.length > 0) {
+    const set = new Set(sesionDiaIds);
+    return backup.filter((r: any) => set.has(r.sesion_dia_id));
+  }
+  return backup;
 }
 
 export async function getEstadoDiarioConFechas(): Promise<Record<string, string>> {
-  const supabase = getServerSupabase();
-
-  // Paginación para traer todos los registros sin truncar a 1000
-  const PAGE_SIZE = 1000;
-  const { count } = await supabase
-    .from("estado_diario_jugador")
-    .select("*", { count: "exact", head: true });
-
-  const total = count || 0;
-  const numPages = Math.ceil(total / PAGE_SIZE);
-  const promises = [];
-  for (let i = 0; i < Math.max(numPages, 1); i++) {
-    promises.push(
-      supabase
-        .from("estado_diario_jugador")
-        .select("jugador_id, sesion_dia_id, disponibilidad")
-        .range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1)
-    );
-  }
-
-  const [results, sesResult] = await Promise.all([
-    Promise.all(promises),
-    supabase.from("sesiones_dia").select("id, fecha").limit(5000),
-  ]);
-
-  const fechaMap = new Map<string, string>();
-  if (sesResult.data) {
-    sesResult.data.forEach((s) => fechaMap.set(s.id, s.fecha));
-  }
-
   const res: Record<string, string> = {};
-  results.forEach((r) => {
-    if (r.data) {
-      r.data.forEach((e) => {
-        if (!e.disponibilidad) return;
-        res[`${e.jugador_id}_${e.sesion_dia_id}`] = e.disponibilidad;
-        const f = fechaMap.get(e.sesion_dia_id);
-        if (f) res[`${e.jugador_id}_${f}`] = e.disponibilidad;
-      });
+  try {
+    const supabase = getServerSupabase();
+
+    const PAGE_SIZE = 1000;
+    const { count } = await supabase
+      .from("estado_diario_jugador")
+      .select("*", { count: "exact", head: true });
+
+    const total = count || 0;
+    const numPages = Math.ceil(total / PAGE_SIZE);
+    const promises = [];
+    for (let i = 0; i < Math.max(numPages, 1); i++) {
+      promises.push(
+        supabase
+          .from("estado_diario_jugador")
+          .select("jugador_id, sesion_dia_id, disponibilidad")
+          .range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1)
+      );
     }
-  });
+
+    const [results, sesResult] = await Promise.all([
+      Promise.all(promises),
+      supabase.from("sesiones_dia").select("id, fecha").limit(5000),
+    ]);
+
+    const fechaMap = new Map<string, string>();
+    if (sesResult.data) {
+      sesResult.data.forEach((s) => fechaMap.set(s.id, s.fecha));
+    }
+
+    results.forEach((r) => {
+      if (r.data) {
+        r.data.forEach((e) => {
+          if (!e.disponibilidad) return;
+          res[`${e.jugador_id}_${e.sesion_dia_id}`] = e.disponibilidad;
+          const f = fechaMap.get(e.sesion_dia_id);
+          if (f) res[`${e.jugador_id}_${f}`] = e.disponibilidad;
+        });
+      }
+    });
+  } catch (err: any) {
+    console.warn("Exception getEstadoDiarioConFechas, usando backup maestro:", err?.message);
+  }
+
+  if (Object.keys(res).length === 0) {
+    const backup = getMasterBackupTable("estado_diario_jugador");
+    const backupSes = getMasterBackupTable("sesiones_dia");
+    const bFechaMap = new Map<string, string>();
+    backupSes.forEach((s: any) => bFechaMap.set(s.id, s.fecha));
+    backup.forEach((e: any) => {
+      if (!e.disponibilidad) return;
+      res[`${e.jugador_id}_${e.sesion_dia_id}`] = e.disponibilidad;
+      const f = bFechaMap.get(e.sesion_dia_id);
+      if (f) res[`${e.jugador_id}_${f}`] = e.disponibilidad;
+    });
+  }
 
   return res;
 }
@@ -3232,10 +3247,10 @@ export async function getFullExcelBBDDRows(equipoParamIn?: string) {
       supabase.from("sesiones_dia_bloques").select("*"),
     ]);
 
-    const sesionesRaw = sesionesRes.data || [];
-    const jugadores = jugadoresRes.data || [];
-    const rawMinutos = minutosRes.data || [];
-    const rawBloques = bloquesRes.data || [];
+    const sesionesRaw = (sesionesRes.data && sesionesRes.data.length > 0) ? sesionesRes.data : getMasterBackupTable("sesiones_dia");
+    const jugadores = (jugadoresRes.data && jugadoresRes.data.length > 0) ? jugadoresRes.data : getMasterBackupTable("jugadores");
+    const rawMinutos = (minutosRes.data && minutosRes.data.length > 0) ? minutosRes.data : getMasterBackupTable("minutos_jugador_evento");
+    const rawBloques = (bloquesRes.data && bloquesRes.data.length > 0) ? bloquesRes.data : getMasterBackupTable("sesiones_dia_bloques");
 
     const jugIds = (jugadores || []).map((j: any) => j.id).filter(Boolean);
     const rawEstados: any[] = [];
@@ -3256,6 +3271,9 @@ export async function getFullExcelBBDDRows(equipoParamIn?: string) {
     } else {
       const { data: batch } = await supabase.from("estado_diario_jugador").select("*").range(0, 999);
       if (batch) rawEstados.push(...batch);
+    }
+    if (rawEstados.length === 0) {
+      rawEstados.push(...getMasterBackupTable("estado_diario_jugador"));
     }
 
     const estadosMap = new Map();
@@ -3720,15 +3738,21 @@ export async function cleanEmptySessions() {
 
 
 export async function getMinutosJugadorEventoAll() {
-  const supabase = getServerSupabase();
-  const { data, error } = await supabase
-    .from("minutos_jugador_evento")
-    .select("*");
-  
-  if (error) {
-    console.error("Error getMinutosJugadorEventoAll:", error);
-    return [];
+  let data: any[] | null = null;
+  try {
+    const supabase = getServerSupabase();
+    const res = await supabase.from("minutos_jugador_evento").select("*");
+    if (!res.error && res.data && res.data.length > 0) {
+      data = res.data;
+    }
+  } catch (err: any) {
+    console.warn("Exception getMinutosJugadorEventoAll, usando backup:", err?.message);
   }
+
+  if (!data || data.length === 0) {
+    data = getMasterBackupTable("minutos_jugador_evento");
+  }
+
   return (data || []).map((row: any) => {
     const dur = Number(row.minutos ?? row.duracion ?? 0);
     return { ...row, minutos: dur, duracion: dur, realiza: row.realiza !== undefined ? Boolean(row.realiza) : dur > 0 };
@@ -3930,14 +3954,32 @@ export async function getReportePartidosData(equipo?: string): Promise<any> {
       jugQuery = jugQuery.ilike("equipo", `%${repClub}%`);
     }
 
-    const [{ data: jugadores }, { data: sesiones }, { data: bloques }, { data: estados }, { data: gps }, { data: minutosJugador }] = await Promise.all([
-      jugQuery.order("nombre"),
-      supabase.from("sesiones_dia").select("*").gte("fecha", "2026-10-01").order("fecha", { ascending: true }),
-      supabase.from("sesiones_dia_bloques").select("*"),
-      supabase.from("estado_diario_jugador").select("*"),
-      supabase.from("gps_datos").select("*"),
-      supabase.from("minutos_jugador_evento").select("*"),
-    ]);
+    let rawJ: any = null, rawS: any = null, rawB: any = null, rawE: any = null, rawG: any = null, rawM: any = null;
+    try {
+      const results = await Promise.all([
+        jugQuery.order("nombre"),
+        supabase.from("sesiones_dia").select("*").gte("fecha", "2026-10-01").order("fecha", { ascending: true }),
+        supabase.from("sesiones_dia_bloques").select("*"),
+        supabase.from("estado_diario_jugador").select("*"),
+        supabase.from("gps_datos").select("*"),
+        supabase.from("minutos_jugador_evento").select("*"),
+      ]);
+      rawJ = results[0]?.data;
+      rawS = results[1]?.data;
+      rawB = results[2]?.data;
+      rawE = results[3]?.data;
+      rawG = results[4]?.data;
+      rawM = results[5]?.data;
+    } catch (e) {
+      console.warn("Exception getInformeJugadorData, using master backup:", e);
+    }
+
+    const jugadores = (rawJ && rawJ.length > 0) ? rawJ : getMasterBackupTable("jugadores");
+    const sesiones = (rawS && rawS.length > 0) ? rawS : getMasterBackupTable("sesiones_dia");
+    const bloques = (rawB && rawB.length > 0) ? rawB : getMasterBackupTable("sesiones_dia_bloques");
+    const estados = (rawE && rawE.length > 0) ? rawE : getMasterBackupTable("estado_diario_jugador");
+    const gps = (rawG && rawG.length > 0) ? rawG : getMasterBackupTable("gps_datos");
+    const minutosJugador = (rawM && rawM.length > 0) ? rawM : getMasterBackupTable("minutos_jugador_evento");
 
     const sesionIdToFecha = new Map<string, string>();
     (sesiones || []).forEach((s: any) => {
@@ -5260,31 +5302,22 @@ export async function deleteFuerzaSesionFromSupabase(
 }
 
 export async function getFuerzaSesionesForMatrix(): Promise<Record<string, any[]>> {
-  const supabase = getServerSupabase();
+  let data: any[] | null = null;
   try {
-    let { data, error } = await supabase.from('fuerza_sesiones').select('*');
-
-    // Auto-recuperación: Si Supabase está vacío (0 filas), restaurar automáticamente desde backup en disco
-    if (!error && (!data || data.length === 0)) {
-      const backupDir = path.join(process.cwd(), 'backups');
-      const latestPath = path.join(backupDir, 'fuerza_sesiones_backup_latest.json');
-      if (fs.existsSync(latestPath)) {
-        try {
-          const backup = JSON.parse(fs.readFileSync(latestPath, 'utf8'));
-          if (backup.rows && backup.rows.length > 0) {
-            console.log('[getFuerzaSesionesForMatrix] Auto-restaurando desde copia de seguridad persistente...');
-            await restoreFuerzaBBDDFromDisk();
-            const recheck = await supabase.from('fuerza_sesiones').select('*');
-            if (recheck.data) data = recheck.data;
-          }
-        } catch (e) {}
-      }
+    const supabase = getServerSupabase();
+    const res = await supabase.from('fuerza_sesiones').select('*');
+    if (!res.error && res.data && res.data.length > 0) {
+      data = res.data;
     }
+  } catch (e) {
+    console.warn('[getFuerzaSesionesForMatrix] Exception, usando backup maestro:', e);
+  }
 
-    if (error) {
-      console.error('[getFuerzaSesionesForMatrix] Error:', error);
-      return {};
-    }
+  if (!data || data.length === 0) {
+    data = getMasterBackupTable('fuerza_sesiones');
+  }
+
+  try {
 
     const matrixMap: Record<string, any[]> = {};
 

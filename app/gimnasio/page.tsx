@@ -1,8 +1,9 @@
-import React from 'react';
-import { getActiveJugadores, getSesionesDiaRange, getFuerzaSesionesForMatrix } from '../actions';
-import GimnasioMatrixClient from './GimnasioMatrixClient';
+import React from "react";
+import { getActiveJugadores, getSesionesDiaRange, getFuerzaSesionesForMatrix } from "../actions";
+import { getMasterBackupTable } from "@/app/lib/masterBackup";
+import GimnasioMatrixClient from "./GimnasioMatrixClient";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 export default async function GimnasioPage() {
   let jugadores: any[] = [];
@@ -11,15 +12,28 @@ export default async function GimnasioPage() {
 
   try {
     const [rawJugadores, rawDays, rawSesiones] = await Promise.all([
-      getActiveJugadores(),
-      getSesionesDiaRange(),
-      getFuerzaSesionesForMatrix(),
+      getActiveJugadores().catch(() => []),
+      getSesionesDiaRange().catch(() => []),
+      getFuerzaSesionesForMatrix().catch(() => ({})),
     ]);
     jugadores = rawJugadores || [];
     days = rawDays || [];
     sesionesMap = rawSesiones || {};
   } catch (e) {
-    console.error('Error fetching data for Gimnasio:', e);
+    console.error("Error fetching data for Gimnasio:", e);
+  }
+
+  // ─── RESILIENT DATA FALLBACK: Garantizar que siempre cargue la información de Gimnasio ───
+  if (!jugadores || jugadores.length === 0) {
+    jugadores = getMasterBackupTable("jugadores");
+  }
+
+  if (!days || days.length === 0) {
+    days = getMasterBackupTable("sesiones_dia");
+  }
+
+  if (!sesionesMap || Object.keys(sesionesMap).length === 0) {
+    sesionesMap = await getFuerzaSesionesForMatrix();
   }
 
   return (
