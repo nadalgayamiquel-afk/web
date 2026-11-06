@@ -21,3 +21,4 @@ export default async function GpsBBDDPage() {
 
   return <GpsBBDDClient initialRecords={initialRecords} jugadores={jugadores} />;
 }
+

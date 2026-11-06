@@ -796,3 +796,4 @@ export default function GpsBBDDClient({ initialRecords = [], jugadores = [] }: P
     </div>
   );
 }
+
