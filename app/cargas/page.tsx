@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import * as XLSX from "xlsx";
-import { fetchLiveWellnessSheet, getActiveJugadores, getAllJugadoresIncludingArchived, saveGpsDatosBatch, getAllGpsDatos, getEstadoDiarioConFechas, syncAllDownloadsGpsFiles, getSesionesDiaRange } from "@/app/actions";
+import { fetchLiveWellnessSheet, getActiveJugadores, getAllJugadoresIncludingArchived, saveGpsDatosBatch, getAllGpsDatos, getEstadoDiarioConFechas, syncAllDownloadsGpsFiles, syncGpsDatabaseWeb, getSesionesDiaRange } from "@/app/actions";
 import { getDisponibilidadInfo } from "@/app/lib/disponibilidad";
 import { useClubConfig } from "@/app/lib/useClubConfig";
 import { ExternalDatabaseLinks, DEFAULT_EXTERNAL_LINKS } from "@/app/lib/externalLinks";
@@ -743,7 +743,7 @@ function CargasContent() {
     } catch {}
   }, []);
 
-  // Cargar registros GPS iniciales desde la BBDD Supabase
+  // Cargar registros GPS iniciales desde la BBDD / backup
   const loadDbGpsRecords = async () => {
     try {
       const dbGps = await getAllGpsDatos();
@@ -752,13 +752,12 @@ function CargasContent() {
           const map = new Map();
           prev.forEach((r) => map.set(`${r.jugador_id}_${r.fecha}`, r));
           dbGps.forEach((r) => map.set(`${r.jugador_id}_${r.fecha}`, r));
-          return Array.from(map.values());
+          const merged = Array.from(map.values());
+          try {
+            localStorage.setItem("gps_datos_map_v1", JSON.stringify(merged));
+          } catch {}
+          return merged;
         });
-        // Liberar la memoria local saturada en localStorage de forma segura
-        try {
-          localStorage.removeItem("gps_datos_map_v1");
-          localStorage.removeItem("gps_datos_cache");
-        } catch {}
       }
     } catch (e) {}
   };
@@ -771,24 +770,38 @@ function CargasContent() {
 
   const handleUpdateGps = async () => {
     setIsGpsSyncing(true);
-    setGpsUploadStatus({ message: "Actualizando datos GPS...", isError: false });
+    setGpsUploadStatus({ message: "Sincronizando con Base de Datos GPS en vivo...", isError: false });
     try {
-      // 1. Intentar sincronizar archivos nuevos de GPS si existen en Downloads
+      // 1. Sincronizar Google Sheets BBDD GPS externa y descargas
       let extraCount = 0;
+      let datesCount = 0;
       try {
-        const syncRes = await syncAllDownloadsGpsFiles();
-        if (syncRes && syncRes.success && syncRes.totalRecords) {
-          extraCount = syncRes.totalRecords;
+        const syncRes = await syncGpsDatabaseWeb();
+        if (syncRes && syncRes.success) {
+          extraCount = syncRes.totalRecords || 0;
+          datesCount = syncRes.datesProcessed?.length || 0;
+          if (Array.isArray(syncRes.records) && syncRes.records.length > 0) {
+            setGpsRecords((prev) => {
+              const map = new Map();
+              prev.forEach((r) => map.set(`${r.jugador_id}_${r.fecha}`, r));
+              syncRes.records.forEach((r: any) => map.set(`${r.jugador_id}_${r.fecha}`, r));
+              const merged = Array.from(map.values());
+              try {
+                localStorage.setItem("gps_datos_map_v1", JSON.stringify(merged));
+              } catch {}
+              return merged;
+            });
+          }
         }
       } catch (err) {}
 
-      // 2. Recargar todos los registros frescos de GPS desde Supabase
+      // 2. Recargar todos los registros frescos de GPS desde BBDD / backup
       await loadDbGpsRecords();
 
       const now = new Date().toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-      const extraMsg = extraCount > 0 ? ` (${extraCount} nuevos sincronizados)` : "";
+      const extraMsg = extraCount > 0 ? ` (${extraCount} registros de ${datesCount} sesiones)` : "";
       setGpsUploadStatus({
-        message: `✓ GPS actualizado a las ${now}${extraMsg}`,
+        message: `✓ BBDD GPS enlazada y sincronizada a las ${now}${extraMsg}`,
         isError: false,
       });
     } catch (e: any) {
@@ -1618,30 +1631,28 @@ function CargasContent() {
                 )}
 
                 {/* BOTÓN DIRECTO BBDD GPS EXTERNA */}
-                {extLinks.gps?.url ? (
-                  <a
-                    href={extLinks.gps.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title={extLinks.gps.nombre || "Abrir Base de Datos GPS"}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "5px",
-                      background: "#fff7ed",
-                      color: "#9a3412",
-                      border: "1px solid #fed7aa",
-                      padding: "6px 12px",
-                      borderRadius: "6px",
-                      fontSize: "12px",
-                      fontWeight: 800,
-                      textDecoration: "none",
-                    }}
-                  >
-                    <span>⚡</span>
-                    <span>BBDD GPS ↗</span>
-                  </a>
-                ) : null}
+                <a
+                  href={extLinks.gps?.url || DEFAULT_EXTERNAL_LINKS.gps.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={extLinks.gps?.nombre || "Abrir Base de Datos GPS en Google Sheets"}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "5px",
+                    background: "#fff7ed",
+                    color: "#9a3412",
+                    border: "1px solid #fed7aa",
+                    padding: "6px 12px",
+                    borderRadius: "6px",
+                    fontSize: "12px",
+                    fontWeight: 800,
+                    textDecoration: "none",
+                  }}
+                >
+                  <span>⚡</span>
+                  <span>BBDD GPS ↗</span>
+                </a>
 
                 {/* BOTÓN: ACTUALIZAR GPS */}
                 <button

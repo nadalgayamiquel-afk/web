@@ -396,23 +396,45 @@ export async function getAllJugadoresIncludingArchived() {
 }
 
 export async function getGpsDatosReport(jugadorId: string) {
-  const supabase = getServerSupabase();
+  let jugador: any = null;
+  let playerGps: any[] = [];
+  let teamGps: any[] = [];
 
-  const { data: jugador } = await supabase
-    .from('jugadores')
-    .select('id, nombre, apodo, posicion, foto_url, fecha_nacimiento, activo')
-    .eq('id', jugadorId)
-    .single();
+  try {
+    const supabase = getServerSupabase();
 
-  const { data: playerGps } = await supabase
-    .from('gps_datos')
-    .select('*')
-    .eq('jugador_id', jugadorId)
-    .order('fecha', { ascending: false });
+    const { data: dbJugador, error: jErr } = await supabase
+      .from('jugadores')
+      .select('id, nombre, apodo, posicion, foto_url, fecha_nacimiento, activo')
+      .eq('id', jugadorId)
+      .maybeSingle();
+    if (!jErr && dbJugador) jugador = dbJugador;
 
-  const { data: teamGps } = await supabase
-    .from('gps_datos')
-    .select('*');
+    const { data: pGps, error: pErr } = await supabase
+      .from('gps_datos')
+      .select('*')
+      .eq('jugador_id', jugadorId)
+      .order('fecha', { ascending: false });
+    if (!pErr && pGps && pGps.length > 0) playerGps = pGps;
+
+    const { data: tGps, error: tErr } = await supabase
+      .from('gps_datos')
+      .select('*');
+    if (!tErr && tGps && tGps.length > 0) teamGps = tGps;
+  } catch (e) {}
+
+  if (!jugador) {
+    const backupPlayers = getMasterBackupTable("jugadores");
+    jugador = backupPlayers.find((j: any) => j.id === jugadorId) || null;
+  }
+
+  if (teamGps.length === 0) {
+    teamGps = await getAllGpsDatos();
+  }
+
+  if (playerGps.length === 0 && teamGps.length > 0) {
+    playerGps = teamGps.filter((g: any) => g.jugador_id === jugadorId);
+  }
 
   return {
     jugador: jugador || null,
@@ -523,9 +545,24 @@ export async function getAllGpsDatos() {
   }
 
   if (rawData.length === 0) {
-    rawData = getMasterBackupTable("gps_datos");
-    rawData.sort((a: any, b: any) => (b.fecha || "").localeCompare(a.fecha || ""));
+    try {
+      const fs = require("fs");
+      const path = require("path");
+      const syncedFile = path.join(process.cwd(), "public", "gps_datos_synced.json");
+      if (fs.existsSync(syncedFile)) {
+        const parsed = JSON.parse(fs.readFileSync(syncedFile, "utf8"));
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          rawData = parsed;
+        }
+      }
+    } catch (e) {}
   }
+
+  if (rawData.length === 0) {
+    rawData = getMasterBackupTable("gps_datos");
+  }
+
+  rawData.sort((a: any, b: any) => (b.fecha || "").localeCompare(a.fecha || ""));
 
   // Aplanar métricas en cada registro para que campos como distancia_total, hsr, max_speed estén disponibles directamente
   return rawData.map((r: any) => ({
@@ -629,7 +666,18 @@ export async function syncGoogleSheetGpsData() {
     });
 
     const supabase = getServerSupabase();
-    const { data: dbPlayers } = await supabase.from("jugadores").select("id, nombre, apodo, cor_id, equipo, activo");
+    let dbPlayers: any[] = [];
+    try {
+      const { data: fetchedPlayers, error: pErr } = await supabase.from("jugadores").select("id, nombre, apodo, cor_id, equipo, activo");
+      if (!pErr && fetchedPlayers && fetchedPlayers.length > 0) {
+        dbPlayers = fetchedPlayers;
+      }
+    } catch (e) {}
+
+    if (!dbPlayers || dbPlayers.length === 0) {
+      dbPlayers = getMasterBackupTable("jugadores");
+    }
+
     const europaPlayers = (dbPlayers || []).filter((p: any) => ((p.equipo || "").toUpperCase().includes("EUROPA") && p.activo) || p.activo);
 
     const normalize = (s: string) => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
@@ -768,6 +816,7 @@ export async function syncGoogleSheetGpsData() {
     let totalInserted = 0;
     let simuladosCount = 0;
     let realesCount = 0;
+    const allProcessedRecords: any[] = [];
 
     for (const isoDate of Array.from(datesFound)) {
       // Buscar información de MD, rival y sesión en las filas del Google Sheet para esta fecha
@@ -1079,7 +1128,8 @@ export async function syncGoogleSheetGpsData() {
           tareas: tasksParsed,
         };
 
-        recordsForDate.push({
+        const newRecord = {
+          id: `gps_${player.id}_${isoDate}`,
           jugador_id: player.id,
           fecha: isoDate,
           sesion_dia_id,
@@ -1088,24 +1138,47 @@ export async function syncGoogleSheetGpsData() {
           tarea: "Total",
           duracion: mainMetrics["Duration(min)"],
           metricas: mainMetrics,
-        });
+          distancia_total: mainMetrics.distancia_total,
+          distancia_z4: mainMetrics.distancia_z4,
+          max_speed: mainMetrics.max_speed,
+          player_load: mainMetrics.player_load,
+          num_sprints: mainMetrics.num_sprints,
+          aceleraciones: mainMetrics.aceleraciones,
+          desaceleraciones: mainMetrics.desaceleraciones,
+          duracion_min: mainMetrics.duracion_min,
+          es_simulado: isSimulado,
+          tipo_registro: isSimulado ? "SIMULADO" : "REAL",
+        };
+
+        recordsForDate.push(newRecord);
+        allProcessedRecords.push(newRecord);
       }
 
       if (recordsForDate.length > 0) {
-        await supabase.from("gps_datos").delete().eq("fecha", isoDate);
-        const { error: insErr } = await supabase.from("gps_datos").insert(recordsForDate);
-        if (!insErr) {
-          totalInserted += recordsForDate.length;
-        } else {
-          console.error(`Error inserting GPS sheet records for ${isoDate}:`, insErr);
+        totalInserted += recordsForDate.length;
+        try {
+          await supabase.from("gps_datos").delete().eq("fecha", isoDate);
+          await supabase.from("gps_datos").insert(recordsForDate);
+        } catch (insErr) {
+          console.warn(`Supabase insert note for ${isoDate}:`, insErr);
         }
       }
     }
 
+    try {
+      const fs = require("fs");
+      const path = require("path");
+      const syncedPath = path.join(process.cwd(), "public", "gps_datos_synced.json");
+      fs.writeFileSync(syncedPath, JSON.stringify(allProcessedRecords, null, 2), "utf8");
+    } catch (e) {
+      console.warn("Could not write gps_datos_synced.json:", e);
+    }
+
     return {
       success: true,
+      records: allProcessedRecords,
       datesProcessed: Array.from(datesFound),
-      totalRecords: totalInserted,
+      totalRecords: allProcessedRecords.length,
       simuladosCount,
       realesCount,
     };
@@ -1121,8 +1194,11 @@ export async function syncGoogleSheetGpsData() {
  */
 export async function syncGpsDatabaseWeb() {
   try {
-    // 1. Primero procesar archivos de Downloads si existen
-    const downloadsRes = await syncAllDownloadsGpsFiles();
+    let downloadsRes: any = { datesProcessed: [], totalRecords: 0 };
+    try {
+      downloadsRes = await syncAllDownloadsGpsFiles();
+    } catch (e) {}
+
     // 2. Después procesar Google Sheet (DB GPS), asegurando que los nombres de tarea curados por el usuario tengan prioridad absoluta
     const sheetRes = await syncGoogleSheetGpsData();
 
@@ -1135,6 +1211,7 @@ export async function syncGpsDatabaseWeb() {
 
     return {
       success: true,
+      records: sheetRes.records || [],
       sheetRecords: sheetRes.totalRecords || 0,
       downloadsRecords: downloadsRes.totalRecords || 0,
       totalRecords,
@@ -1166,7 +1243,18 @@ export async function syncAllDownloadsGpsFiles() {
     );
 
     const supabase = getServerSupabase();
-    const { data: dbPlayers } = await supabase.from("jugadores").select("id, nombre, apodo, cor_id, equipo, activo");
+    let dbPlayers: any[] = [];
+    try {
+      const { data: fetchedPlayers, error: pErr } = await supabase.from("jugadores").select("id, nombre, apodo, cor_id, equipo, activo");
+      if (!pErr && fetchedPlayers && fetchedPlayers.length > 0) {
+        dbPlayers = fetchedPlayers;
+      }
+    } catch (e) {}
+
+    if (!dbPlayers || dbPlayers.length === 0) {
+      dbPlayers = getMasterBackupTable("jugadores");
+    }
+
     const europaPlayers = (dbPlayers || []).filter((p: any) => ((p.equipo || "").toUpperCase().includes("EUROPA") && p.activo) || p.activo);
 
     const normalize = (s: string) => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
@@ -3429,13 +3517,42 @@ export async function getReporteAnualData() {
   const supabase = getServerSupabase();
   const repClub = clubKeyword(await getActiveClubName());
 
-  const [{ data: jugadores }, { data: sesiones }, { data: estados }, { data: gps }, { data: minutosJugador }] = await Promise.all([
-    supabase.from("jugadores").select("id, nombre, apodo, posicion, foto_url, fecha_nacimiento, activo, cor_id, equipo, temporada").eq("activo", true).ilike("equipo", `%${repClub || ""}%`).order("nombre"),
-    supabase.from("sesiones_dia").select("*").order("fecha", { ascending: true }),
-    supabase.from("estado_diario_jugador").select("*"),
-    supabase.from("gps_datos").select("*"),
-    supabase.from("minutos_jugador_evento").select("*"),
-  ]);
+  let jugadores: any[] | null = null;
+  let sesiones: any[] | null = null;
+  let estados: any[] | null = null;
+  let gps: any[] | null = null;
+  let minutosJugador: any[] | null = null;
+
+  try {
+    const [jRes, sRes, eRes, gRes, mRes] = await Promise.all([
+      supabase.from("jugadores").select("id, nombre, apodo, posicion, foto_url, fecha_nacimiento, activo, cor_id, equipo, temporada").eq("activo", true).ilike("equipo", `%${repClub || ""}%`).order("nombre"),
+      supabase.from("sesiones_dia").select("*").order("fecha", { ascending: true }),
+      supabase.from("estado_diario_jugador").select("*"),
+      supabase.from("gps_datos").select("*"),
+      supabase.from("minutos_jugador_evento").select("*"),
+    ]);
+    jugadores = jRes.data;
+    sesiones = sRes.data;
+    estados = eRes.data;
+    gps = gRes.data;
+    minutosJugador = mRes.data;
+  } catch (e) {}
+
+  if (!jugadores || jugadores.length === 0) {
+    jugadores = getMasterBackupTable("jugadores").filter((p: any) => p.activo && (!repClub || (p.equipo || "").toLowerCase().includes(repClub.toLowerCase())));
+  }
+  if (!sesiones || sesiones.length === 0) {
+    sesiones = getMasterBackupTable("sesiones_dia");
+  }
+  if (!estados || estados.length === 0) {
+    estados = getMasterBackupTable("estado_diario_jugador");
+  }
+  if (!gps || gps.length === 0) {
+    gps = await getAllGpsDatos();
+  }
+  if (!minutosJugador || minutosJugador.length === 0) {
+    minutosJugador = getMasterBackupTable("minutos_jugador_evento");
+  }
 
   const minutosMap: Record<string, any> = {};
   (minutosJugador || []).forEach((row: any) => {
