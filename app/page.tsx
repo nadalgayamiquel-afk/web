@@ -164,10 +164,11 @@ function getAgendaForDate(
 import Link from "next/link";
 import { useClubConfig } from "@/app/lib/useClubConfig";
 import { useState, useEffect, useMemo } from "react";
-import { getActiveJugadores, getEstadoDiarioConFechas, getSesionesDiaRange, getAllGpsDatos } from "@/app/actions";
+import { getActiveJugadores, getEstadoDiarioConFechas, getSesionesDiaRange, getAllGpsDatos, savePlayerCommentBBDD } from "@/app/actions";
 import { DEFAULT_CUSTOM_MICROCICLOS } from "@/app/cargas/CargaExternaSection";
 import { extractMicrocyclesFromGpsData, getDeletedMicrocycleIds, CustomMicrocycleDef } from "@/app/lib/microciclos";
 import { getSemaforoCategoria, getDisponibilidadInfo } from "@/app/lib/disponibilidad";
+import { findRivalEscudoUrl, makeClubShieldSvg } from "@/app/lib/rivales";
 
 type Jugador = {
   id: string;
@@ -267,6 +268,108 @@ export default function Home() {
       try {
         localStorage.setItem("daily_player_observations_v2", JSON.stringify(newComments));
       } catch {}
+    }
+  };
+
+  // ─── MODAL Y ESTADO PARA AÑADIR OBSERVACIONES RÁPIDAS ───
+  const [showCommentModal, setShowCommentModal] = useState<boolean>(false);
+  const [commentDate, setCommentDate] = useState<string>(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  });
+  const [commentPlayerId, setCommentPlayerId] = useState<string>("");
+  const [commentPlayerSearch, setCommentPlayerSearch] = useState<string>("");
+  const [commentCategory, setCommentCategory] = useState<"FIS" | "CON" | "TEC" | "PSI" | "WEL" | "OTR">("FIS");
+  const [commentMessage, setCommentMessage] = useState<string>("");
+  const [isSubmittingComment, setIsSubmittingComment] = useState<boolean>(false);
+  const [commentFeedbackMsg, setCommentFeedbackMsg] = useState<string | null>(null);
+
+  const handleSaveObservation = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!commentPlayerId || !commentMessage.trim()) {
+      alert("Por favor selecciona un deportista y escribe la observación.");
+      return;
+    }
+
+    setIsSubmittingComment(true);
+    setCommentFeedbackMsg(null);
+
+    const isTeam = commentPlayerId === "TEAM";
+    const playerObj = isTeam
+      ? { id: "TEAM", nombre: "TODO EL EQUIPO", apodo: "TEAM", foto_url: null, posicion: "Plantilla" }
+      : teamJugadores.find((j) => j.id === commentPlayerId);
+
+    const tagLabels: Record<string, string> = {
+      FIS: "Médico / Molestias",
+      CON: "Físico / Condicional",
+      TEC: "Técnico / Táctico",
+      PSI: "Psicológico / Conductual",
+      WEL: "Wellness / Carga",
+      OTR: "General / Otros",
+    };
+
+    const newEntry: DailyPlayerComment = {
+      id: "comment-" + Date.now(),
+      playerId: commentPlayerId,
+      playerName: playerObj?.apodo || playerObj?.nombre || "Deportista",
+      playerPhoto: playerObj?.foto_url || null,
+      posicion: playerObj?.posicion || null,
+      dateISO: commentDate,
+      tag: tagLabels[commentCategory] || "General",
+      comment: commentMessage.trim(),
+      author: "Staff Técnico",
+      createdAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    };
+
+    // 1. Guardar en estado de comentarios
+    setDailyComments((prev) => [newEntry, ...prev]);
+
+    // 2. Persistir en localStorage
+    if (typeof window !== "undefined") {
+      try {
+        const savedDaily = localStorage.getItem("daily_player_observations_v2");
+        const list = savedDaily ? JSON.parse(savedDaily) : [];
+        localStorage.setItem("daily_player_observations_v2", JSON.stringify([newEntry, ...list]));
+
+        const rawCom = localStorage.getItem("comentarios_jugadores_v2");
+        const comList = rawCom ? JSON.parse(rawCom) : [];
+        comList.unshift({
+          id: newEntry.id,
+          jugador_id: commentPlayerId,
+          day_id: `day_${commentDate}`,
+          fecha: commentDate,
+          tipo: commentCategory,
+          texto: commentMessage.trim(),
+        });
+        localStorage.setItem("comentarios_jugadores_v2", JSON.stringify(comList));
+      } catch (err) {}
+    }
+
+    // 3. Sincronizar en Supabase en la nube
+    try {
+      await savePlayerCommentBBDD({
+        jugadorId: commentPlayerId,
+        dayId: `day_${commentDate}`,
+        fecha: commentDate,
+        tipo: commentCategory,
+        texto: commentMessage.trim(),
+      });
+      setCommentFeedbackMsg("✓ Observación guardada y sincronizada en la nube");
+      setTimeout(() => {
+        setCommentFeedbackMsg(null);
+        setShowCommentModal(false);
+        setCommentMessage("");
+      }, 1200);
+    } catch (dbErr: any) {
+      console.warn("Aviso al guardar en Supabase, guardado en memoria local:", dbErr);
+      setCommentFeedbackMsg("✓ Guardado localmente");
+      setTimeout(() => {
+        setCommentFeedbackMsg(null);
+        setShowCommentModal(false);
+        setCommentMessage("");
+      }, 1200);
+    } finally {
+      setIsSubmittingComment(false);
     }
   };
 
@@ -439,13 +542,19 @@ export default function Home() {
     }
 
     const subperiodo = currentWeekDays.find((d) => d.subperiodo)?.subperiodo || "COMPETITIVO";
-    const rival = currentWeekDays.find((d) => d.rival)?.rival || "";
+    const matchDay = currentWeekDays.find((d) => d.rival || d.isMatch);
+    const rival = matchDay?.rival || currentWeekDays.find((d) => d.rival)?.rival || "";
+
+    const dStart = currentWeekDays[0]?.fullDateStr || "";
+    const dEnd = currentWeekDays[6]?.fullDateStr || "";
 
     return {
       weekNum,
       subperiodo,
       rival,
-      title: `Microciclo ${weekNum} · ${subperiodo} (${currentWeekDays[0]?.fullDateStr} - ${currentWeekDays[6]?.fullDateStr})${rival ? " · vs " + rival : ""}`,
+      matchDay,
+      shortDates: `${dStart} – ${dEnd}`,
+      title: `Microciclo ${weekNum} · ${subperiodo}`,
     };
   }, [currentWeekDays, team]);
 
@@ -1388,31 +1497,100 @@ export default function Home() {
           </section>
 
           {/* ─── PANEL MICROCICLO SEMANAL INTERACTIVO ─── */}
-          <section className="panel week-panel" id="planificacion" suppressHydrationWarning>
-            <div className="panel-heading">
-              <div>
-                <span className="eyebrow">SEMANA EN CURSO</span>
-                <h3>{microcicloInfo.title}</h3>
+          <section className="panel week-panel" id="planificacion" suppressHydrationWarning style={{ background: "#ffffff", borderRadius: "14px", border: "1px solid #e2e8f0", padding: "18px 20px", boxShadow: "0 2px 8px rgba(0,0,0,0.03)" }}>
+            <div className="panel-heading" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px", borderBottom: "1px solid #f1f5f9", paddingBottom: "12px", marginBottom: "14px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span className="eyebrow" style={{ color: "#1e3a8a", fontWeight: 800, fontSize: "10px", letterSpacing: "0.06em" }}>SEMANA EN CURSO</span>
+                    <span style={{ fontSize: "10.5px", fontWeight: 900, background: "#eff6ff", color: "#1e3a8a", padding: "2px 8px", borderRadius: "6px", border: "1px solid #bfdbfe" }}>
+                      MC {microcicloInfo.weekNum}
+                    </span>
+                    <span style={{ fontSize: "10.5px", fontWeight: 700, color: "#64748b", background: "#f8fafc", padding: "2px 8px", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
+                      {microcicloInfo.subperiodo}
+                    </span>
+                  </div>
+                  <h3 style={{ margin: "4px 0 0", fontSize: "15px", fontWeight: 900, color: "#0f172a" }}>
+                    Semana del {microcicloInfo.shortDates}
+                  </h3>
+                </div>
               </div>
-              <Link href="/calendario" className="text-button">
+
+              {/* Tarjeta Visual Destacada del Rival con Escudo */}
+              {microcicloInfo.rival && (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    background: "linear-gradient(135deg, #f8fafc 0%, #eff6ff 100%)",
+                    padding: "6px 12px",
+                    borderRadius: "10px",
+                    border: "1px solid #dbeafe",
+                    boxShadow: "0 1px 3px rgba(30, 58, 138, 0.06)",
+                  }}
+                >
+                  <img
+                    src={findRivalEscudoUrl(microcicloInfo.rival)}
+                    alt={microcicloInfo.rival}
+                    style={{ width: "36px", height: "36px", objectFit: "contain", filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.12))", flexShrink: 0 }}
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).src = makeClubShieldSvg(microcicloInfo.rival.slice(0, 3).toUpperCase());
+                    }}
+                  />
+                  <div>
+                    <span style={{ fontSize: "9.5px", fontWeight: 800, color: "#ea580c", textTransform: "uppercase", letterSpacing: "0.04em", display: "block" }}>
+                      {microcicloInfo.matchDay?.md || "PARTIDO"} · {microcicloInfo.matchDay?.dayName} {microcicloInfo.matchDay?.dateNum}
+                    </span>
+                    <strong style={{ fontSize: "12.5px", fontWeight: 900, color: "#0f172a", display: "block", lineHeight: 1.2 }}>
+                      VS {microcicloInfo.rival.toUpperCase()}
+                    </strong>
+                  </div>
+                </div>
+              )}
+
+              <Link href="/calendario" className="text-button" style={{ marginLeft: "auto", fontSize: "11.5px", fontWeight: 800, color: "#1e3a8a", textDecoration: "none" }}>
                 Planificación Completa <span>↗</span>
               </Link>
             </div>
 
             {/* Tira de 7 días */}
-            <div className="week-strip">
+            <div className="week-strip" style={{ margin: "14px 0 16px" }}>
               {currentWeekDays.map((day, idx) => {
                 const nowISO = new Date().toISOString().split("T")[0];
                 const isRealToday = day.dateISO === nowISO;
+                const isSelected = selectedDayIdx === idx;
+                const hasRival = Boolean(day.rival);
+
+                let cellBg = "#f8fafc";
+                let cellBorder = "1px solid #e2e8f0";
+                if (isSelected) {
+                  cellBg = "#eff6ff";
+                  cellBorder = "2px solid #1e3a8a";
+                } else if (day.isMatch) {
+                  cellBg = "#fff7ed";
+                  cellBorder = "1px solid #fdba74";
+                }
+
                 return (
                   <div
                     key={day.dayName}
-                    className={"day-cell " + (selectedDayIdx === idx ? "selected" : "")}
+                    className={"day-cell " + (isSelected ? "selected" : "")}
                     onClick={() => setSelectedDayIdx(idx)}
                     style={{
                       cursor: "pointer",
                       position: "relative",
-                      border: isRealToday ? "2px solid #1e3a8a" : undefined,
+                      background: cellBg,
+                      border: cellBorder,
+                      borderRadius: "10px",
+                      padding: "8px 4px",
+                      transition: "all 0.15s ease",
+                      textAlign: "center",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      minHeight: "74px",
                     }}
                   >
                     {isRealToday && (
@@ -1424,76 +1602,250 @@ export default function Home() {
                           transform: "translateX(-50%)",
                           background: "#1e3a8a",
                           color: "#ffffff",
-                          fontSize: "8.5px",
+                          fontSize: "8px",
                           fontWeight: 900,
                           padding: "1px 5px",
-                          borderRadius: "6px",
-                          letterSpacing: "0.02em",
+                          borderRadius: "4px",
+                          letterSpacing: "0.04em",
+                          whiteSpace: "nowrap",
                         }}
                       >
                         HOY
                       </span>
                     )}
-                    <span style={{ fontSize: "11px", fontWeight: 700 }}>{day.dayName}</span>
-                    <strong>{day.dateNum}</strong>
-                    <small style={{ fontWeight: 800, color: day.md === "MATCH" ? "#ea580c" : "#1e3a8a" }}>{day.md}</small>
-                    <span className={"day-dot " + day.tone} />
+
+                    <span style={{ fontSize: "10.5px", fontWeight: 700, color: isSelected ? "#1e3a8a" : "#64748b" }}>
+                      {day.dayName}
+                    </span>
+
+                    <strong style={{ fontSize: "17px", fontWeight: 900, color: isSelected ? "#1e3a8a" : "#0f172a", margin: "2px 0" }}>
+                      {day.dateNum}
+                    </strong>
+
+                    {hasRival ? (
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", margin: "2px 0" }}>
+                        <img
+                          src={findRivalEscudoUrl(day.rival)}
+                          alt={day.rival}
+                          style={{ width: "18px", height: "18px", objectFit: "contain" }}
+                          onError={(e) => {
+                            (e.currentTarget as HTMLImageElement).src = makeClubShieldSvg(day.rival.slice(0, 3).toUpperCase());
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <small style={{ fontSize: "10px", fontWeight: 800, color: day.md === "MATCH" || day.isMatch ? "#ea580c" : day.md === "OFF" ? "#94a3b8" : "#1e3a8a" }}>
+                        {day.md}
+                      </small>
+                    )}
+
+                    <span className={"day-dot " + day.tone} style={{ marginTop: "2px" }} />
                   </div>
                 );
               })}
             </div>
 
             {/* Detalle del día seleccionado */}
-            <div className="selected-session" style={{ marginTop: "12px" }}>
-              <div className="session-date">
-                <strong>{activeDay.dateNum}</strong>
-                <span>{activeDay.dayName.toUpperCase()}</span>
+            <div
+              className="selected-session"
+              style={{
+                marginTop: "10px",
+                padding: "12px 14px",
+                background: "#f8fafc",
+                borderRadius: "10px",
+                border: "1px solid #e2e8f0",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "12px",
+                flexWrap: "wrap",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <div
+                  style={{
+                    minWidth: "46px",
+                    height: "46px",
+                    background: activeDay.isMatch ? "#fff7ed" : "#eff6ff",
+                    border: `1px solid ${activeDay.isMatch ? "#fdba74" : "#bfdbfe"}`,
+                    borderRadius: "8px",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  <strong style={{ fontSize: "18px", fontWeight: 900, color: activeDay.isMatch ? "#ea580c" : "#1e3a8a", lineHeight: 1 }}>
+                    {activeDay.dateNum}
+                  </strong>
+                  <span style={{ fontSize: "8.5px", fontWeight: 800, color: "#64748b", textTransform: "uppercase" }}>
+                    {activeDay.dayName}
+                  </span>
+                </div>
+
+                <div>
+                  <h4 style={{ fontSize: "13.5px", fontWeight: 800, margin: 0, color: "#0f172a" }}>
+                    {activeDay.session}
+                  </h4>
+                  <p style={{ fontSize: "11.5px", color: "#64748b", margin: "3px 0 0", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                    <span>📍 {activeDay.time}</span>
+                    <span>·</span>
+                    <span>Dinámica: <strong style={{ color: "#0f172a" }}>{activeDay.label}</strong></span>
+                    {activeDay.subperiodo && (
+                      <>
+                        <span>·</span>
+                        <span>{activeDay.subperiodo}</span>
+                      </>
+                    )}
+                  </p>
+                </div>
               </div>
-              <div className="session-info">
-                <h4 style={{ fontSize: "14px", fontWeight: 800, margin: 0, color: "#0f172a" }}>
-                  {activeDay.session}
-                </h4>
-                <p style={{ fontSize: "12px", color: "#64748b", margin: "3px 0 0" }}>
-                  📍 {activeDay.time} &nbsp;·&nbsp; Dinámica: {activeDay.label} {activeDay.subperiodo ? `· ${activeDay.subperiodo}` : ""}
-                </p>
-              </div>
-              <span className={"load-pill " + activeDay.tone} style={{ alignSelf: "center" }}>
+
+              <span
+                className={"load-pill " + activeDay.tone}
+                style={{
+                  fontSize: "10px",
+                  fontWeight: 900,
+                  padding: "4px 10px",
+                  borderRadius: "6px",
+                  letterSpacing: "0.03em",
+                }}
+              >
                 {activeDay.load.toUpperCase()}
               </span>
             </div>
           </section>
 
           {/* ─── PANEL SESIONES DEL DÍA (AGENDA REAL SINCRONIZADA) ─── */}
-          <section className="panel sessions-panel" id="eventos" suppressHydrationWarning>
-            <div className="panel-heading">
+          <section className="panel sessions-panel" id="eventos" suppressHydrationWarning style={{ background: "#ffffff", borderRadius: "14px", border: "1px solid #e2e8f0", padding: "18px 20px", boxShadow: "0 2px 8px rgba(0,0,0,0.03)" }}>
+            <div className="panel-heading" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #f1f5f9", paddingBottom: "12px", marginBottom: "14px" }}>
               <div>
-                <span className="eyebrow">AGENDA DEL DÍA ({activeDay.fullDateStr.toUpperCase()})</span>
-                <h3>Sesiones Programadas · {activeDay.md}</h3>
+                <span className="eyebrow" style={{ color: "#1e3a8a", fontWeight: 800, fontSize: "10px", letterSpacing: "0.06em" }}>
+                  AGENDA DEL DÍA · {activeDay.fullDateStr.toUpperCase()}
+                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "3px" }}>
+                  <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 900, color: "#0f172a" }}>
+                    Sesiones Programadas
+                  </h3>
+                  <span
+                    style={{
+                      fontSize: "10.5px",
+                      fontWeight: 800,
+                      padding: "2px 7px",
+                      borderRadius: "5px",
+                      background: activeDay.isMatch ? "#fff7ed" : "#eff6ff",
+                      color: activeDay.isMatch ? "#ea580c" : "#1e3a8a",
+                      border: `1px solid ${activeDay.isMatch ? "#fdba74" : "#bfdbfe"}`,
+                    }}
+                  >
+                    {activeDay.md}
+                  </span>
+                </div>
               </div>
-              <Link href="/campo" className="round-arrow" title="Ver campo">
-                →
-              </Link>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <Link href="/campo" style={{ fontSize: "11px", fontWeight: 800, color: "#1e3a8a", textDecoration: "none", background: "#f8fafc", padding: "4px 8px", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
+                  Campo ↗
+                </Link>
+                <Link href="/gimnasio" style={{ fontSize: "11px", fontWeight: 800, color: "#1e3a8a", textDecoration: "none", background: "#f8fafc", padding: "4px 8px", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
+                  Gym ↗
+                </Link>
+              </div>
             </div>
-            <div className="session-list">
+
+            <div className="session-list" style={{ marginTop: "10px", display: "flex", flexDirection: "column", gap: "10px" }}>
               {activeDayAgenda.length === 0 ? (
-                <div style={{ padding: "24px 16px", textAlign: "center", color: "#64748b", fontSize: "12px", background: "#f8fafc", borderRadius: "8px" }}>
-                  <p style={{ margin: "0 0 6px", fontWeight: 700 }}>🛌 Sin sesiones programadas para este día</p>
-                  <span style={{ fontSize: "11px", color: "#94a3b8" }}>Día de descanso o sin tareas registradas en la planificación.</span>
+                <div style={{ padding: "28px 16px", textAlign: "center", color: "#64748b", background: "#f8fafc", borderRadius: "10px", border: "1px dashed #cbd5e1" }}>
+                  <span style={{ fontSize: "24px", display: "block", marginBottom: "6px" }}>🛌</span>
+                  <p style={{ margin: "0 0 4px", fontWeight: 800, fontSize: "13px", color: "#334155" }}>
+                    Sin sesiones programadas para este día
+                  </p>
+                  <span style={{ fontSize: "11.5px", color: "#94a3b8" }}>
+                    Día libre o sin bloques de trabajo asignados en el calendario.
+                  </span>
                 </div>
               ) : (
-                activeDayAgenda.map((item, idx) => (
-                  <div key={idx} className="agenda-row">
-                    <time>{item.time}</time>
-                    <div>
-                      <div className="agenda-line">
-                        <span className={`agenda-dot ${item.tone}`} />
-                        <strong>{item.title}</strong>
+                activeDayAgenda.map((item, idx) => {
+                  let toneBorder = "#3b82f6";
+                  let toneBg = "#eff6ff";
+                  let toneColor = "#1d4ed8";
+                  if (item.tone === "orange") {
+                    toneBorder = "#f97316";
+                    toneBg = "#fff7ed";
+                    toneColor = "#c2410c";
+                  } else if (item.tone === "coral") {
+                    toneBorder = "#ef4444";
+                    toneBg = "#fef2f2";
+                    toneColor = "#b91c1c";
+                  } else if (item.tone === "mint") {
+                    toneBorder = "#10b981";
+                    toneBg = "#f0fdf4";
+                    toneColor = "#047857";
+                  }
+
+                  return (
+                    <div
+                      key={idx}
+                      style={{
+                        display: "flex",
+                        alignItems: "flex-start",
+                        gap: "12px",
+                        padding: "10px 14px",
+                        borderRadius: "10px",
+                        background: "#ffffff",
+                        border: "1px solid #e2e8f0",
+                        borderLeft: `4px solid ${toneBorder}`,
+                        boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+                      }}
+                    >
+                      {/* Hora estilo cápsula */}
+                      <time
+                        style={{
+                          fontSize: "11px",
+                          fontWeight: 800,
+                          color: "#1e293b",
+                          background: "#f1f5f9",
+                          padding: "3px 8px",
+                          borderRadius: "6px",
+                          whiteSpace: "nowrap",
+                          flexShrink: 0,
+                          marginTop: "2px",
+                        }}
+                      >
+                        {item.time}
+                      </time>
+
+                      {/* Info de sesión */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", flexWrap: "wrap" }}>
+                          <strong style={{ fontSize: "13px", color: "#0f172a", fontWeight: 800 }}>
+                            {item.title}
+                          </strong>
+                          <span
+                            style={{
+                              fontSize: "9.5px",
+                              fontWeight: 800,
+                              padding: "2px 6px",
+                              borderRadius: "4px",
+                              background: toneBg,
+                              color: toneColor,
+                              border: `1px solid ${toneBorder}33`,
+                              textTransform: "uppercase",
+                              letterSpacing: "0.03em",
+                            }}
+                          >
+                            {item.tag}
+                          </span>
+                        </div>
+                        {item.desc && (
+                          <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: "11.5px", lineHeight: 1.4 }}>
+                            {item.desc}
+                          </p>
+                        )}
                       </div>
-                      <p>{item.desc}</p>
                     </div>
-                    <span className={`event-tag ${item.tone}`}>{item.tag}</span>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </section>
@@ -1818,6 +2170,35 @@ export default function Home() {
               </div>
 
               <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const todayISO = new Date().toISOString().split("T")[0];
+                    setCommentDate(activeDay.dateISO || todayISO);
+                    if (!commentPlayerId && teamJugadores.length > 0) {
+                      setCommentPlayerId(teamJugadores[0].id);
+                    }
+                    setShowCommentModal(true);
+                  }}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    background: "linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%)",
+                    color: "#ffffff",
+                    padding: "7px 14px",
+                    borderRadius: "8px",
+                    border: "none",
+                    fontSize: "12px",
+                    fontWeight: 800,
+                    cursor: "pointer",
+                    boxShadow: "0 2px 6px rgba(37,99,235,0.25)",
+                    transition: "transform 0.1s ease",
+                  }}
+                >
+                  <span style={{ fontSize: "14px" }}>✍️</span>
+                  <span>+ Añadir Observación</span>
+                </button>
                 <span
                   suppressHydrationWarning
                   style={{
@@ -2158,6 +2539,473 @@ export default function Home() {
           <span className="bottom-nav-label">Menú</span>
         </button>
       </nav>
+
+      {/* ─── BOTÓN FLOTANTE RÁPIDO PARA MÓVIL ─── */}
+      <div
+        className="mobile-quick-action-fab"
+        style={{
+          position: "fixed",
+          bottom: "76px",
+          right: "16px",
+          zIndex: 990,
+          display: "flex",
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => {
+            const todayISO = new Date().toISOString().split("T")[0];
+            setCommentDate(todayISO);
+            if (!commentPlayerId && teamJugadores.length > 0) {
+              setCommentPlayerId(teamJugadores[0].id);
+            }
+            setShowCommentModal(true);
+          }}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "7px",
+            background: "linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%)",
+            color: "#ffffff",
+            border: "none",
+            borderRadius: "30px",
+            padding: "10px 18px",
+            fontSize: "13px",
+            fontWeight: 800,
+            boxShadow: "0 4px 14px rgba(30, 58, 138, 0.45)",
+            cursor: "pointer",
+          }}
+        >
+          <span style={{ fontSize: "16px" }}>✍️</span>
+          <span>Nota</span>
+        </button>
+      </div>
+
+      {/* ─── MODAL RÁPIDO PARA REGISTRAR OBSERVACIÓN A JUGADOR ─── */}
+      {showCommentModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15, 23, 42, 0.65)",
+            backdropFilter: "blur(4px)",
+            zIndex: 9999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "16px",
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowCommentModal(false);
+          }}
+        >
+          <div
+            style={{
+              background: "#ffffff",
+              borderRadius: "16px",
+              width: "100%",
+              maxWidth: "520px",
+              maxHeight: "90vh",
+              overflowY: "auto",
+              boxShadow: "0 20px 25px -5px rgba(0,0,0,0.2), 0 10px 10px -5px rgba(0,0,0,0.1)",
+              padding: "20px 22px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "16px",
+              border: "1px solid #cbd5e1",
+            }}
+          >
+            {/* Modal Header */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #f1f5f9", paddingBottom: "12px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ fontSize: "20px" }}>✍️</span>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 900, color: "#0f172a" }}>
+                    Registrar Observación
+                  </h3>
+                  <span style={{ fontSize: "11px", color: "#64748b" }}>
+                    Se sincronizará en la nube y será visible en PC y móvil
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCommentModal(false)}
+                style={{
+                  background: "#f1f5f9",
+                  border: "none",
+                  borderRadius: "50%",
+                  width: "28px",
+                  height: "28px",
+                  fontSize: "14px",
+                  fontWeight: 800,
+                  color: "#64748b",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveObservation} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+              {/* 1. Selector de Fecha (con accesos directos Ayer / Hoy / Mañana) */}
+              <div>
+                <label style={{ display: "block", fontSize: "11.5px", fontWeight: 800, color: "#334155", marginBottom: "6px" }}>
+                  📅 Fecha de la observación:
+                </label>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                  <input
+                    type="date"
+                    value={commentDate}
+                    onChange={(e) => setCommentDate(e.target.value)}
+                    style={{
+                      flex: 1,
+                      minWidth: "140px",
+                      padding: "8px 10px",
+                      borderRadius: "8px",
+                      border: "1px solid #cbd5e1",
+                      fontSize: "13px",
+                      fontWeight: 700,
+                      color: "#0f172a",
+                      background: "#f8fafc",
+                    }}
+                  />
+                  {(() => {
+                    const now = new Date();
+                    const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+                    const dYesterday = new Date(now);
+                    dYesterday.setDate(now.getDate() - 1);
+                    const yestISO = `${dYesterday.getFullYear()}-${String(dYesterday.getMonth() + 1).padStart(2, "0")}-${String(dYesterday.getDate()).padStart(2, "0")}`;
+                    const dTomorrow = new Date(now);
+                    dTomorrow.setDate(now.getDate() + 1);
+                    const tomISO = `${dTomorrow.getFullYear()}-${String(dTomorrow.getMonth() + 1).padStart(2, "0")}-${String(dTomorrow.getDate()).padStart(2, "0")}`;
+
+                    return (
+                      <div style={{ display: "flex", gap: "4px" }}>
+                        <button
+                          type="button"
+                          onClick={() => setCommentDate(yestISO)}
+                          style={{
+                            padding: "6px 9px",
+                            fontSize: "11px",
+                            fontWeight: commentDate === yestISO ? 800 : 600,
+                            borderRadius: "6px",
+                            border: "1px solid #cbd5e1",
+                            background: commentDate === yestISO ? "#1e3a8a" : "#ffffff",
+                            color: commentDate === yestISO ? "#ffffff" : "#475569",
+                            cursor: "pointer",
+                          }}
+                        >
+                          Ayer
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCommentDate(todayISO)}
+                          style={{
+                            padding: "6px 9px",
+                            fontSize: "11px",
+                            fontWeight: commentDate === todayISO ? 800 : 600,
+                            borderRadius: "6px",
+                            border: "1px solid #cbd5e1",
+                            background: commentDate === todayISO ? "#1e3a8a" : "#ffffff",
+                            color: commentDate === todayISO ? "#ffffff" : "#475569",
+                            cursor: "pointer",
+                          }}
+                        >
+                          Hoy
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCommentDate(tomISO)}
+                          style={{
+                            padding: "6px 9px",
+                            fontSize: "11px",
+                            fontWeight: commentDate === tomISO ? 800 : 600,
+                            borderRadius: "6px",
+                            border: "1px solid #cbd5e1",
+                            background: commentDate === tomISO ? "#1e3a8a" : "#ffffff",
+                            color: commentDate === tomISO ? "#ffffff" : "#475569",
+                            cursor: "pointer",
+                          }}
+                        >
+                          Mañana
+                        </button>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* 2. Selector de Deportista */}
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                  <label style={{ fontSize: "11.5px", fontWeight: 800, color: "#334155" }}>
+                    🏃 Deportista / Equipo:
+                  </label>
+                  <input
+                    type="text"
+                    value={commentPlayerSearch}
+                    onChange={(e) => setCommentPlayerSearch(e.target.value)}
+                    placeholder="🔍 Filtrar nombre..."
+                    style={{
+                      fontSize: "11px",
+                      padding: "3px 8px",
+                      borderRadius: "6px",
+                      border: "1px solid #cbd5e1",
+                      outline: "none",
+                      width: "140px",
+                    }}
+                  />
+                </div>
+
+                <div
+                  style={{
+                    maxHeight: "140px",
+                    overflowY: "auto",
+                    border: "1px solid #cbd5e1",
+                    borderRadius: "8px",
+                    background: "#f8fafc",
+                    padding: "4px",
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))",
+                    gap: "4px",
+                  }}
+                >
+                  <div
+                    onClick={() => setCommentPlayerId("TEAM")}
+                    style={{
+                      padding: "6px 8px",
+                      borderRadius: "6px",
+                      background: commentPlayerId === "TEAM" ? "#1e3a8a" : "#ffffff",
+                      color: commentPlayerId === "TEAM" ? "#ffffff" : "#0f172a",
+                      border: commentPlayerId === "TEAM" ? "1px solid #1e3a8a" : "1px solid #e2e8f0",
+                      cursor: "pointer",
+                      fontSize: "11px",
+                      fontWeight: 800,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                    }}
+                  >
+                    <span>👥</span>
+                    <span>TODO EL EQUIPO</span>
+                  </div>
+
+                  {teamJugadores
+                    .filter((j) => {
+                      if (!commentPlayerSearch.trim()) return true;
+                      const q = commentPlayerSearch.toLowerCase();
+                      return (j.nombre || "").toLowerCase().includes(q) || (j.apodo || "").toLowerCase().includes(q);
+                    })
+                    .map((j) => {
+                      const isSel = commentPlayerId === j.id;
+                      return (
+                        <div
+                          key={j.id}
+                          onClick={() => setCommentPlayerId(j.id)}
+                          style={{
+                            padding: "5px 7px",
+                            borderRadius: "6px",
+                            background: isSel ? "#1e3a8a" : "#ffffff",
+                            color: isSel ? "#ffffff" : "#0f172a",
+                            border: isSel ? "1px solid #1e3a8a" : "1px solid #e2e8f0",
+                            cursor: "pointer",
+                            fontSize: "11px",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            overflow: "hidden",
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: "20px",
+                              height: "20px",
+                              borderRadius: "50%",
+                              background: "#cbd5e1",
+                              overflow: "hidden",
+                              flexShrink: 0,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: "9px",
+                              fontWeight: 800,
+                            }}
+                          >
+                            {j.foto_url ? (
+                              <img src={j.foto_url} alt={j.nombre} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            ) : (
+                              (j.apodo || j.nombre).slice(0, 2).toUpperCase()
+                            )}
+                          </div>
+                          <strong style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontSize: "11px" }}>
+                            {j.apodo || j.nombre}
+                          </strong>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+
+              {/* 3. Chips de Categoría */}
+              <div>
+                <label style={{ display: "block", fontSize: "11.5px", fontWeight: 800, color: "#334155", marginBottom: "6px" }}>
+                  🏷️ Tipo de observación:
+                </label>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "6px" }}>
+                  {[
+                    { key: "FIS", label: "Médico / Fisio", icon: "🩺", col: "#ef4444", bg: "#fef2f2" },
+                    { key: "CON", label: "Condicional / Físico", icon: "⚡", col: "#f97316", bg: "#fff7ed" },
+                    { key: "TEC", label: "Técnico / Táctico", icon: "⚽", col: "#16a34a", bg: "#f0fdf4" },
+                    { key: "PSI", label: "Psicológico", icon: "🧠", col: "#9333ea", bg: "#faf5ff" },
+                    { key: "WEL", label: "Wellness / Fatiga", icon: "📊", col: "#0284c7", bg: "#f0f9ff" },
+                    { key: "OTR", label: "General", icon: "📝", col: "#475569", bg: "#f8fafc" },
+                  ].map((cat) => {
+                    const isSel = commentCategory === cat.key;
+                    return (
+                      <button
+                        key={cat.key}
+                        type="button"
+                        onClick={() => setCommentCategory(cat.key as any)}
+                        style={{
+                          padding: "8px 6px",
+                          borderRadius: "8px",
+                          border: isSel ? `2px solid ${cat.col}` : "1px solid #e2e8f0",
+                          background: isSel ? cat.bg : "#ffffff",
+                          color: isSel ? cat.col : "#475569",
+                          fontWeight: isSel ? 900 : 700,
+                          fontSize: "11px",
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: "4px",
+                          transition: "all 0.15s ease",
+                        }}
+                      >
+                        <span>{cat.icon}</span>
+                        <span>{cat.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 4. Texto de la Observación */}
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px", flexWrap: "wrap", gap: "4px" }}>
+                  <label style={{ fontSize: "11.5px", fontWeight: 800, color: "#334155" }}>
+                    💬 Comentario / Observación:
+                  </label>
+                  <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
+                    {["Molestias musculares", "Completó sesión", "Trabajo parcial", "Buenas sensaciones"].map((chip) => (
+                      <button
+                        key={chip}
+                        type="button"
+                        onClick={() => setCommentMessage((prev) => (prev ? `${prev}. ${chip}` : chip))}
+                        style={{
+                          fontSize: "9.5px",
+                          fontWeight: 700,
+                          padding: "2px 6px",
+                          borderRadius: "4px",
+                          border: "1px solid #cbd5e1",
+                          background: "#f1f5f9",
+                          color: "#475569",
+                          cursor: "pointer",
+                        }}
+                      >
+                        +{chip}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <textarea
+                  rows={3}
+                  value={commentMessage}
+                  onChange={(e) => setCommentMessage(e.target.value)}
+                  placeholder="Escribe la observación sobre el deportista para esta fecha..."
+                  style={{
+                    width: "100%",
+                    boxSizing: "border-box",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "1px solid #cbd5e1",
+                    fontSize: "12.5px",
+                    fontFamily: "inherit",
+                    outline: "none",
+                    resize: "vertical",
+                  }}
+                  required
+                />
+              </div>
+
+              {/* Feedback Message */}
+              {commentFeedbackMsg && (
+                <div
+                  style={{
+                    padding: "8px 12px",
+                    borderRadius: "6px",
+                    background: "#f0fdf4",
+                    color: "#16a34a",
+                    border: "1px solid #bbf7d0",
+                    fontSize: "12px",
+                    fontWeight: 800,
+                    textAlign: "center",
+                  }}
+                >
+                  {commentFeedbackMsg}
+                </div>
+              )}
+
+              {/* Botón Guardar */}
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "4px" }}>
+                <button
+                  type="button"
+                  onClick={() => setShowCommentModal(false)}
+                  disabled={isSubmittingComment}
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: "8px",
+                    border: "1px solid #cbd5e1",
+                    background: "#ffffff",
+                    color: "#64748b",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingComment || !commentMessage.trim() || !commentPlayerId}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    padding: "8px 20px",
+                    borderRadius: "8px",
+                    border: "none",
+                    background: isSubmittingComment ? "#94a3b8" : "linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%)",
+                    color: "#ffffff",
+                    fontSize: "12.5px",
+                    fontWeight: 800,
+                    cursor: isSubmittingComment ? "not-allowed" : "pointer",
+                    boxShadow: "0 2px 6px rgba(37,99,235,0.3)",
+                  }}
+                >
+                  <span>{isSubmittingComment ? "⏳" : "💾"}</span>
+                  <span>{isSubmittingComment ? "Guardando..." : "Guardar Observación"}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
