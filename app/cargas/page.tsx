@@ -784,7 +784,7 @@ function CargasContent() {
             setGpsRecords((prev) => {
               const map = new Map();
               prev.forEach((r) => map.set(`${r.jugador_id}_${r.fecha}`, r));
-              syncRes.records.forEach((r: any) => map.set(`${r.jugador_id}_${r.fecha}`, r));
+              (syncRes.records || []).forEach((r: any) => map.set(`${r.jugador_id}_${r.fecha}`, r));
               const merged = Array.from(map.values());
               try {
                 localStorage.setItem("gps_datos_map_v1", JSON.stringify(merged));

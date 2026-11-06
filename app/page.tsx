@@ -164,7 +164,7 @@ function getAgendaForDate(
 import Link from "next/link";
 import { useClubConfig } from "@/app/lib/useClubConfig";
 import { useState, useEffect, useMemo } from "react";
-import { getActiveJugadores, getEstadoDiarioConFechas, getSesionesDiaRange, getAllGpsDatos, savePlayerCommentBBDD } from "@/app/actions";
+import { getActiveJugadores, getEstadoDiarioConFechas, getSesionesDiaRange, getAllGpsDatos, savePlayerCommentBBDD, getPlayerCommentsBBDD } from "@/app/actions";
 import { DEFAULT_CUSTOM_MICROCICLOS } from "@/app/cargas/CargaExternaSection";
 import { extractMicrocyclesFromGpsData, getDeletedMicrocycleIds, CustomMicrocycleDef } from "@/app/lib/microciclos";
 import { getSemaforoCategoria, getDisponibilidadInfo } from "@/app/lib/disponibilidad";
@@ -240,6 +240,8 @@ export default function Home() {
   const [loadingGps, setLoadingGps] = useState<boolean>(true);
   const [alarmThreshold, setAlarmThreshold] = useState<number>(50); // 50% umbral solicitado
   const [alarmFilter, setAlarmFilter] = useState<"todos" | "picos" | "descensos">("todos");
+  const [hsrAlarmsCollapsed, setHsrAlarmsCollapsed] = useState<boolean>(true); // Plegadas por defecto
+  const [realComments, setRealComments] = useState<any[]>([]);
 
   // ─── COMENTARIOS DEL DÍA EN JUGADORES (PERSISTIDOS EN LOCALSTORAGE) ───
   type DailyPlayerComment = {
@@ -568,12 +570,16 @@ export default function Home() {
     let dbMap: Record<string, string> = {};
     let dbSesiones: any[] = [];
     try {
-      const [m, s] = await Promise.all([
+      const [m, s, coms] = await Promise.all([
         getEstadoDiarioConFechas(),
         getSesionesDiaRange(),
+        getPlayerCommentsBBDD().catch(() => []),
       ]);
       dbMap = m || {};
       dbSesiones = s || [];
+      if (Array.isArray(coms) && coms.length > 0) {
+        setRealComments(coms);
+      }
     } catch (e) {}
 
     if (typeof window !== "undefined") {
@@ -908,8 +914,42 @@ export default function Home() {
           });
         }
       } catch {}
+    }
 
-      // 3. De comentarios_jugadores_v2 & planificacion_comentarios_v1
+    // 3. De realComments (cargados de Supabase BBDD)
+    realComments.forEach((c) => {
+      if (!c || !c.jugador_id || c.jugador_id === "TEAM" || !c.texto) return;
+      const dateISO = c.fecha || c.day_id?.replace(/^day_/, "");
+      if (dateISO) {
+        const key = `${c.jugador_id}_${dateISO}_${c.texto.slice(0, 20)}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          const p = teamJugadores.find((j) => j.id === c.jugador_id);
+          let tag = "General";
+          if (c.tipo === "FIS" || c.tipo === "OTR") tag = "Médico / Molestias";
+          else if (c.tipo === "WEL") tag = "Wellness / Carga";
+          else if (c.tipo === "TEC") tag = "Técnico / Táctico";
+          else if (c.tipo === "CON") tag = "Físico / Condicional";
+          else if (c.tipo === "PSI") tag = "Psicológico";
+
+          items.push({
+            id: `db-${c.id || key}`,
+            playerId: c.jugador_id,
+            playerName: p?.apodo || p?.nombre || c.jugador_id,
+            playerPhoto: p?.foto_url || null,
+            posicion: p?.posicion || null,
+            dateISO,
+            tag,
+            comment: c.texto.trim(),
+            author: "Staff BBDD",
+            createdAt: "Nube",
+          });
+        }
+      }
+    });
+
+    // 4. De comentarios_jugadores_v2 & planificacion_comentarios_v1 en localStorage
+    if (typeof window !== "undefined") {
       try {
         const rawCom = localStorage.getItem("comentarios_jugadores_v2");
         const rawPlan = localStorage.getItem("planificacion_comentarios_v1");
@@ -920,17 +960,18 @@ export default function Home() {
 
         allStored.forEach((c) => {
           if (!c || !c.jugador_id || c.jugador_id === "TEAM" || !c.texto) return;
-          const dateISO = c.fecha || c.day_id;
-          if (dateISO && validDates.has(dateISO)) {
+          const dateISO = c.fecha || c.day_id?.replace(/^day_/, "");
+          if (dateISO) {
             const key = `${c.jugador_id}_${dateISO}_${c.texto.slice(0, 20)}`;
             if (!seen.has(key)) {
               seen.add(key);
               const p = teamJugadores.find((j) => j.id === c.jugador_id);
               let tag = "General";
               if (c.tipo === "FIS" || c.tipo === "OTR") tag = "Médico / Molestias";
-              else if (c.tipo === "WEL") tag = "Carga / Fatiga";
+              else if (c.tipo === "WEL") tag = "Wellness / Carga";
               else if (c.tipo === "TEC") tag = "Técnico / Táctico";
-              else if (c.tipo === "CON") tag = "Físico";
+              else if (c.tipo === "CON") tag = "Físico / Condicional";
+              else if (c.tipo === "PSI") tag = "Psicológico";
 
               items.push({
                 id: `stored-${c.jugador_id}-${dateISO}-${items.length}`,
@@ -950,94 +991,9 @@ export default function Home() {
       } catch {}
     }
 
-    // 4. Si la lista está vacía, proporcionar observaciones de demostración contextualizadas en el equipo
-    if (items.length === 0 && teamJugadores.length > 0) {
-      const d0 = last4DaysList[0]?.dateISO || "2026-11-05";
-      const d1 = last4DaysList[1]?.dateISO || "2026-11-04";
-      const d2 = last4DaysList[2]?.dateISO || "2026-11-03";
-      const d3 = last4DaysList[3]?.dateISO || "2026-11-02";
-
-      const pCampeny = teamJugadores.find((j) => (j.nombre || "").toUpperCase().includes("CAMPENY")) || teamJugadores[0];
-      const pExp = teamJugadores.find((j) => (j.nombre || "").toUpperCase().includes("EXPÓSITO") || (j.nombre || "").toUpperCase().includes("EXPOSITO")) || teamJugadores[1];
-      const pPad = teamJugadores.find((j) => (j.nombre || "").toUpperCase().includes("PADILLO")) || teamJugadores[2];
-      const pTito = teamJugadores.find((j) => (j.nombre || "").toUpperCase().includes("TITO")) || teamJugadores[3];
-      const pCano = teamJugadores.find((j) => (j.nombre || "").toUpperCase().includes("CANO")) || teamJugadores[4];
-
-      if (pCampeny) {
-        items.push({
-          id: "demo-1",
-          playerId: pCampeny.id,
-          playerName: pCampeny.apodo || pCampeny.nombre,
-          playerPhoto: pCampeny.foto_url || null,
-          posicion: pCampeny.posicion || "CENTRAL IZQ",
-          dateISO: d0,
-          tag: "Médico / Molestias",
-          comment: "Molestias leves en el bíceps femoral de la pierna derecha al finalizar la tarea reducida. Realiza trabajo preventivo y descarga con fisioterapeuta.",
-          author: "Cuerpo Médico",
-          createdAt: "10:15",
-        });
-      }
-      if (pExp) {
-        items.push({
-          id: "demo-2",
-          playerId: pExp.id,
-          playerName: pExp.apodo || pExp.nombre,
-          playerPhoto: pExp.foto_url || null,
-          posicion: pExp.posicion || "INTERIOR DERECHO",
-          dateISO: d0,
-          tag: "Físico",
-          comment: "Muy buena respuesta al estímulo de alta velocidad. Completa el 100% del volumen programado de carrera a alta intensidad sin fatiga residual.",
-          author: "Prep. Físico",
-          createdAt: "11:30",
-        });
-      }
-      if (pPad) {
-        items.push({
-          id: "demo-3",
-          playerId: pPad.id,
-          playerName: pPad.apodo || pPad.nombre,
-          playerPhoto: pPad.foto_url || null,
-          posicion: pPad.posicion || "CARRIL DERECHO",
-          dateISO: d1,
-          tag: "Carga / Fatiga",
-          comment: "Buena integración al ritmo competitivo tras alta. Acumula minutos de aceleraciones y desaceleraciones óptimas en tareas tácticas.",
-          author: "Cuerpo Técnico",
-          createdAt: "12:00",
-        });
-      }
-      if (pTito) {
-        items.push({
-          id: "demo-4",
-          playerId: pTito.id,
-          playerName: pTito.apodo || pTito.nombre,
-          playerPhoto: pTito.foto_url || null,
-          posicion: pTito.posicion || "PIVOTE",
-          dateISO: d2,
-          tag: "Técnico / Táctico",
-          comment: "Excelente posicionamiento en las basculaciones defensivas y transiciones. Reporta sensaciones óptimas de recuperación post-partido.",
-          author: "Segundo Entrenador",
-          createdAt: "17:45",
-        });
-      }
-      if (pCano) {
-        items.push({
-          id: "demo-5",
-          playerId: pCano.id,
-          playerName: pCano.apodo || pCano.nombre,
-          playerPhoto: pCano.foto_url || null,
-          posicion: pCano.posicion || "CARRIL DERECHO",
-          dateISO: d3,
-          tag: "Carga / Fatiga",
-          comment: "Fatiga muscular general tras doble partido. Se pauta protocolo de baño de contraste y trabajo regenerativo guiado.",
-          author: "Prep. Físico",
-          createdAt: "18:20",
-        });
-      }
-    }
-
-    // Ordenar cronológicamente descendente
+    // Ordenar cronológicamente descendente (comentarios más recientes primero)
     return items.sort((a, b) => b.dateISO.localeCompare(a.dateISO));
-  }, [isHydrated, dailyComments, last4DaysList, teamJugadores]);
+  }, [isHydrated, dailyComments, realComments, last4DaysList, teamJugadores]);
 
   const filteredLast4Comments = useMemo(() => {
     return last4DaysPlayerComments.filter((c) => {
@@ -1850,290 +1806,6 @@ export default function Home() {
             </div>
           </section>
 
-          {/* ─── 🚨 PANEL DE ALARMAS DE CARGA GPS (HSR > 50% vs ÚLTIMO MICROCICLO) ─── */}
-          <section
-            className="panel"
-            suppressHydrationWarning
-            style={{
-              gridColumn: "span 3",
-              background: "#ffffff",
-              padding: "18px 22px",
-              borderRadius: "12px",
-              border: "1px solid #e2e8f0",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                flexWrap: "wrap",
-                gap: "12px",
-                marginBottom: "14px",
-                paddingBottom: "10px",
-                borderBottom: "1px solid #f1f5f9",
-              }}
-            >
-              <div>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <span style={{ fontSize: "11px", fontWeight: 900, color: "#dc2626", background: "#fef2f2", padding: "3px 8px", borderRadius: "6px", letterSpacing: "0.04em" }}>
-                    🚨 CONTROL DE SOBRECARGA GPS · 2 ÚLTIMOS MICROCICLOS TERMINADOS
-                  </span>
-                  {hsrAlarmsData.latestMc && hsrAlarmsData.prevMc && (
-                    <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>
-                      Comparando: <strong>{hsrAlarmsData.prevMc.nombre || `${hsrAlarmsData.prevMc.start} al ${hsrAlarmsData.prevMc.end}`}</strong> ➔ <strong>{hsrAlarmsData.latestMc.nombre || `${hsrAlarmsData.latestMc.start} al ${hsrAlarmsData.latestMc.end}`}</strong> (Semanas Completas Finalizadas)
-                    </span>
-                  )}
-                </div>
-                <h3 style={{ fontSize: "16px", fontWeight: 900, color: "#0f172a", margin: "4px 0 0 0" }}>
-                  Alarmas de HSR (Variación &gt; {alarmThreshold}% en Alta Velocidad)
-                </h3>
-              </div>
-
-              {/* Filtros de la alarma */}
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                <div style={{ display: "inline-flex", background: "#f1f5f9", borderRadius: "6px", padding: "2px", border: "1px solid #cbd5e1" }}>
-                  <button
-                    type="button"
-                    onClick={() => setAlarmFilter("todos")}
-                    style={{
-                      fontSize: "11px",
-                      fontWeight: alarmFilter === "todos" ? 800 : 600,
-                      padding: "3px 8px",
-                      borderRadius: "4px",
-                      border: "none",
-                      background: alarmFilter === "todos" ? "#1e3a8a" : "transparent",
-                      color: alarmFilter === "todos" ? "#ffffff" : "#64748b",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Todas ({hsrAlarmsData.alerts.length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAlarmFilter("picos")}
-                    style={{
-                      fontSize: "11px",
-                      fontWeight: alarmFilter === "picos" ? 800 : 600,
-                      padding: "3px 8px",
-                      borderRadius: "4px",
-                      border: "none",
-                      background: alarmFilter === "picos" ? "#dc2626" : "transparent",
-                      color: alarmFilter === "picos" ? "#ffffff" : "#64748b",
-                      cursor: "pointer",
-                    }}
-                  >
-                    🔺 Picos ({hsrAlarmsData.alerts.filter(a => a.isSpike).length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAlarmFilter("descensos")}
-                    style={{
-                      fontSize: "11px",
-                      fontWeight: alarmFilter === "descensos" ? 800 : 600,
-                      padding: "3px 8px",
-                      borderRadius: "4px",
-                      border: "none",
-                      background: alarmFilter === "descensos" ? "#ea580c" : "transparent",
-                      color: alarmFilter === "descensos" ? "#ffffff" : "#64748b",
-                      cursor: "pointer",
-                    }}
-                  >
-                    🔻 Descensos ({hsrAlarmsData.alerts.filter(a => !a.isSpike).length})
-                  </button>
-                </div>
-
-                <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                  <span style={{ fontSize: "11px", fontWeight: 700, color: "#64748b" }}>Umbral:</span>
-                  <select
-                    value={alarmThreshold}
-                    onChange={(e) => setAlarmThreshold(Number(e.target.value))}
-                    style={{ fontSize: "11px", fontWeight: 700, padding: "2px 6px", borderRadius: "4px", border: "1px solid #cbd5e1" }}
-                  >
-                    <option value={50}>50% (Recomendado)</option>
-                    <option value={40}>40%</option>
-                    <option value={30}>30%</option>
-                  </select>
-                </div>
-
-                <Link
-                  href="/informes/mesociclo"
-                  style={{
-                    fontSize: "11.5px",
-                    fontWeight: 800,
-                    color: "#1e3a8a",
-                    textDecoration: "none",
-                    background: "#eff6ff",
-                    padding: "4px 10px",
-                    borderRadius: "6px",
-                    border: "1px solid #bfdbfe",
-                  }}
-                >
-                  Ver Informe Mesociclo ↗
-                </Link>
-              </div>
-            </div>
-
-            {/* Grid de Tarjetas de Alarma */}
-            {loadingGps ? (
-              <div style={{ padding: "24px", textAlign: "center", color: "#64748b", fontSize: "12px" }}>
-                Calculando variaciones de HSR entre microciclos...
-              </div>
-            ) : filteredHsrAlerts.length === 0 ? (
-              <div
-                style={{
-                  padding: "20px",
-                  borderRadius: "8px",
-                  background: "#f0fdf4",
-                  border: "1px solid #bbf7d0",
-                  color: "#166534",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "10px",
-                  fontSize: "12.5px",
-                  fontWeight: 700,
-                }}
-              >
-                <span style={{ fontSize: "20px" }}>✅</span>
-                <span>Todos los jugadores se encuentran dentro del rango seguro (ninguna variación de HSR supera el {alarmThreshold}% frente al microciclo anterior).</span>
-              </div>
-            ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(290px, 1fr))", gap: "12px" }}>
-                {filteredHsrAlerts.map((alert) => {
-                  const j = alert.player;
-                  const isSpike = alert.isSpike;
-                  const borderCol = isSpike ? "#fca5a5" : "#fed7aa";
-                  const bgCol = isSpike ? "#fff5f5" : "#fffaf0";
-                  const badgeCol = isSpike ? "#dc2626" : "#ea580c";
-                  const badgeBg = isSpike ? "#fee2e2" : "#ffedd5";
-
-                  return (
-                    <div
-                      key={j.id}
-                      style={{
-                        padding: "12px 14px",
-                        borderRadius: "10px",
-                        border: `1px solid ${borderCol}`,
-                        background: bgCol,
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: "8px",
-                        boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
-                      }}
-                    >
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                          <div
-                            style={{
-                              width: "36px",
-                              height: "36px",
-                              borderRadius: "50%",
-                              background: "#ffffff",
-                              border: "1px solid #cbd5e1",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              fontWeight: 800,
-                              fontSize: "12px",
-                              color: "#1e3a8a",
-                              overflow: "hidden",
-                              flexShrink: 0,
-                            }}
-                          >
-                            {j.foto_url ? (
-                              <img src={j.foto_url} alt={j.nombre} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                            ) : (
-                              <span>{(j.apodo || j.nombre).slice(0, 2).toUpperCase()}</span>
-                            )}
-                          </div>
-                          <div>
-                            <strong style={{ fontSize: "13px", color: "#0f172a", display: "block" }}>
-                              {(j.apodo || j.nombre).toUpperCase()}
-                            </strong>
-                            <span style={{ fontSize: "11px", color: "#64748b", textTransform: "uppercase", fontWeight: 600 }}>
-                              {j.posicion || "Jugador"}
-                            </span>
-                          </div>
-                        </div>
-
-                        <span
-                          style={{
-                            fontSize: "11px",
-                            fontWeight: 900,
-                            padding: "3px 8px",
-                            borderRadius: "6px",
-                            background: badgeBg,
-                            color: badgeCol,
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {isSpike ? "🔺" : "🔻"} {alert.diffPct > 0 ? "+" : ""}{alert.diffPct}%
-                        </span>
-                      </div>
-
-                      {/* Comparativa Numérica */}
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "1fr 1fr 1fr",
-                          gap: "6px",
-                          background: "#ffffff",
-                          padding: "8px 10px",
-                          borderRadius: "6px",
-                          border: "1px solid #e2e8f0",
-                          textAlign: "center",
-                        }}
-                      >
-                        <div>
-                          <span style={{ display: "block", fontSize: "9.5px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Actual</span>
-                          <strong style={{ fontSize: "12.5px", color: "#0f172a" }}>{alert.curr.toLocaleString()} <small style={{ fontSize: "9px" }}>m</small></strong>
-                        </div>
-                        <div>
-                          <span style={{ display: "block", fontSize: "9.5px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Anterior</span>
-                          <strong style={{ fontSize: "12.5px", color: "#64748b" }}>{alert.prev.toLocaleString()} <small style={{ fontSize: "9px" }}>m</small></strong>
-                        </div>
-                        <div>
-                          <span style={{ display: "block", fontSize: "9.5px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Diferencia</span>
-                          <strong style={{ fontSize: "12.5px", color: badgeCol }}>
-                            {alert.diffM > 0 ? "+" : ""}{alert.diffM.toLocaleString()} <small style={{ fontSize: "9px" }}>m</small>
-                          </strong>
-                        </div>
-                      </div>
-
-                      {/* Barra de progreso visual */}
-                      <div>
-                        <div style={{ height: "6px", borderRadius: "3px", background: "#e2e8f0", overflow: "hidden", position: "relative" }}>
-                          <div
-                            style={{
-                              height: "100%",
-                              width: `${Math.min(100, (alert.curr / Math.max(alert.curr, alert.prev, 1)) * 100)}%`,
-                              background: badgeCol,
-                              borderRadius: "3px",
-                            }}
-                          />
-                        </div>
-                      </div>
-
-                      {/* Pie de tarjeta con alerta / link */}
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "10.5px" }}>
-                        <span style={{ fontWeight: 700, color: badgeCol }}>
-                          {isSpike ? "⚠️ Pico de fatiga aguda" : "📉 Descenso significativo"}
-                        </span>
-                        <Link
-                          href={`/informes/microciclo?jugador=${j.id}`}
-                          style={{ color: "#1e3a8a", fontWeight: 800, textDecoration: "none" }}
-                        >
-                          Ver historial ↗
-                        </Link>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-
           {/* ─── 📝 PANEL DE COMENTARIOS Y OBSERVACIONES DE JUGADORES (ÚLTIMOS 4 DÍAS) ─── */}
           <section
             className="panel"
@@ -2504,6 +2176,335 @@ export default function Home() {
                     </div>
                   );
                 })}
+              </div>
+            )}
+          </section>
+
+          {/* ─── 🚨 PANEL DE ALARMAS DE CARGA GPS (HSR > 50% vs ÚLTIMO MICROCICLO) ─── */}
+          <section
+            className="panel"
+            suppressHydrationWarning
+            style={{
+              gridColumn: "span 3",
+              background: "#ffffff",
+              padding: hsrAlarmsCollapsed ? "12px 18px" : "18px 22px",
+              borderRadius: "12px",
+              border: "1px solid #e2e8f0",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+              transition: "all 0.2s ease",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "10px",
+                cursor: "pointer",
+                paddingBottom: hsrAlarmsCollapsed ? "0px" : "12px",
+                borderBottom: hsrAlarmsCollapsed ? "none" : "1px solid #f1f5f9",
+              }}
+              onClick={() => setHsrAlarmsCollapsed((prev) => !prev)}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                <span style={{ fontSize: "11px", fontWeight: 900, color: "#dc2626", background: "#fef2f2", padding: "4px 8px", borderRadius: "6px", letterSpacing: "0.04em" }}>
+                  🚨 CONTROL DE SOBRECARGA GPS · HSR
+                </span>
+                <span style={{ fontSize: "13.5px", fontWeight: 800, color: "#0f172a" }}>
+                  Alarmas de HSR (Variación &gt; {alarmThreshold}% en Alta Velocidad)
+                </span>
+                <span
+                  style={{
+                    fontSize: "11px",
+                    fontWeight: 800,
+                    padding: "2px 8px",
+                    borderRadius: "999px",
+                    background: hsrAlarmsData.alerts.length > 0 ? "#fee2e2" : "#f0fdf4",
+                    color: hsrAlarmsData.alerts.length > 0 ? "#dc2626" : "#166534",
+                  }}
+                >
+                  {loadingGps ? "Calculando..." : `${hsrAlarmsData.alerts.length} ${hsrAlarmsData.alerts.length === 1 ? "alarma" : "alarmas"}`}
+                </span>
+                {hsrAlarmsData.latestMc && hsrAlarmsData.prevMc && !hsrAlarmsCollapsed && (
+                  <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>
+                    Comparando: <strong>{hsrAlarmsData.prevMc.nombre || `${hsrAlarmsData.prevMc.start} al ${hsrAlarmsData.prevMc.end}`}</strong> ➔ <strong>{hsrAlarmsData.latestMc.nombre || `${hsrAlarmsData.latestMc.start} al ${hsrAlarmsData.latestMc.end}`}</strong>
+                  </span>
+                )}
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setHsrAlarmsCollapsed((prev) => !prev);
+                  }}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    fontSize: "11.5px",
+                    fontWeight: 800,
+                    padding: "5px 12px",
+                    borderRadius: "6px",
+                    border: "1px solid #cbd5e1",
+                    background: "#f8fafc",
+                    color: "#334155",
+                    cursor: "pointer",
+                  }}
+                >
+                  <span>{hsrAlarmsCollapsed ? "Desplegar Alarmas" : "Plegar Alarmas"}</span>
+                  <span>{hsrAlarmsCollapsed ? "▼" : "▲"}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Contenido desplegable */}
+            {!hsrAlarmsCollapsed && (
+              <div style={{ marginTop: "14px" }}>
+                {/* Filtros de la alarma */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", flexWrap: "wrap", marginBottom: "14px" }}>
+                  <div style={{ display: "inline-flex", background: "#f1f5f9", borderRadius: "6px", padding: "2px", border: "1px solid #cbd5e1" }}>
+                    <button
+                      type="button"
+                      onClick={() => setAlarmFilter("todos")}
+                      style={{
+                        fontSize: "11px",
+                        fontWeight: alarmFilter === "todos" ? 800 : 600,
+                        padding: "3px 8px",
+                        borderRadius: "4px",
+                        border: "none",
+                        background: alarmFilter === "todos" ? "#1e3a8a" : "transparent",
+                        color: alarmFilter === "todos" ? "#ffffff" : "#64748b",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Todas ({hsrAlarmsData.alerts.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAlarmFilter("picos")}
+                      style={{
+                        fontSize: "11px",
+                        fontWeight: alarmFilter === "picos" ? 800 : 600,
+                        padding: "3px 8px",
+                        borderRadius: "4px",
+                        border: "none",
+                        background: alarmFilter === "picos" ? "#dc2626" : "transparent",
+                        color: alarmFilter === "picos" ? "#ffffff" : "#64748b",
+                        cursor: "pointer",
+                      }}
+                    >
+                      🔺 Picos ({hsrAlarmsData.alerts.filter((a) => a.isSpike).length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAlarmFilter("descensos")}
+                      style={{
+                        fontSize: "11px",
+                        fontWeight: alarmFilter === "descensos" ? 800 : 600,
+                        padding: "3px 8px",
+                        borderRadius: "4px",
+                        border: "none",
+                        background: alarmFilter === "descensos" ? "#ea580c" : "transparent",
+                        color: alarmFilter === "descensos" ? "#ffffff" : "#64748b",
+                        cursor: "pointer",
+                      }}
+                    >
+                      🔻 Descensos ({hsrAlarmsData.alerts.filter((a) => !a.isSpike).length})
+                    </button>
+                  </div>
+
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                      <span style={{ fontSize: "11px", fontWeight: 700, color: "#64748b" }}>Umbral:</span>
+                      <select
+                        value={alarmThreshold}
+                        onChange={(e) => setAlarmThreshold(Number(e.target.value))}
+                        style={{ fontSize: "11px", fontWeight: 700, padding: "2px 6px", borderRadius: "4px", border: "1px solid #cbd5e1" }}
+                      >
+                        <option value={50}>50% (Recomendado)</option>
+                        <option value={40}>40%</option>
+                        <option value={30}>30%</option>
+                      </select>
+                    </div>
+
+                    <Link
+                      href="/informes/mesociclo"
+                      style={{
+                        fontSize: "11.5px",
+                        fontWeight: 800,
+                        color: "#1e3a8a",
+                        textDecoration: "none",
+                        background: "#eff6ff",
+                        padding: "4px 10px",
+                        borderRadius: "6px",
+                        border: "1px solid #bfdbfe",
+                      }}
+                    >
+                      Ver Informe Mesociclo ↗
+                    </Link>
+                  </div>
+                </div>
+
+                {/* Grid de Tarjetas de Alarma */}
+                {loadingGps ? (
+                  <div style={{ padding: "24px", textAlign: "center", color: "#64748b", fontSize: "12px" }}>
+                    Calculando variaciones de HSR entre microciclos...
+                  </div>
+                ) : filteredHsrAlerts.length === 0 ? (
+                  <div
+                    style={{
+                      padding: "20px",
+                      borderRadius: "8px",
+                      background: "#f0fdf4",
+                      border: "1px solid #bbf7d0",
+                      color: "#166534",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "10px",
+                      fontSize: "12.5px",
+                      fontWeight: 700,
+                    }}
+                  >
+                    <span style={{ fontSize: "20px" }}>✅</span>
+                    <span>Todos los jugadores se encuentran dentro del rango seguro (ninguna variación de HSR supera el {alarmThreshold}% frente al microciclo anterior).</span>
+                  </div>
+                ) : (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(290px, 1fr))", gap: "12px" }}>
+                    {filteredHsrAlerts.map((alert) => {
+                      const j = alert.player;
+                      const isSpike = alert.isSpike;
+                      const borderCol = isSpike ? "#fca5a5" : "#fed7aa";
+                      const bgCol = isSpike ? "#fff5f5" : "#fffaf0";
+                      const badgeCol = isSpike ? "#dc2626" : "#ea580c";
+                      const badgeBg = isSpike ? "#fee2e2" : "#ffedd5";
+
+                      return (
+                        <div
+                          key={j.id}
+                          style={{
+                            padding: "12px 14px",
+                            borderRadius: "10px",
+                            border: `1px solid ${borderCol}`,
+                            background: bgCol,
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: "8px",
+                            boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+                          }}
+                        >
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                              <div
+                                style={{
+                                  width: "36px",
+                                  height: "36px",
+                                  borderRadius: "50%",
+                                  background: "#ffffff",
+                                  border: "1px solid #cbd5e1",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  fontWeight: 800,
+                                  fontSize: "12px",
+                                  color: "#1e3a8a",
+                                  overflow: "hidden",
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {j.foto_url ? (
+                                  <img src={j.foto_url} alt={j.nombre} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                ) : (
+                                  <span>{(j.apodo || j.nombre).slice(0, 2).toUpperCase()}</span>
+                                )}
+                              </div>
+                              <div>
+                                <strong style={{ fontSize: "13px", color: "#0f172a", display: "block" }}>
+                                  {(j.apodo || j.nombre).toUpperCase()}
+                                </strong>
+                                <span style={{ fontSize: "11px", color: "#64748b", textTransform: "uppercase", fontWeight: 600 }}>
+                                  {j.posicion || "Jugador"}
+                                </span>
+                              </div>
+                            </div>
+
+                            <span
+                              style={{
+                                fontSize: "11px",
+                                fontWeight: 900,
+                                padding: "3px 8px",
+                                borderRadius: "6px",
+                                background: badgeBg,
+                                color: badgeCol,
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {isSpike ? "🔺" : "🔻"} {alert.diffPct > 0 ? "+" : ""}{alert.diffPct}%
+                            </span>
+                          </div>
+
+                          {/* Comparativa Numérica */}
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "1fr 1fr 1fr",
+                              gap: "6px",
+                              background: "#ffffff",
+                              padding: "8px 10px",
+                              borderRadius: "6px",
+                              border: "1px solid #e2e8f0",
+                              textAlign: "center",
+                            }}
+                          >
+                            <div>
+                              <span style={{ display: "block", fontSize: "9.5px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Actual</span>
+                              <strong style={{ fontSize: "12.5px", color: "#0f172a" }}>{alert.curr.toLocaleString()} <small style={{ fontSize: "9px" }}>m</small></strong>
+                            </div>
+                            <div>
+                              <span style={{ display: "block", fontSize: "9.5px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Anterior</span>
+                              <strong style={{ fontSize: "12.5px", color: "#64748b" }}>{alert.prev.toLocaleString()} <small style={{ fontSize: "9px" }}>m</small></strong>
+                            </div>
+                            <div>
+                              <span style={{ display: "block", fontSize: "9.5px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Diferencia</span>
+                              <strong style={{ fontSize: "12.5px", color: badgeCol }}>
+                                {alert.diffM > 0 ? "+" : ""}{alert.diffM.toLocaleString()} <small style={{ fontSize: "9px" }}>m</small>
+                              </strong>
+                            </div>
+                          </div>
+
+                          {/* Barra de progreso visual */}
+                          <div>
+                            <div style={{ height: "6px", borderRadius: "3px", background: "#e2e8f0", overflow: "hidden", position: "relative" }}>
+                              <div
+                                style={{
+                                  height: "100%",
+                                  width: `${Math.min(100, (alert.curr / Math.max(alert.curr, alert.prev, 1)) * 100)}%`,
+                                  background: badgeCol,
+                                  borderRadius: "3px",
+                                }}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Pie de tarjeta con alerta / link */}
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "10.5px" }}>
+                            <span style={{ fontWeight: 700, color: badgeCol }}>
+                              {isSpike ? "⚠️ Pico de fatiga aguda" : "📉 Descenso significativo"}
+                            </span>
+                            <Link
+                              href={`/informes/microciclo?jugador=${j.id}`}
+                              style={{ color: "#1e3a8a", fontWeight: 800, textDecoration: "none" }}
+                            >
+                              Ver historial ↗
+                            </Link>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
           </section>
