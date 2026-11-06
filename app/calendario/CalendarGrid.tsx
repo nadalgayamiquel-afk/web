@@ -7227,6 +7227,9 @@ export function CalendarGrid({
       <div
         className="no-print"
         style={{
+          position: "sticky",
+          top: "0",
+          zIndex: 45,
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
@@ -7237,7 +7240,7 @@ export function CalendarGrid({
           padding: "5px 10px",
           borderRadius: "10px",
           border: "1px solid #cbd5e1",
-          boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+          boxShadow: "0 2px 4px rgba(0,0,0,0.06)",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
