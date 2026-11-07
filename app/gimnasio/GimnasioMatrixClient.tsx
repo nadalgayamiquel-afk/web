@@ -542,12 +542,14 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
       return { bg: '#fecdd3', color: '#881337', border: '#fda4af' };
     };
 
-    // 1. Revisar bloques / slots 1..6
-    for (let slot = 1; slot <= 6; slot++) {
+    // 1. Revisar bloques / slots 0..6 (incluye slot 0 para sesiones matinales / Coadyuvante)
+    for (let slot = 0; slot <= 6; slot++) {
       const k1 = day.id + '_slot_' + slot;
       const k2 = day.fecha + '_slot_' + slot;
-      const evObj = eventosPlanMap[k1] || eventosPlanMap[k2];
-      const rawTipo = (evObj?.tipo || (day as any)['evento_' + slot] || '').trim();
+      const k3 = 'day_' + day.fecha + '_slot_' + slot;
+      const k4 = 'day_' + day.id + '_slot_' + slot;
+      const evObj = eventosPlanMap[k1] || eventosPlanMap[k2] || eventosPlanMap[k3] || eventosPlanMap[k4];
+      const rawTipo = (evObj?.tipo || (day as any)['evento_' + slot] || (slot === 0 ? (day as any)['evento_1'] : '') || '').trim();
       const horaVal = evObj?.hora || '';
 
       const cat = classify(rawTipo);
@@ -559,7 +561,7 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
           label = day.rival?.trim() ? 'Pa vs ' + day.rival.trim() : 'Pa';
         }
 
-        const existing = res.find(r => r.tipo === label || (cat !== 'Pa' && r.tipo.startsWith(cat)));
+        const existing = res.find(r => r.tipo === label && r.hora === horaVal);
         if (!existing) {
           const colors = getColors(cat, rawTipo);
           res.push({ tipo: label, hora: horaVal, ...colors });
@@ -2143,7 +2145,7 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
               </tr>
 
               {/* CABECERA 4: SESIÓN PLANIFICACIÓN (FILA COMPACTA CON HORA Y COLOR PREDETERMINADO) */}
-              <tr style={{ height: '26px', background: '#f8fafc' }}>
+              <tr style={{ minHeight: '26px', height: 'auto', background: '#f8fafc' }}>
                 <th
                   title="Sesión Planificada: Op (Optimizador), Co (Coadyuvante), Pa (Partido)"
                   style={{
@@ -2180,7 +2182,7 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                         verticalAlign: 'middle',
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px', flexWrap: 'nowrap', overflow: 'hidden', minHeight: '18px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px', flexWrap: 'wrap', minHeight: '18px', padding: '2px 0' }}>
                         {evList.length === 0 ? (
                           <span style={{ fontSize: '10px', color: '#cbd5e1', fontWeight: 600 }}>—</span>
                         ) : (
