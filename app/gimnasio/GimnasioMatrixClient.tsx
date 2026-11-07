@@ -478,68 +478,116 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
     });
   }, [jugadores, selectedJugadorChip, searchJugadorText]);
 
-  // Helper para eventos de planificación con hora y color predeterminado (FILA COMPACTA)
+  // Helper para eventos de planificación con hora y color predeterminado (FILA COMPACTA: SOLO Op, Co, Pa)
   const getEventosEspecificosCompact = (day: SesionDia): Array<{ tipo: string; hora: string; bg: string; color: string; border: string }> => {
     const res: Array<{ tipo: string; hora: string; bg: string; color: string; border: string }> = [];
 
-    // Partido
-    if (day.rival?.trim()) {
-      res.push({
-        tipo: 'Pa vs ' + day.rival.trim(),
-        hora: '12:00',
-        bg: '#fee2e2',
-        color: '#991b1b',
-        border: '#fca5a5',
-      });
-    }
+    const classify = (tipoVal?: string | null): 'Co' | 'Op' | 'Pa' | null => {
+      if (!tipoVal) return null;
+      const c = tipoVal.trim().toUpperCase();
+      if (
+        c === 'CO' ||
+        c === 'COP' ||
+        c.startsWith('CO ') ||
+        c.startsWith('CO1') ||
+        c.startsWith('CO2') ||
+        c.includes('COADYUVANTE') ||
+        c.includes('COADJUVANT')
+      ) {
+        return 'Co';
+      }
+      if (
+        c === 'OP' ||
+        c === 'OOP' ||
+        c.startsWith('OP ') ||
+        c.startsWith('OP1') ||
+        c.startsWith('OP2') ||
+        c.includes('OPTIMIZADOR') ||
+        c.includes('OPTIMIZADORA')
+      ) {
+        return 'Op';
+      }
+      if (
+        c === 'PA' ||
+        c === 'PAL' ||
+        c === 'PAV' ||
+        c === 'PL' ||
+        c === 'PV' ||
+        c === 'PAAM' ||
+        c.startsWith('PA ') ||
+        c.startsWith('PA VS') ||
+        c.startsWith('PA.') ||
+        c.includes('PARTIDO')
+      ) {
+        return 'Pa';
+      }
+      return null;
+    };
 
-    // Slots 1..6
+    const getColors = (cat: 'Co' | 'Op' | 'Pa', rawTipo: string) => {
+      const conf = tiposConfigMap[rawTipo.toUpperCase()] || tiposConfigMap[cat.toUpperCase()];
+      if (conf?.bg && conf?.color && conf?.border) {
+        return { bg: conf.bg, color: conf.color, border: conf.border };
+      }
+      if (cat === 'Co') {
+        return { bg: '#fde047', color: '#713f12', border: '#eab308' };
+      }
+      if (cat === 'Op') {
+        return { bg: '#93c5fd', color: '#1e3a8a', border: '#60a5fa' };
+      }
+      return { bg: '#fecdd3', color: '#881337', border: '#fda4af' };
+    };
+
+    // 1. Revisar bloques / slots 1..6
     for (let slot = 1; slot <= 6; slot++) {
       const k1 = day.id + '_slot_' + slot;
       const k2 = day.fecha + '_slot_' + slot;
       const evObj = eventosPlanMap[k1] || eventosPlanMap[k2];
-      const tipoVal = (evObj?.tipo || (day as any)['evento_' + slot] || '').trim();
+      const rawTipo = (evObj?.tipo || (day as any)['evento_' + slot] || '').trim();
       const horaVal = evObj?.hora || '';
 
-      const EXCLUDED = new Set(['E', 'PAL', 'PV', 'PL', 'V', 'PAV', 'P', 'D', 'DESCANSO']);
-      if (tipoVal && !EXCLUDED.has(tipoVal.toUpperCase()) && !res.some(r => r.tipo === tipoVal)) {
-        // Color predeterminado según tipo
-        let bg = '#e0f2fe';
-        let color = '#0369a1';
-        let border = '#bae6fd';
-
-        const conf = tiposConfigMap[tipoVal.toUpperCase()];
-        if (conf) {
-          bg = conf.bg || bg;
-          color = conf.color || color;
-          border = conf.border || border;
-        } else if (tipoVal.toLowerCase().includes('fuerza') || tipoVal.toLowerCase().includes('gimnasio')) {
-          bg = '#ede9fe';
-          color = '#6d28d9';
-          border = '#c4b5fd';
-        } else if (tipoVal.toLowerCase().includes('rondo') || tipoVal.toLowerCase().includes('ssg') || tipoVal.toLowerCase().includes('fútbol')) {
-          bg = '#dcfce7';
-          color = '#15803d';
-          border = '#86efac';
-        } else if (tipoVal.toLowerCase().includes('partido') || tipoVal.toLowerCase().includes('pa')) {
-          bg = '#fee2e2';
-          color = '#991b1b';
-          border = '#fca5a5';
+      const cat = classify(rawTipo);
+      if (cat) {
+        let label: string = cat;
+        if (cat === 'Co' && rawTipo.toUpperCase().startsWith('COP')) label = 'Cop';
+        if (cat === 'Op' && rawTipo.toUpperCase().startsWith('OOP')) label = 'Oop';
+        if (cat === 'Pa') {
+          label = day.rival?.trim() ? 'Pa vs ' + day.rival.trim() : 'Pa';
         }
 
-        res.push({ tipo: tipoVal, hora: horaVal, bg, color, border });
+        const existing = res.find(r => r.tipo === label || (cat !== 'Pa' && r.tipo.startsWith(cat)));
+        if (!existing) {
+          const colors = getColors(cat, rawTipo);
+          res.push({ tipo: label, hora: horaVal, ...colors });
+        } else if (!existing.hora && horaVal) {
+          existing.hora = horaVal;
+        }
       }
     }
 
-    if (res.length === 0) {
-      const evGen = day.evento?.trim() || day.evento_1?.trim() || '—';
+    // 2. Si hay rival y no se ha añadido Pa
+    if (day.rival?.trim() && !res.some(r => r.tipo.startsWith('Pa'))) {
+      const colors = getColors('Pa', 'PA');
       res.push({
-        tipo: evGen,
-        hora: '',
-        bg: evGen === 'Descanso' ? '#f1f5f9' : '#e0f2fe',
-        color: evGen === 'Descanso' ? '#64748b' : '#0369a1',
-        border: '#cbd5e1',
+        tipo: 'Pa vs ' + day.rival.trim(),
+        hora: (day as any).hora || '12:00',
+        ...colors,
       });
+    }
+
+    // 3. Revisar day.evento general si no se encontró nada en slots
+    if (res.length === 0 && day.evento) {
+      const cat = classify(day.evento);
+      if (cat) {
+        let label: string = cat;
+        if (cat === 'Co' && day.evento.toUpperCase().startsWith('COP')) label = 'Cop';
+        if (cat === 'Op' && day.evento.toUpperCase().startsWith('OOP')) label = 'Oop';
+        if (cat === 'Pa') {
+          label = day.rival?.trim() ? 'Pa vs ' + day.rival.trim() : 'Pa';
+        }
+        const colors = getColors(cat, day.evento);
+        res.push({ tipo: label, hora: '', ...colors });
+      }
     }
 
     return res;
@@ -1959,22 +2007,25 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
 
               {/* CABECERA 4: SESIÓN PLANIFICACIÓN (FILA COMPACTA CON HORA Y COLOR PREDETERMINADO) */}
               <tr style={{ height: '26px', background: '#f8fafc' }}>
-                <th style={{
-                  position: 'sticky',
-                  left: 0,
-                  zIndex: 50,
-                  background: '#f8fafc',
-                  width: '135px',
-                  minWidth: '135px',
-                  maxWidth: '135px',
-                  padding: '2px 8px',
-                  textAlign: 'left',
-                  fontSize: '10px',
-                  fontWeight: 800,
-                  color: '#475569',
-                  borderRight: '2px solid #cbd5e1',
-                  borderBottom: '2px solid #cbd5e1',
-                }}>
+                <th
+                  title="Sesión Planificada: Op (Optimizador), Co (Coadyuvante), Pa (Partido)"
+                  style={{
+                    position: 'sticky',
+                    left: 0,
+                    zIndex: 50,
+                    background: '#f8fafc',
+                    width: '135px',
+                    minWidth: '135px',
+                    maxWidth: '135px',
+                    padding: '2px 8px',
+                    textAlign: 'left',
+                    fontSize: '10px',
+                    fontWeight: 800,
+                    color: '#475569',
+                    borderRight: '2px solid #cbd5e1',
+                    borderBottom: '2px solid #cbd5e1',
+                  }}
+                >
                   Sesión Plan.
                 </th>
                 {diasFiltrados.map(day => {
@@ -1992,29 +2043,33 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                         verticalAlign: 'middle',
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px', flexWrap: 'nowrap', overflow: 'hidden' }}>
-                        {evList.slice(0, 2).map((ev, i) => (
-                          <span
-                            key={i}
-                            style={{
-                              fontSize: '9px',
-                              fontWeight: 800,
-                              background: ev.bg,
-                              color: ev.color,
-                              border: '1px solid ' + ev.border,
-                              padding: '1px 4px',
-                              borderRadius: '3px',
-                              whiteSpace: 'nowrap',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              maxWidth: '125px',
-                            }}
-                            title={ev.hora ? ev.hora + ' • ' + ev.tipo : ev.tipo}
-                          >
-                            {ev.hora && <span style={{ opacity: 0.75, marginRight: '2px' }}>{ev.hora}</span>}
-                            {ev.tipo}
-                          </span>
-                        ))}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px', flexWrap: 'nowrap', overflow: 'hidden', minHeight: '18px' }}>
+                        {evList.length === 0 ? (
+                          <span style={{ fontSize: '10px', color: '#cbd5e1', fontWeight: 600 }}>—</span>
+                        ) : (
+                          evList.map((ev, i) => (
+                            <span
+                              key={i}
+                              style={{
+                                fontSize: '9px',
+                                fontWeight: 800,
+                                background: ev.bg,
+                                color: ev.color,
+                                border: '1px solid ' + ev.border,
+                                padding: '1px 4px',
+                                borderRadius: '3px',
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                maxWidth: '125px',
+                              }}
+                              title={ev.hora ? ev.hora + ' • ' + ev.tipo : ev.tipo}
+                            >
+                              {ev.hora && <span style={{ opacity: 0.75, marginRight: '2px' }}>{ev.hora}</span>}
+                              {ev.tipo}
+                            </span>
+                          ))
+                        )}
                       </div>
                     </th>
                   );
