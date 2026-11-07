@@ -181,6 +181,26 @@ export default function GimnasioEstacionModal({
     return map;
   }, [selectedEjercicio, allHistoricalCaptures, allDays, sesionesMap, jugadores]);
 
+  // Contar cuántas veces ha pasado cada jugador por esta posta (ejercicio) en esta sesión
+  const passCountByJugador = React.useMemo(() => {
+    const counts: Record<string, number> = {};
+    const targetEx = (selectedEjercicio || '').trim().toUpperCase();
+
+    allHistoricalCaptures.forEach(c => {
+      if (c.fecha === selectedFecha) {
+        const cEx = (c.ejercicioNombre || c.ejercicioId || '').trim().toUpperCase();
+        if (!targetEx || cEx === targetEx) {
+          const jId = c.jugadorId || c.jugador_id;
+          if (jId) {
+            counts[jId] = (counts[jId] || 0) + 1;
+          }
+        }
+      }
+    });
+
+    return counts;
+  }, [allHistoricalCaptures, selectedFecha, selectedEjercicio]);
+
   // 1. Identificar ejercicios de la sesión actual Y ADEMÁS los monitorizados hasta día de hoy
   const { sessionExercises, historyExercises, allAvailableExercises } = React.useMemo(() => {
     const sessionList: Array<{ id: string; nombre: string; monitorizado: boolean; tipoSensor: 'ENCODER' | 'DINAMOMETRO'; pesoDefectoKg?: number | string; origen: 'SESION' }> = [];
@@ -345,7 +365,7 @@ export default function GimnasioEstacionModal({
     }
   };
 
-  // Start athlete turn
+  // Start athlete turn (mantiene la última carga configurada en la estación)
   const handleSelectJugador = (jugador: any) => {
     setActiveJugador(jugador);
     setCurrentReps([]);
@@ -356,13 +376,6 @@ export default function GimnasioEstacionModal({
     setPeakForceN(0);
     setCurvePoints([]);
     setWorkoutState('LISTENING');
-
-    // Pre-cargar la última carga usada si es Encoder
-    const prev = lastRecordsByJugador[jugador.id];
-    if (prev?.pesoKg) {
-      const num = parseFloat(String(prev.pesoKg).replace(/[^0-9.]/g, ''));
-      if (!isNaN(num) && num > 0) setWeightKg(num);
-    }
   };
 
   // Movement detection & execution logic (Simulation or Live Sensor)
@@ -843,7 +856,8 @@ export default function GimnasioEstacionModal({
               }}
             >
               {filteredJugadores.map(j => {
-                const isMonitored = monitoredJugadorIds.has(j.id);
+                const passCount = passCountByJugador[j.id] || 0;
+                const isMonitored = passCount > 0 || monitoredJugadorIds.has(j.id);
                 const lastRec = lastRecordsByJugador[j.id];
                 return (
                   <div
@@ -873,23 +887,44 @@ export default function GimnasioEstacionModal({
                       (e.currentTarget as HTMLElement).style.transform = 'translateY(0)';
                     }}
                   >
-                    {/* PUNTO VERDE ARRIBA A LA DERECHA SI SE HA MONITORIZADO EN ESTA SESIÓN */}
+                    {/* PUNTO VERDE ARRIBA A LA DERECHA Y NÚMERO DE VECES EN GRIS DEBAJO */}
                     {isMonitored && (
                       <div
-                        title="Monitorizado en esta sesión"
+                        title={`Ha pasado ${passCount || 1} ${passCount === 1 ? 'vez' : 'veces'} por esta posta`}
                         style={{
                           position: 'absolute',
                           top: '6px',
                           right: '6px',
-                          width: '12px',
-                          height: '12px',
-                          borderRadius: '50%',
-                          background: '#22c55e',
-                          boxShadow: '0 0 10px #22c55e',
-                          border: '2px solid #0f172a',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          gap: '2px',
                           zIndex: 5,
                         }}
-                      />
+                      >
+                        <div
+                          style={{
+                            width: '12px',
+                            height: '12px',
+                            borderRadius: '50%',
+                            background: '#22c55e',
+                            boxShadow: '0 0 8px #22c55e',
+                            border: '2px solid #0f172a',
+                          }}
+                        />
+                        {passCount > 0 && (
+                          <span
+                            style={{
+                              fontSize: '11px',
+                              fontWeight: 800,
+                              color: '#94a3b8',
+                              lineHeight: 1,
+                            }}
+                          >
+                            {passCount}
+                          </span>
+                        )}
+                      </div>
                     )}
 
                     {/* Foto rectangular del jugador (recortada desde abajo) */}
@@ -943,7 +978,7 @@ export default function GimnasioEstacionModal({
                         {(j.apodo || j.nombre).toUpperCase()}
                       </div>
 
-                      {/* Debajo del nombre en gris: última carga y vel máx (o kg máx en dinamómetro) */}
+                      {/* Debajo del nombre en gris: última carga y vel máx (o kg máx en dinamómetro). Si no hay, no muestra nada */}
                       <div
                         style={{
                           marginTop: '3px',
@@ -960,7 +995,7 @@ export default function GimnasioEstacionModal({
                         {lastRec && (lastRec.pesoKg || lastRec.velMax || lastRec.kgMax || lastRec.fuerzaPicoN) ? (
                           sensorType === 'DINAMOMETRO' ? (
                             <span style={{ color: '#94a3b8' }}>
-                              {lastRec.kgMax ? `${lastRec.kgMax} kg máx` : lastRec.fuerzaPicoN ? `${Math.round(lastRec.fuerzaPicoN / 9.81)} kg máx` : '—'}
+                              {lastRec.kgMax ? `${lastRec.kgMax} kg máx` : lastRec.fuerzaPicoN ? `${Math.round(lastRec.fuerzaPicoN / 9.81)} kg máx` : ''}
                             </span>
                           ) : (
                             <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '3px' }}>
@@ -978,11 +1013,7 @@ export default function GimnasioEstacionModal({
                               )}
                             </span>
                           )
-                        ) : (
-                          <span style={{ color: '#64748b', fontSize: '9px', fontStyle: 'italic' }}>
-                            Sin reg. previo
-                          </span>
-                        )}
+                        ) : null}
                       </div>
                     </div>
                   </div>
