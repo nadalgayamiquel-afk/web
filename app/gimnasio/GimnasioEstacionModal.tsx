@@ -426,10 +426,10 @@ export default function GimnasioEstacionModal({
             <span style={{ fontSize: '20px' }}>📱</span>
             <div>
               <div style={{ fontSize: '10px', fontWeight: 800, color: '#38bdf8', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                Estación de Fuerza & Rendimiento
+                Monitorización de Fuerza & VBT
               </div>
               <h2 style={{ fontSize: '16px', fontWeight: 900, margin: 0, color: '#f8fafc' }}>
-                Modo Tablet Kiosco
+                Monitorización (Tablet / Móvil)
               </h2>
             </div>
           </div>

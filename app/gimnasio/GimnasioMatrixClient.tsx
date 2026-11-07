@@ -430,6 +430,8 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
   const [reportFecha, setReportFecha] = useState<string>('2026-10-10');
   const [selectedReportJugadorIds, setSelectedReportJugadorIds] = useState<string[]>([]);
   const [showEstacionModal, setShowEstacionModal] = useState<boolean>(false);
+  const [showMenuPuntitos, setShowMenuPuntitos] = useState<boolean>(false);
+  const menuPuntitosRef = useRef<HTMLDivElement | null>(null);
 
   // Días ordenados
   const sortedDays = useMemo(() => {
@@ -1361,6 +1363,21 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
     };
   }, [showReportPreviewModal, reportData, reportTipo, reportFecha]);
 
+  // Cerrar menú de 3 puntitos al hacer click fuera
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (menuPuntitosRef.current && !menuPuntitosRef.current.contains(event.target as Node)) {
+        setShowMenuPuntitos(false);
+      }
+    }
+    if (showMenuPuntitos) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showMenuPuntitos]);
+
   return (
     <div style={{ minHeight: '100vh', background: '#f8fafc', color: '#0f172a', fontFamily: 'inherit' }}>
       {/* Toast */}
@@ -1404,137 +1421,226 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ fontSize: '20px' }}>🏋️</span>
             <h1 style={{ fontSize: '17px', fontWeight: 900, color: '#0f172a', margin: 0 }}>
-              GIMNASIO & FUERZA
+              GIMNASIO
             </h1>
-            <span style={{ fontSize: '10px', fontWeight: 800, background: '#e0f2fe', color: '#0369a1', padding: '2px 8px', borderRadius: '12px' }}>
-              CE Europa
-            </span>
           </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {/* BOTONES DE RESPALDO Y RECUPERACIÓN AL 100% */}
-          <button
-            onClick={handleManualBackup}
-            disabled={isBackupLoading}
-            title="Crear copia de seguridad del 100% de la BBDD de fuerza en el servidor"
-            style={{
-              padding: '6px 11px',
-              borderRadius: '6px',
-              border: '1px solid #16a34a',
-              background: '#f0fdf4',
-              color: '#15803d',
-              fontSize: '11px',
-              fontWeight: 800,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '5px',
-            }}
-          >
-            <span>🛡️</span>
-            <span>Copia 100%</span>
-          </button>
-
-          <button
-            onClick={handleManualRestore}
-            disabled={isBackupLoading}
-            title="Recuperar la BBDD de fuerza y gimnasio al 100% si se ha borrado o reiniciado"
-            style={{
-              padding: '6px 11px',
-              borderRadius: '6px',
-              border: '1px solid #d97706',
-              background: '#fffbeb',
-              color: '#b45309',
-              fontSize: '11px',
-              fontWeight: 800,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '5px',
-            }}
-          >
-            <span>🔄</span>
-            <span>Restaurar 100%</span>
-          </button>
-
-          {/* BOTÓN MODO ESTACIÓN / TABLET KIOSCO */}
+          {/* BOTÓN MONITORIZACIÓN (TABLET / MÓVIL) */}
           <button
             onClick={() => setShowEstacionModal(true)}
-            title="Abrir Modo Estación Kiosco para dejar una tablet fija frente a un ejercicio con Encoder o Dinamómetro"
+            title="Abrir Monitorización de Ejercicios en Kiosco / Tablet (Encoder VBT y Dinamómetro)"
             style={{
-              padding: '6px 14px',
+              padding: '7px 15px',
               borderRadius: '6px',
               border: 'none',
               background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
               color: '#ffffff',
-              fontSize: '11.5px',
+              fontSize: '12px',
               fontWeight: 800,
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              boxShadow: '0 2px 5px rgba(2, 132, 199, 0.3)',
+              boxShadow: '0 2px 5px rgba(2, 132, 199, 0.35)',
+              whiteSpace: 'nowrap',
             }}
           >
-            <span>📱</span>
-            <span>Modo Estación (Tablet)</span>
+            <span>⚡</span>
+            <span>Monitorización</span>
           </button>
 
           {/* BOTÓN REALIZAR REPORT (INDIVIDUAL O GRUPAL) */}
           <button
             onClick={handleOpenReportModal}
             style={{
-              padding: '6px 14px',
+              padding: '7px 13px',
               borderRadius: '6px',
               border: 'none',
               background: '#b91c1c',
               color: '#ffffff',
-              fontSize: '11.5px',
+              fontSize: '12px',
               fontWeight: 800,
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
               boxShadow: '0 2px 4px rgba(185, 28, 28, 0.25)',
+              whiteSpace: 'nowrap',
             }}
           >
             <span>📄</span>
             <span>Generar Report</span>
           </button>
 
-          <Link
-            href="/base-datos/fuerza"
-            style={{
-              fontSize: '11.5px',
-              fontWeight: 700,
-              color: '#0369a1',
-              background: '#e0f2fe',
-              border: '1px solid #bae6fd',
-              padding: '5px 12px',
-              borderRadius: '6px',
-              textDecoration: 'none',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-            }}
-          >
-            📊 BBDD Fuerza
-          </Link>
+          {/* BOTÓN 3 PUNTITOS (MÁS OPCIONES: COPIA, RESTAURAR, BBDD FUERZA, PLANIFICACIÓN, CONTROL DE CARGAS) */}
+          <div ref={menuPuntitosRef} style={{ position: 'relative' }}>
+            <button
+              onClick={() => setShowMenuPuntitos(prev => !prev)}
+              title="Más opciones de gestión y enlaces"
+              style={{
+                width: '34px',
+                height: '34px',
+                borderRadius: '6px',
+                border: '1px solid #cbd5e1',
+                background: showMenuPuntitos ? '#f1f5f9' : '#ffffff',
+                color: '#334155',
+                fontSize: '18px',
+                fontWeight: 900,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                lineHeight: 1,
+              }}
+            >
+              ⋮
+            </button>
 
-          <Link
-            href="/calendario"
-            style={{ fontSize: '11.5px', fontWeight: 700, color: '#1e3a8a', background: '#eff6ff', border: '1px solid #bfdbfe', padding: '5px 12px', borderRadius: '6px', textDecoration: 'none' }}
-          >
-            📅 Planificación
-          </Link>
+            {showMenuPuntitos && (
+              <div
+                style={{
+                  position: 'absolute',
+                  right: 0,
+                  top: '100%',
+                  marginTop: '6px',
+                  width: '220px',
+                  background: '#ffffff',
+                  borderRadius: '8px',
+                  boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+                  border: '1px solid #cbd5e1',
+                  padding: '6px',
+                  zIndex: 9999,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '4px',
+                }}
+              >
+                <div style={{ fontSize: '10px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', padding: '4px 8px' }}>
+                  Gestión y Respaldo
+                </div>
 
-          <Link
-            href="/cargas"
-            style={{ fontSize: '11.5px', fontWeight: 800, color: '#ffffff', background: '#1e3a8a', padding: '6px 14px', borderRadius: '6px', textDecoration: 'none' }}
-          >
-            ⚡ Control de Cargas
-          </Link>
+                <button
+                  onClick={() => {
+                    setShowMenuPuntitos(false);
+                    handleManualBackup();
+                  }}
+                  disabled={isBackupLoading}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    width: '100%',
+                    padding: '8px 10px',
+                    borderRadius: '5px',
+                    border: 'none',
+                    background: '#f0fdf4',
+                    color: '#15803d',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                >
+                  <span>🛡️</span>
+                  <span>Copia 100%</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setShowMenuPuntitos(false);
+                    handleManualRestore();
+                  }}
+                  disabled={isBackupLoading}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    width: '100%',
+                    padding: '8px 10px',
+                    borderRadius: '5px',
+                    border: 'none',
+                    background: '#fffbeb',
+                    color: '#b45309',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                >
+                  <span>🔄</span>
+                  <span>Restaurar 100%</span>
+                </button>
+
+                <div style={{ height: '1px', background: '#f1f5f9', margin: '4px 0' }} />
+
+                <div style={{ fontSize: '10px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', padding: '4px 8px' }}>
+                  Enlaces Rápidos
+                </div>
+
+                <Link
+                  href="/base-datos/fuerza"
+                  onClick={() => setShowMenuPuntitos(false)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '8px 10px',
+                    borderRadius: '5px',
+                    color: '#0369a1',
+                    background: '#f0f9ff',
+                    textDecoration: 'none',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                  }}
+                >
+                  <span>📊</span>
+                  <span>BBDD Fuerza</span>
+                </Link>
+
+                <Link
+                  href="/calendario"
+                  onClick={() => setShowMenuPuntitos(false)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '8px 10px',
+                    borderRadius: '5px',
+                    color: '#1e3a8a',
+                    background: '#eff6ff',
+                    textDecoration: 'none',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                  }}
+                >
+                  <span>📅</span>
+                  <span>Planificación</span>
+                </Link>
+
+                <Link
+                  href="/cargas"
+                  onClick={() => setShowMenuPuntitos(false)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '8px 10px',
+                    borderRadius: '5px',
+                    color: '#ffffff',
+                    background: '#1e3a8a',
+                    textDecoration: 'none',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                  }}
+                >
+                  <span>⚡</span>
+                  <span>Control de Cargas</span>
+                </Link>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
