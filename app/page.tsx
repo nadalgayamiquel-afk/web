@@ -831,22 +831,20 @@ export default function Home() {
     return hsrAlarmsData.alerts;
   }, [hsrAlarmsData.alerts, alarmFilter]);
 
-  // ─── FECHAS DE LOS ÚLTIMOS 4 DÍAS ───
-  const last4DaysList = useMemo(() => {
+  // ─── FECHAS DE LOS ÚLTIMOS 2 DÍAS ───
+  const last2DaysList = useMemo(() => {
     const list: Array<{ dateISO: string; label: string; relative: string; dayName: string }> = [];
     const now = new Date();
     const dayNames = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
     const monthNames = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
 
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 2; i++) {
       const d = new Date();
       d.setDate(now.getDate() - i);
       const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
       let relative = "";
       if (i === 0) relative = "Hoy";
-      else if (i === 1) relative = "Ayer";
-      else if (i === 2) relative = "Hace 2 días";
-      else relative = "Hace 3 días";
+      else relative = "Ayer";
 
       list.push({
         dateISO: iso,
@@ -861,10 +859,10 @@ export default function Home() {
   const [commentDayFilter, setCommentDayFilter] = useState<string>("todos");
   const [commentSearch, setCommentSearch] = useState<string>("");
 
-  // Recopilar todos los comentarios de todos los jugadores de los últimos 4 días
-  const last4DaysPlayerComments = useMemo(() => {
+  // Recopilar todos los comentarios de todos los jugadores de los últimos 2 días
+  const last2DaysPlayerComments = useMemo(() => {
     if (!isHydrated) return [];
-    const validDates = new Set(last4DaysList.map((d) => d.dateISO));
+    const validDates = new Set(last2DaysList.map((d) => d.dateISO));
     const items: DailyPlayerComment[] = [];
     const seen = new Set<string>();
 
@@ -993,10 +991,10 @@ export default function Home() {
 
     // Ordenar cronológicamente descendente (comentarios más recientes primero)
     return items.sort((a, b) => b.dateISO.localeCompare(a.dateISO));
-  }, [isHydrated, dailyComments, realComments, last4DaysList, teamJugadores]);
+  }, [isHydrated, dailyComments, realComments, last2DaysList, teamJugadores]);
 
-  const filteredLast4Comments = useMemo(() => {
-    return last4DaysPlayerComments.filter((c) => {
+  const filteredLast2Comments = useMemo(() => {
+    return last2DaysPlayerComments.filter((c) => {
       if (commentDayFilter !== "todos" && c.dateISO !== commentDayFilter) return false;
       if (commentSearch.trim()) {
         const q = commentSearch.toLowerCase().trim();
@@ -1008,7 +1006,7 @@ export default function Home() {
       }
       return true;
     });
-  }, [last4DaysPlayerComments, commentDayFilter, commentSearch]);
+  }, [last2DaysPlayerComments, commentDayFilter, commentSearch]);
 
   const todayPlayerComments = useMemo(() => {
     return dailyComments.filter((c) => c.dateISO === activeDay.dateISO);
@@ -1837,7 +1835,7 @@ export default function Home() {
                   DIARIO DE CAMPO & SEGUIMIENTO
                 </span>
                 <h3 style={{ fontSize: "16px", fontWeight: 900, color: "#0f172a", margin: "4px 0 0 0" }}>
-                  Comentarios y Observaciones de Jugadores (Últimos 4 Días)
+                  Comentarios y Observaciones de Jugadores (Últimos 2 Días)
                 </h3>
               </div>
 
@@ -1883,7 +1881,7 @@ export default function Home() {
                     border: "1px solid #cbd5e1",
                   }}
                 >
-                  📅 Periodo: <strong>{last4DaysList[last4DaysList.length - 1]?.label} — {last4DaysList[0]?.label}</strong>
+                  📅 Periodo: <strong>{last2DaysList[last2DaysList.length - 1]?.label} — {last2DaysList[0]?.label}</strong>
                 </span>
                 <span
                   suppressHydrationWarning
@@ -1897,7 +1895,7 @@ export default function Home() {
                     border: "1px solid #bfdbfe",
                   }}
                 >
-                  {isHydrated ? last4DaysPlayerComments.length : 0} observaciones registradas
+                  {isHydrated ? last2DaysPlayerComments.length : 0} observaciones registradas
                 </span>
               </div>
             </div>
@@ -1935,11 +1933,11 @@ export default function Home() {
                     transition: "all 0.15s ease",
                   }}
                 >
-                  Todos los 4 días ({isHydrated ? last4DaysPlayerComments.length : 0})
+                  Últimos 2 días ({isHydrated ? last2DaysPlayerComments.length : 0})
                 </button>
 
-                {last4DaysList.map((d) => {
-                  const countForDay = last4DaysPlayerComments.filter((c) => c.dateISO === d.dateISO).length;
+                {last2DaysList.map((d) => {
+                  const countForDay = last2DaysPlayerComments.filter((c) => c.dateISO === d.dateISO).length;
                   const isSel = commentDayFilter === d.dateISO;
                   return (
                     <button
@@ -2008,7 +2006,7 @@ export default function Home() {
               >
                 <span style={{ fontSize: "11.5px", fontWeight: 600 }}>Cargando observaciones...</span>
               </div>
-            ) : filteredLast4Comments.length === 0 ? (
+            ) : filteredLast2Comments.length === 0 ? (
               <div
                 style={{
                   padding: "32px 16px",
@@ -2023,7 +2021,7 @@ export default function Home() {
                   ✍️ No hay observaciones para el filtro seleccionado
                 </p>
                 <span style={{ fontSize: "11.5px", color: "#94a3b8" }}>
-                  Selecciona otro día o borra la búsqueda para ver todas las notas de los últimos 4 días.
+                  Selecciona otro día o borra la búsqueda para ver todas las notas de los últimos 2 días.
                 </span>
               </div>
             ) : (
@@ -2034,7 +2032,7 @@ export default function Home() {
                   gap: "12px",
                 }}
               >
-                {filteredLast4Comments.map((entry) => {
+                {filteredLast2Comments.map((entry) => {
                   const tagLower = (entry.tag || "").toLowerCase();
                   let tagBg = "#eff6ff";
                   let tagColor = "#1e40af";
@@ -2054,7 +2052,7 @@ export default function Home() {
                     tagBorder = "#bbf7d0";
                   }
 
-                  const dayMeta = last4DaysList.find((d) => d.dateISO === entry.dateISO);
+                  const dayMeta = last2DaysList.find((d) => d.dateISO === entry.dateISO);
                   const dateLabel = dayMeta ? `${dayMeta.relative} · ${dayMeta.label}` : entry.dateISO;
 
                   return (

@@ -1,5 +1,5 @@
 import React from "react";
-import { getActiveJugadores, getSesionesDiaRange, getFuerzaSesionesForMatrix } from "../actions";
+import { getActiveJugadores, getSesionesDiaRange, getFuerzaSesionesForMatrix, getEventosBloquesBBDD } from "../actions";
 import { getMasterBackupTable } from "@/app/lib/masterBackup";
 import GimnasioMatrixClient from "./GimnasioMatrixClient";
 
@@ -9,16 +9,19 @@ export default async function GimnasioPage() {
   let jugadores: any[] = [];
   let days: any[] = [];
   let sesionesMap: Record<string, any[]> = {};
+  let bloquesMap: Record<string, any> = {};
 
   try {
-    const [rawJugadores, rawDays, rawSesiones] = await Promise.all([
+    const [rawJugadores, rawDays, rawSesiones, rawBloques] = await Promise.all([
       getActiveJugadores().catch(() => []),
       getSesionesDiaRange().catch(() => []),
       getFuerzaSesionesForMatrix().catch(() => ({})),
+      getEventosBloquesBBDD().catch(() => ({})),
     ]);
     jugadores = rawJugadores || [];
     days = rawDays || [];
     sesionesMap = rawSesiones || {};
+    bloquesMap = rawBloques || {};
   } catch (e) {
     console.error("Error fetching data for Gimnasio:", e);
   }
@@ -41,6 +44,7 @@ export default async function GimnasioPage() {
       initialJugadores={jugadores}
       initialDays={days}
       initialSesionesMap={sesionesMap}
+      initialBloquesMap={bloquesMap}
     />
   );
 }
