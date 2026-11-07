@@ -1914,7 +1914,7 @@ function InformeMesocicloContent() {
             </div>
 
             {/* Render Recharts ComposedChart Gráfico 1 */}
-            <div style={{ width: "100%", height: 260 }}>
+            <div className="team-chart-screen-plot" style={{ width: "100%", height: 260 }}>
               <ResponsiveContainer width="100%" height="100%">
                 {chart1Type === "lineas" ? (
                   <ComposedChart data={chart1Data} margin={{ top: 18, right: 0, left: 0, bottom: 25 }}>
@@ -2302,7 +2302,7 @@ function InformeMesocicloContent() {
             </div>
 
             {/* Render Recharts ComposedChart Gráfico 2 */}
-            <div style={{ width: "100%", height: 260 }}>
+            <div className="team-chart-screen-plot" style={{ width: "100%", height: 260 }}>
               <ResponsiveContainer width="100%" height="100%">
                 {chart2Type === "lineas" ? (
                   <ComposedChart data={chart2Data} margin={{ top: 18, right: 0, left: 0, bottom: 25 }}>

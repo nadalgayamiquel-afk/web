@@ -2523,13 +2523,13 @@ function InformeGpsDiarioContent() {
                     {/* 1. GRÁFICOS COMPARATIVOS DE SESIÓN JUGADOR (FILA 1 Y FILA 2 CON BARRAS JUNTAS Y CONFIGURABLES) */}
                     <div style={{ display: "flex", flexDirection: "column", gap: "16px", marginBottom: "16px" }}>
                       {/* FILA 1: Variables 1 y 2 */}
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
+                      <div className="gps-player-charts-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
                         {/* Fila 1 - Gráfico Izq: Comparativa vs Media del Equipo */}
                         <div className="gps-chart-card" style={{ background: "#ffffff", padding: "16px", borderRadius: "12px", border: "1px solid #cbd5e1", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
                           <h3 style={{ fontSize: "13px", fontWeight: 800, textTransform: "uppercase", color: "#0f172a", margin: "0 0 12px 0", textAlign: "center" }}>
                             📊 COMPARATIVA VS. MEDIA DEL EQUIPO
                           </h3>
-                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", width: "100%", height: 210 }}>
+                          <div className="gps-subcharts-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", width: "100%", height: 210 }}>
                             {/* Sub-chart Variable 1 */}
                             <div>
                               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", marginBottom: "4px" }}>
@@ -2619,7 +2619,7 @@ function InformeGpsDiarioContent() {
                           <h3 style={{ fontSize: "13px", fontWeight: 800, textTransform: "uppercase", color: "#0f172a", margin: "0 0 12px 0", textAlign: "center" }}>
                             🎯 PROMEDIO {firstName.toUpperCase()} EN SESIÓN {matchDay}
                           </h3>
-                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", width: "100%", height: 210 }}>
+                          <div className="gps-subcharts-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", width: "100%", height: 210 }}>
                             {/* Sub-chart Variable 1 Match Day */}
                             <div>
                               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", marginBottom: "4px" }}>
@@ -2706,13 +2706,13 @@ function InformeGpsDiarioContent() {
                       </div>
 
                       {/* FILA 2: Variables 3 y 4 (Gráficos debajo con barras juntas) */}
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
+                      <div className="gps-player-charts-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
                         {/* Fila 2 - Gráfico Izq: Comparativa vs Media del Equipo */}
                         <div className="gps-chart-card" style={{ background: "#ffffff", padding: "16px", borderRadius: "12px", border: "1px solid #cbd5e1", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
                           <h3 style={{ fontSize: "13px", fontWeight: 800, textTransform: "uppercase", color: "#0f172a", margin: "0 0 12px 0", textAlign: "center" }}>
                             📊 COMPARATIVA VS. MEDIA DEL EQUIPO
                           </h3>
-                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", width: "100%", height: 210 }}>
+                          <div className="gps-subcharts-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", width: "100%", height: 210 }}>
                             {/* Sub-chart Variable 3 */}
                             <div>
                               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", marginBottom: "4px" }}>
@@ -2802,7 +2802,7 @@ function InformeGpsDiarioContent() {
                           <h3 style={{ fontSize: "13px", fontWeight: 800, textTransform: "uppercase", color: "#0f172a", margin: "0 0 12px 0", textAlign: "center" }}>
                             🎯 PROMEDIO {firstName.toUpperCase()} EN SESIÓN {matchDay}
                           </h3>
-                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", width: "100%", height: 210 }}>
+                          <div className="gps-subcharts-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", width: "100%", height: 210 }}>
                             {/* Sub-chart Variable 3 Match Day */}
                             <div>
                               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", marginBottom: "4px" }}>

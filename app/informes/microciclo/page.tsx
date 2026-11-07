@@ -2564,7 +2564,7 @@ function InformeGpsDiarioContent() {
                         </select>
                       ))}
                     </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "16px" }}>
+                    <div className="microciclo-player-charts-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "16px" }}>
                       {playerChartVars.map((varKey, idx) => {
                         const def = getVariableDef(varKey);
                         const compMode = playerChartComps[idx] || "equipo";
@@ -3154,7 +3154,7 @@ function InformeGpsDiarioContent() {
                       </div>
 
                       {/* Render Recharts ComposedChart Dual-Axis */}
-                      <div style={{ width: "100%", height: 260 }}>
+                      <div className="team-chart-screen-plot" style={{ width: "100%", height: 260 }}>
                         <ResponsiveContainer width="100%" height="100%">
                           <ComposedChart data={chart1Data} margin={{ top: 16, right: 0, left: 0, bottom: 25 }} barCategoryGap="2%">
                             <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
@@ -3279,7 +3279,7 @@ function InformeGpsDiarioContent() {
                       </div>
 
                       {/* Render Recharts ComposedChart Dual-Axis */}
-                      <div style={{ width: "100%", height: 260 }}>
+                      <div className="team-chart-screen-plot" style={{ width: "100%", height: 260 }}>
                         <ResponsiveContainer width="100%" height="100%">
                           <ComposedChart data={chart2Data} margin={{ top: 16, right: 0, left: 0, bottom: 25 }} barCategoryGap="2%">
                             <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
