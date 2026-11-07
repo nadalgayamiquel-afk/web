@@ -918,7 +918,7 @@ export default function Home() {
     realComments.forEach((c) => {
       if (!c || !c.jugador_id || c.jugador_id === "TEAM" || !c.texto) return;
       const dateISO = c.fecha || c.day_id?.replace(/^day_/, "");
-      if (dateISO) {
+      if (dateISO && validDates.has(dateISO)) {
         const key = `${c.jugador_id}_${dateISO}_${c.texto.slice(0, 20)}`;
         if (!seen.has(key)) {
           seen.add(key);
@@ -959,7 +959,7 @@ export default function Home() {
         allStored.forEach((c) => {
           if (!c || !c.jugador_id || c.jugador_id === "TEAM" || !c.texto) return;
           const dateISO = c.fecha || c.day_id?.replace(/^day_/, "");
-          if (dateISO) {
+          if (dateISO && validDates.has(dateISO)) {
             const key = `${c.jugador_id}_${dateISO}_${c.texto.slice(0, 20)}`;
             if (!seen.has(key)) {
               seen.add(key);
