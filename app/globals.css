@@ -1320,4 +1320,272 @@ body {
   }
 }
 
+/* ==========================================================================
+   SISTEMA DE ADAPTACIÓN POR DISPOSITIVO: MÓVIL, TABLET Y ORDENADOR
+   Funciona según la preferencia guardada en localStorage (data-device-mode)
+   y se adapta a cualquier tamaño de pantalla.
+   ========================================================================== */
+
+/* ─── 0. SOPORTE DE ZOOM / ESCALA VISUAL PERSONALIZADA ─── */
+html {
+  zoom: var(--app-user-zoom, 1);
+}
+
+/* ─── 1. REGLAS PARA MODO MÓVIL (data-device-mode="mobile" o pantalla < 768px) ─── */
+html[data-device-mode="mobile"],
+html:not([data-device-mode="desktop"]):not([data-device-mode="tablet"]) {
+  /* Reglas exclusivas cuando el modo activo es mobile */
+}
+
+html[data-device-mode="mobile"] .app-shell {
+  display: flex !important;
+  flex-direction: column !important;
+  width: 100% !important;
+  min-height: 100vh !important;
+  overflow-x: hidden !important;
+}
+
+html[data-device-mode="mobile"] .sidebar {
+  display: flex !important;
+  flex-direction: column !important;
+  position: fixed !important;
+  top: 0 !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  width: 290px !important;
+  max-width: 86vw !important;
+  height: 100% !important;
+  z-index: 1001 !important;
+  transform: translateX(-100%);
+  transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+  background: #1e293b !important;
+  padding: 18px 16px 85px !important;
+}
+
+html[data-device-mode="mobile"] .sidebar.mobile-open {
+  transform: translateX(0) !important;
+  box-shadow: 12px 0 35px rgba(0, 0, 0, 0.5) !important;
+}
+
+html[data-device-mode="mobile"] .content {
+  padding: 12px 10px calc(80px + env(safe-area-inset-bottom, 0px)) 10px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  overflow-x: hidden !important;
+}
+
+html[data-device-mode="mobile"] .topbar {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 10px !important;
+  margin-bottom: 14px !important;
+}
+
+html[data-device-mode="mobile"] .topbar h1 {
+  font-size: 18px !important;
+  line-height: 1.25 !important;
+}
+
+html[data-device-mode="mobile"] .dashboard-grid {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 12px !important;
+  width: 100% !important;
+}
+
+html[data-device-mode="mobile"] .hero-card,
+html[data-device-mode="mobile"] .metric-card,
+html[data-device-mode="mobile"] .panel {
+  grid-column: 1 / -1 !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  padding: 14px 12px !important;
+  border-radius: 12px !important;
+}
+
+/* Tablas, Matrices y Rejillas en Modo Móvil (Gimnasio, Calendario, Cargas, Disponibilidad) */
+html[data-device-mode="mobile"] table {
+  font-size: 10.5px !important;
+}
+
+html[data-device-mode="mobile"] main,
+html[data-device-mode="mobile"] .matrix-container,
+html[data-device-mode="mobile"] div[style*="overflowX: auto"],
+html[data-device-mode="mobile"] div[style*="overflow-x: auto"] {
+  padding-left: 2px !important;
+  padding-right: 2px !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+
+/* Columna de jugadores inmovilizada compacta en móvil para ver más días */
+html[data-device-mode="mobile"] th[style*="width: '135px'"],
+html[data-device-mode="mobile"] th[style*="width: 135px"],
+html[data-device-mode="mobile"] td[style*="width: '135px'"],
+html[data-device-mode="mobile"] td[style*="width: 135px"],
+html[data-device-mode="mobile"] col[style*="width: '140px'"],
+html[data-device-mode="mobile"] col[style*="width: 140px"] {
+  width: 102px !important;
+  min-width: 102px !important;
+  max-width: 102px !important;
+  padding: 3px 4px !important;
+  font-size: 9.5px !important;
+}
+
+/* Columnas de días compactas en móvil */
+html[data-device-mode="mobile"] th[style*="width: '135px'"]:not(:first-child),
+html[data-device-mode="mobile"] th[style*="width: 135px"]:not(:first-child),
+html[data-device-mode="mobile"] td[style*="width: '135px'"]:not(:first-child),
+html[data-device-mode="mobile"] td[style*="width: 135px"]:not(:first-child),
+html[data-device-mode="mobile"] col[style*="width: '110px'"],
+html[data-device-mode="mobile"] col[style*="width: 110px"] {
+  width: 105px !important;
+  min-width: 105px !important;
+  padding: 3px 2px !important;
+}
+
+/* Cabeceras de Gimnasio y filtros adaptados a móvil */
+html[data-device-mode="mobile"] header,
+html[data-device-mode="mobile"] section {
+  padding-left: 10px !important;
+  padding-right: 10px !important;
+}
+
+html[data-device-mode="mobile"] header > div {
+  flex-wrap: wrap !important;
+  gap: 6px !important;
+}
+
+/* Informes y Reportes adaptados a pantalla móvil */
+html[data-device-mode="mobile"] .general-report-card,
+html[data-device-mode="mobile"] .report-card,
+html[data-device-mode="mobile"] .report-container,
+html[data-device-mode="mobile"] .mesociclo-week-card {
+  width: 100% !important;
+  max-width: 100% !important;
+  padding: 10px !important;
+  box-sizing: border-box !important;
+  border-radius: 10px !important;
+}
+
+html[data-device-mode="mobile"] .athletes-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+}
+
+html[data-device-mode="mobile"] .athlete-card {
+  min-height: 210px !important;
+  padding: 12px 10px !important;
+}
+
+html[data-device-mode="mobile"] .athlete-avatar {
+  width: 58px !important;
+  height: 58px !important;
+}
+
+html[data-device-mode="mobile"] .athlete-detail-form {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 12px !important;
+}
+
+/* Modales adaptados a móvil: casi pantalla completa, sin salirse del viewport */
+html[data-device-mode="mobile"] div[style*="position: fixed"][style*="inset: 0"] > div,
+html[data-device-mode="mobile"] div[style*="position: fixed"][style*="top: 0"] > div {
+  max-width: 96vw !important;
+  width: 96vw !important;
+  max-height: 92vh !important;
+  padding: 14px 12px !important;
+  border-radius: 12px !important;
+  overflow-y: auto !important;
+  box-sizing: border-box !important;
+}
+
+/* Inputs de formulario en móvil: tamaño suficiente para evitar autozoom en iOS Safari */
+html[data-device-mode="mobile"] input[type="text"],
+html[data-device-mode="mobile"] input[type="number"],
+html[data-device-mode="mobile"] input[type="date"],
+html[data-device-mode="mobile"] select,
+html[data-device-mode="mobile"] textarea {
+  font-size: 16px !important;
+}
+
+
+/* ─── 2. REGLAS PARA MODO TABLET (data-device-mode="tablet") ─── */
+html[data-device-mode="tablet"] .app-shell {
+  grid-template-columns: 210px minmax(0, 1fr) !important;
+  width: 100% !important;
+}
+
+html[data-device-mode="tablet"] .sidebar {
+  padding: 22px 14px 20px !important;
+  width: 210px !important;
+  position: static !important;
+  transform: none !important;
+}
+
+html[data-device-mode="tablet"] .content {
+  padding: 22px 18px 50px !important;
+}
+
+html[data-device-mode="tablet"] .topbar h1 {
+  font-size: 24px !important;
+}
+
+html[data-device-mode="tablet"] .dashboard-grid {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 14px !important;
+}
+
+html[data-device-mode="tablet"] .hero-card {
+  grid-column: 1 / -1 !important;
+}
+
+html[data-device-mode="tablet"] .athletes-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+}
+
+html[data-device-mode="tablet"] div[style*="position: fixed"][style*="inset: 0"] > div {
+  max-width: 86vw !important;
+  max-height: 88vh !important;
+  border-radius: 14px !important;
+  overflow-y: auto !important;
+}
+
+
+/* ─── 3. REGLAS PARA MODO ESCRITORIO / ORDENADOR FORZADO (data-device-mode="desktop") ─── */
+html[data-device-mode="desktop"] .app-shell {
+  display: grid !important;
+  grid-template-columns: 276px minmax(0, 1fr) !important;
+  width: 100% !important;
+}
+
+html[data-device-mode="desktop"] .sidebar {
+  display: flex !important;
+  position: static !important;
+  transform: none !important;
+  width: 276px !important;
+  padding: 30px 22px 22px !important;
+  box-shadow: none !important;
+}
+
+html[data-device-mode="desktop"] .content {
+  padding: 44px clamp(26px, 5vw, 82px) 70px !important;
+}
+
+html[data-device-mode="desktop"] .dashboard-grid {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1.15fr) minmax(260px, .8fr) minmax(260px, .8fr) !important;
+  gap: 16px !important;
+}
+
+html[data-device-mode="desktop"] .athletes-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+}
+
+
 

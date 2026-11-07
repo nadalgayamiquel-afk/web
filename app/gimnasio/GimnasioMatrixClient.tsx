@@ -110,7 +110,7 @@ function normalizeMd(md?: string | null): string {
   return clean;
 }
 
-export default function GimnasioMatrixClient({ initialJugadores = [], initialDays = [], initialSesionesMap = {}, initialBloquesMap = {} }: Props) {
+export default function GimnasioMatrixClient({ initialJugadores = [], initialDays = [], initialSesionesMap = {} }: Props) {
   // 1. Jugadores
   const [jugadores] = useState<JugadorGimnasio[]>(() => {
     const list = initialJugadores && initialJugadores.length > 0 ? [...initialJugadores] : [...DEFAULT_JUGADORES];
@@ -133,7 +133,7 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
     }
     return base;
   });
-  const [eventosPlanMap, setEventosPlanMap] = useState<Record<string, any>>(() => initialBloquesMap || {});
+  const [eventosPlanMap, setEventosPlanMap] = useState<Record<string, any>>({});
   const [playerEventsMap, setPlayerEventsMap] = useState<Record<string, string>>({});
   const [clubConfig, setClubConfig] = useState<{ nombreClub: string; escudoUrl: string; categoria: string }>({
     nombreClub: 'CE EUROPA',
@@ -195,12 +195,10 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
           localStorage.setItem("planificacion_days_v1", JSON.stringify(cleaned));
         } catch {}
       }
-      const savedBloques = localStorage.getItem('eventos_bloques_map_v5') || localStorage.getItem('eventos_bloques_map_v4') || localStorage.getItem('eventos_bloques_map_v1');
+      const savedBloques = localStorage.getItem('eventos_bloques_map_v5') || localStorage.getItem('eventos_bloques_map_v4');
       if (savedBloques) {
         const parsedB = JSON.parse(savedBloques);
-        if (parsedB && typeof parsedB === 'object') {
-          setEventosPlanMap(prev => ({ ...prev, ...parsedB }));
-        }
+        if (parsedB && typeof parsedB === 'object') setEventosPlanMap(parsedB);
       }
       const savedPlayerEvents = localStorage.getItem('player_events_map_v1');
       if (savedPlayerEvents) {
@@ -552,8 +550,8 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
       const k3 = 'day_' + day.fecha + '_slot_' + slot;
       const k4 = 'day_' + day.id + '_slot_' + slot;
       const evObj = eventosPlanMap[k1] || eventosPlanMap[k2] || eventosPlanMap[k3] || eventosPlanMap[k4];
-      const rawTipo = (evObj?.tipo || (day as any)['evento_' + slot] || '').trim();
-      const horaVal = evObj?.hora || (slot === 1 && (day as any).hora ? (day as any).hora : '');
+      const rawTipo = (evObj?.tipo || (day as any)['evento_' + slot] || (slot === 0 ? (day as any)['evento_1'] : '') || '').trim();
+      const horaVal = evObj?.hora || '';
 
       const cat = classify(rawTipo);
       if (cat) {

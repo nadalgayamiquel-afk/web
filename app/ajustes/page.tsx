@@ -8,6 +8,7 @@ import { RivalConfig, DEFAULT_RIVALES, PRIMERA_RFEF_G2_2627, getStoredRivales, s
 import { getClubConfig, saveClubConfig, upsertSingleRivalBBDD, deleteRivalBBDD, getRivalesBBDD, getExternalLinksBBDD, saveExternalLinksBBDD, syncSupabaseToGitHubAction, getCompleteSupabaseBackup } from "@/app/actions";
 import { ExternalDatabaseLinks, DEFAULT_EXTERNAL_LINKS } from "@/app/lib/externalLinks";
 import GpsSettingsSection from "./GpsSettingsSection";
+import { applyDeviceMode, DeviceMode, ZoomLevel, STORAGE_KEY_MODE, STORAGE_KEY_ZOOM, STORAGE_KEY_HIDDEN, resolveEffectiveDeviceMode } from "@/app/components/DeviceViewSwitcher";
 
 const teamsBySeason = {
   "2026/27": ["CE Manresa"],
@@ -71,7 +72,57 @@ const DEFAULT_CLUB_CONFIG: ClubConfig = {
 export default function AjustesPage() {
   const [openGroups, setOpenGroups] = useState({ screens: true, reports: false, database: false, settings: true });
 
-  const [activeTab, setActiveTab] = useState<"club" | "pantallas" | "eventos" | "disponibilidad" | "bbdd" | "rivales" | "datos" | "links_externos" | "gps">("club");
+  const [activeTab, setActiveTab] = useState<"club" | "pantallas" | "eventos" | "disponibilidad" | "bbdd" | "rivales" | "datos" | "links_externos" | "gps" | "dispositivo">("club");
+
+  // State para Modo de Dispositivo y Pantalla
+  const [deviceMode, setDeviceMode] = useState<DeviceMode>("auto");
+  const [deviceZoom, setDeviceZoom] = useState<ZoomLevel>("100");
+  const [hideDeviceSwitcher, setHideDeviceSwitcher] = useState<boolean>(false);
+  const [deviceInfo, setDeviceInfo] = useState<{ screenW: number; screenH: number; innerW: number; innerH: number; userAgent: string; isTouch: boolean }>({
+    screenW: 0,
+    screenH: 0,
+    innerW: 0,
+    innerH: 0,
+    userAgent: "",
+    isTouch: false,
+  });
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const savedMode = (localStorage.getItem(STORAGE_KEY_MODE) as DeviceMode) || "auto";
+      const savedZoom = (localStorage.getItem(STORAGE_KEY_ZOOM) as ZoomLevel) || "100";
+      const savedHidden = localStorage.getItem(STORAGE_KEY_HIDDEN) === "true";
+      setDeviceMode(savedMode);
+      setDeviceZoom(savedZoom);
+      setHideDeviceSwitcher(savedHidden);
+      setDeviceInfo({
+        screenW: window.screen.width,
+        screenH: window.screen.height,
+        innerW: window.innerWidth,
+        innerH: window.innerHeight,
+        userAgent: navigator.userAgent,
+        isTouch: "ontouchstart" in window || navigator.maxTouchPoints > 0,
+      });
+    }
+  }, [activeTab]);
+
+  const handleSelectDeviceMode = (mode: DeviceMode) => {
+    setDeviceMode(mode);
+    localStorage.setItem(STORAGE_KEY_MODE, mode);
+    applyDeviceMode(mode, deviceZoom);
+  };
+
+  const handleSelectDeviceZoom = (zoom: ZoomLevel) => {
+    setDeviceZoom(zoom);
+    localStorage.setItem(STORAGE_KEY_ZOOM, zoom);
+    applyDeviceMode(deviceMode, zoom);
+  };
+
+  const handleToggleHideSwitcher = (hidden: boolean) => {
+    setHideDeviceSwitcher(hidden);
+    localStorage.setItem(STORAGE_KEY_HIDDEN, hidden ? "true" : "false");
+    window.dispatchEvent(new Event("storage"));
+  };
 
   // State para Club, Temporadas y Escudos
   const [clubConfig, setClubConfig] = useState<ClubConfig>(DEFAULT_CLUB_CONFIG);
@@ -646,6 +697,22 @@ export default function AjustesPage() {
               }}
             >
               💾 Datos y Memoria
+            </button>
+            <button
+              onClick={() => setActiveTab("dispositivo")}
+              style={{
+                padding: "8px 16px",
+                borderRadius: "8px",
+                fontSize: "13px",
+                fontWeight: 800,
+                cursor: "pointer",
+                border: "none",
+                background: activeTab === "dispositivo" ? "#1e3a8a" : "#eff6ff",
+                color: activeTab === "dispositivo" ? "#ffffff" : "#1e40af",
+                boxShadow: activeTab === "dispositivo" ? "0 2px 6px rgba(30, 58, 138, 0.25)" : "none",
+              }}
+            >
+              📱 Versión Móvil / Tablet / PC
             </button>
           </div>
 
@@ -2339,7 +2406,350 @@ for (let i = localStorage.length - 1; i >= 0; i--) {
             </div>
           )}
 
-          {/* CONTENIDO DE LA PESTAÑA: BASES DE DATOS EXTERNAS (WELLNESS, GPS, ETC.) */}
+          {/* CONTENIDO DE LA PESTAÑA: DISPOSITIVO Y PANTALLA */}
+          {activeTab === "dispositivo" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+              {/* CABECERA EXPLICATIVA */}
+              <div
+                style={{
+                  background: "linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%)",
+                  padding: "22px 24px",
+                  borderRadius: "14px",
+                  color: "#ffffff",
+                  boxShadow: "0 4px 16px rgba(15, 23, 42, 0.15)",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "6px" }}>
+                  <span style={{ fontSize: "24px" }}>📱</span>
+                  <h3 style={{ fontSize: "19px", fontWeight: 900, margin: 0 }}>
+                    Adaptación de Pantalla y Versión por Dispositivo
+                  </h3>
+                </div>
+                <p style={{ margin: "4px 0 0 0", fontSize: "13px", opacity: 0.9, lineHeight: 1.5, maxWidth: "780px" }}>
+                  Aquí puedes elegir cómo se adapta la plataforma para <strong>este dispositivo en concreto</strong>. La configuración se guarda localmente en este navegador, por lo que puedes usar tu teléfono móvil en versión Móvil, tu iPad en versión Tablet y tu ordenador en versión Escritorio <strong>de forma independiente y a la vez</strong>.
+                </p>
+                <div style={{ display: "flex", gap: "12px", marginTop: "14px", flexWrap: "wrap" }}>
+                  <div style={{ background: "rgba(255,255,255,0.15)", padding: "6px 14px", borderRadius: "8px", fontSize: "12px", fontWeight: 700 }}>
+                    Dispositivo Actual: <strong>{resolveEffectiveDeviceMode(deviceMode).toUpperCase()}</strong>
+                  </div>
+                  <div style={{ background: "rgba(255,255,255,0.15)", padding: "6px 14px", borderRadius: "8px", fontSize: "12px", fontWeight: 700 }}>
+                    Preferencia: <strong>{deviceMode === "auto" ? "Automática (según pantalla)" : deviceMode.toUpperCase()}</strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* SELECCIÓN DE VERSIÓN: 4 TARJETAS GRANDES */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "16px" }}>
+                {/* 1. MÓVIL */}
+                <div
+                  onClick={() => handleSelectDeviceMode("mobile")}
+                  style={{
+                    border: deviceMode === "mobile" ? "2.5px solid #2563eb" : "1px solid #cbd5e1",
+                    borderRadius: "12px",
+                    padding: "20px",
+                    background: deviceMode === "mobile" ? "#eff6ff" : "#ffffff",
+                    boxShadow: deviceMode === "mobile" ? "0 4px 14px rgba(37, 99, 235, 0.18)" : "0 1px 3px rgba(0,0,0,0.04)",
+                    cursor: "pointer",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+                      <span style={{ fontSize: "34px" }}>📱</span>
+                      {deviceMode === "mobile" && (
+                        <span style={{ fontSize: "11px", fontWeight: 900, background: "#2563eb", color: "#ffffff", padding: "3px 10px", borderRadius: "12px" }}>
+                          ACTIVO
+                        </span>
+                      )}
+                    </div>
+                    <h4 style={{ margin: "0 0 6px 0", fontSize: "16px", fontWeight: 900, color: deviceMode === "mobile" ? "#1e40af" : "#0f172a" }}>
+                      Versión Móvil
+                    </h4>
+                    <p style={{ margin: 0, fontSize: "12px", color: "#64748b", lineHeight: 1.45 }}>
+                      Optimizado para smartphones (iPhone y Android). Menú hamburguesa deslizable, tarjetas apiladas en 1 columna, botones táctiles grandes y matrices con scroll horizontal suave.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    style={{
+                      marginTop: "16px",
+                      padding: "8px 14px",
+                      borderRadius: "8px",
+                      border: "none",
+                      background: deviceMode === "mobile" ? "#2563eb" : "#f1f5f9",
+                      color: deviceMode === "mobile" ? "#ffffff" : "#475569",
+                      fontSize: "12px",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                      width: "100%",
+                    }}
+                  >
+                    {deviceMode === "mobile" ? "✓ Seleccionado" : "Seleccionar Móvil"}
+                  </button>
+                </div>
+
+                {/* 2. TABLET */}
+                <div
+                  onClick={() => handleSelectDeviceMode("tablet")}
+                  style={{
+                    border: deviceMode === "tablet" ? "2.5px solid #2563eb" : "1px solid #cbd5e1",
+                    borderRadius: "12px",
+                    padding: "20px",
+                    background: deviceMode === "tablet" ? "#eff6ff" : "#ffffff",
+                    boxShadow: deviceMode === "tablet" ? "0 4px 14px rgba(37, 99, 235, 0.18)" : "0 1px 3px rgba(0,0,0,0.04)",
+                    cursor: "pointer",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+                      <span style={{ fontSize: "34px" }}>📟</span>
+                      {deviceMode === "tablet" && (
+                        <span style={{ fontSize: "11px", fontWeight: 900, background: "#2563eb", color: "#ffffff", padding: "3px 10px", borderRadius: "12px" }}>
+                          ACTIVO
+                        </span>
+                      )}
+                    </div>
+                    <h4 style={{ margin: "0 0 6px 0", fontSize: "16px", fontWeight: 900, color: deviceMode === "tablet" ? "#1e40af" : "#0f172a" }}>
+                      Versión Tablet (iPad)
+                    </h4>
+                    <p style={{ margin: 0, fontSize: "12px", color: "#64748b", lineHeight: 1.45 }}>
+                      Diseñado para tablets en vertical u horizontal. Cuadrículas en 2 columnas, barra compacta, tablas de planificación y gimnasio de densidad media para pulsación táctil o Apple Pencil.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    style={{
+                      marginTop: "16px",
+                      padding: "8px 14px",
+                      borderRadius: "8px",
+                      border: "none",
+                      background: deviceMode === "tablet" ? "#2563eb" : "#f1f5f9",
+                      color: deviceMode === "tablet" ? "#ffffff" : "#475569",
+                      fontSize: "12px",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                      width: "100%",
+                    }}
+                  >
+                    {deviceMode === "tablet" ? "✓ Seleccionado" : "Seleccionar Tablet"}
+                  </button>
+                </div>
+
+                {/* 3. ORDENADOR */}
+                <div
+                  onClick={() => handleSelectDeviceMode("desktop")}
+                  style={{
+                    border: deviceMode === "desktop" ? "2.5px solid #2563eb" : "1px solid #cbd5e1",
+                    borderRadius: "12px",
+                    padding: "20px",
+                    background: deviceMode === "desktop" ? "#eff6ff" : "#ffffff",
+                    boxShadow: deviceMode === "desktop" ? "0 4px 14px rgba(37, 99, 235, 0.18)" : "0 1px 3px rgba(0,0,0,0.04)",
+                    cursor: "pointer",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+                      <span style={{ fontSize: "34px" }}>💻</span>
+                      {deviceMode === "desktop" && (
+                        <span style={{ fontSize: "11px", fontWeight: 900, background: "#2563eb", color: "#ffffff", padding: "3px 10px", borderRadius: "12px" }}>
+                          ACTIVO
+                        </span>
+                      )}
+                    </div>
+                    <h4 style={{ margin: "0 0 6px 0", fontSize: "16px", fontWeight: 900, color: deviceMode === "desktop" ? "#1e40af" : "#0f172a" }}>
+                      Versión Ordenador (Escritorio)
+                    </h4>
+                    <p style={{ margin: 0, fontSize: "12px", color: "#64748b", lineHeight: 1.45 }}>
+                      Vista completa de alta densidad. Barra lateral izquierda fija permanente, tablas matrices extendidas a pantalla ancha y máxima información visible simultáneamente.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    style={{
+                      marginTop: "16px",
+                      padding: "8px 14px",
+                      borderRadius: "8px",
+                      border: "none",
+                      background: deviceMode === "desktop" ? "#2563eb" : "#f1f5f9",
+                      color: deviceMode === "desktop" ? "#ffffff" : "#475569",
+                      fontSize: "12px",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                      width: "100%",
+                    }}
+                  >
+                    {deviceMode === "desktop" ? "✓ Seleccionado" : "Seleccionar Ordenador"}
+                  </button>
+                </div>
+
+                {/* 4. AUTOMÁTICO */}
+                <div
+                  onClick={() => handleSelectDeviceMode("auto")}
+                  style={{
+                    border: deviceMode === "auto" ? "2.5px solid #059669" : "1px solid #cbd5e1",
+                    borderRadius: "12px",
+                    padding: "20px",
+                    background: deviceMode === "auto" ? "#ecfdf5" : "#ffffff",
+                    boxShadow: deviceMode === "auto" ? "0 4px 14px rgba(5, 150, 105, 0.18)" : "0 1px 3px rgba(0,0,0,0.04)",
+                    cursor: "pointer",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+                      <span style={{ fontSize: "34px" }}>🔄</span>
+                      {deviceMode === "auto" && (
+                        <span style={{ fontSize: "11px", fontWeight: 900, background: "#059669", color: "#ffffff", padding: "3px 10px", borderRadius: "12px" }}>
+                          ACTIVO
+                        </span>
+                      )}
+                    </div>
+                    <h4 style={{ margin: "0 0 6px 0", fontSize: "16px", fontWeight: 900, color: deviceMode === "auto" ? "#047857" : "#0f172a" }}>
+                      Automático
+                    </h4>
+                    <p style={{ margin: 0, fontSize: "12px", color: "#64748b", lineHeight: 1.45 }}>
+                      Se ajusta en tiempo real según la resolución de la ventana. Si rotas el iPad o el móvil de horizontal a vertical, la vista cambiará automáticamente.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    style={{
+                      marginTop: "16px",
+                      padding: "8px 14px",
+                      borderRadius: "8px",
+                      border: "none",
+                      background: deviceMode === "auto" ? "#059669" : "#f1f5f9",
+                      color: deviceMode === "auto" ? "#ffffff" : "#475569",
+                      fontSize: "12px",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                      width: "100%",
+                    }}
+                  >
+                    {deviceMode === "auto" ? "✓ Seleccionado" : "Seleccionar Automático"}
+                  </button>
+                </div>
+              </div>
+
+              {/* CARD: ESCALA Y ZOOM DE CONTENIDO */}
+              <div style={{ background: "#ffffff", border: "1px solid #cbd5e1", borderRadius: "12px", padding: "20px" }}>
+                <h4 style={{ margin: "0 0 6px 0", fontSize: "15px", fontWeight: 900, color: "#0f172a" }}>
+                  🔍 Tamaño de Contenido y Zoom
+                </h4>
+                <p style={{ margin: "0 0 14px 0", fontSize: "12px", color: "#64748b" }}>
+                  Ajusta la densidad visual de todas las pantallas para ver más datos a la vez o ampliar los textos táctiles:
+                </p>
+                <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectDeviceZoom("85")}
+                    style={{
+                      padding: "8px 16px",
+                      borderRadius: "8px",
+                      border: deviceZoom === "85" ? "2px solid #1e3a8a" : "1px solid #cbd5e1",
+                      background: deviceZoom === "85" ? "#1e3a8a" : "#f8fafc",
+                      color: deviceZoom === "85" ? "#ffffff" : "#475569",
+                      fontSize: "12.5px",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                    }}
+                  >
+                    85% (Compacto · Mayor densidad)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectDeviceZoom("100")}
+                    style={{
+                      padding: "8px 16px",
+                      borderRadius: "8px",
+                      border: deviceZoom === "100" ? "2px solid #1e3a8a" : "1px solid #cbd5e1",
+                      background: deviceZoom === "100" ? "#1e3a8a" : "#f8fafc",
+                      color: deviceZoom === "100" ? "#ffffff" : "#475569",
+                      fontSize: "12.5px",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                    }}
+                  >
+                    100% (Normal · Predeterminado)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectDeviceZoom("115")}
+                    style={{
+                      padding: "8px 16px",
+                      borderRadius: "8px",
+                      border: deviceZoom === "115" ? "2px solid #1e3a8a" : "1px solid #cbd5e1",
+                      background: deviceZoom === "115" ? "#1e3a8a" : "#f8fafc",
+                      color: deviceZoom === "115" ? "#ffffff" : "#475569",
+                      fontSize: "12.5px",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                    }}
+                  >
+                    115% (Grande · Mayor legibilidad táctil)
+                  </button>
+                </div>
+              </div>
+
+              {/* CARD: BOTÓN FLOTANTE RÁPIDO Y DIAGNÓSTICO */}
+              <div style={{ background: "#ffffff", border: "1px solid #cbd5e1", borderRadius: "12px", padding: "20px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px", marginBottom: "14px" }}>
+                  <div>
+                    <h4 style={{ margin: "0 0 4px 0", fontSize: "15px", fontWeight: 900, color: "#0f172a" }}>
+                      ⚡ Botón Flotante de Cambio Rápido
+                    </h4>
+                    <p style={{ margin: 0, fontSize: "12px", color: "#64748b" }}>
+                      Muestra un botón discreto en la esquina inferior para alternar de Móvil a Tablet o PC desde cualquier pantalla sin entrar en Ajustes.
+                    </p>
+                  </div>
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: "8px", cursor: "pointer", fontSize: "13px", fontWeight: 700, color: "#0f172a" }}>
+                    <input
+                      type="checkbox"
+                      checked={!hideDeviceSwitcher}
+                      onChange={(e) => handleToggleHideSwitcher(!e.target.checked)}
+                      style={{ width: "18px", height: "18px", cursor: "pointer", accentColor: "#1e3a8a" }}
+                    />
+                    Mostrar Botón Flotante
+                  </label>
+                </div>
+
+                {/* DIAGNÓSTICO DEL DISPOSITIVO */}
+                <div style={{ borderTop: "1px solid #e2e8f0", paddingTop: "14px", marginTop: "10px" }}>
+                  <span style={{ fontSize: "11px", fontWeight: 800, color: "#475569", textTransform: "uppercase" }}>
+                    Información Técnica del Dispositivo Actual
+                  </span>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "10px", marginTop: "8px" }}>
+                    <div style={{ background: "#f8fafc", padding: "8px 12px", borderRadius: "8px", border: "1px solid #e2e8f0", fontSize: "11.5px" }}>
+                      <span style={{ color: "#64748b" }}>Resolución Pantalla:</span><br />
+                      <strong>{deviceInfo.screenW} × {deviceInfo.screenH} px</strong>
+                    </div>
+                    <div style={{ background: "#f8fafc", padding: "8px 12px", borderRadius: "8px", border: "1px solid #e2e8f0", fontSize: "11.5px" }}>
+                      <span style={{ color: "#64748b" }}>Ventana Navegador:</span><br />
+                      <strong>{deviceInfo.innerW} × {deviceInfo.innerH} px</strong>
+                    </div>
+                    <div style={{ background: "#f8fafc", padding: "8px 12px", borderRadius: "8px", border: "1px solid #e2e8f0", fontSize: "11.5px" }}>
+                      <span style={{ color: "#64748b" }}>Pantalla Táctil:</span><br />
+                      <strong>{deviceInfo.isTouch ? "Sí (Táctil detectada)" : "No (Ratón/Teclado)"}</strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
           {activeTab === "links_externos" && (
             <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
               {/* CABECERA DE LA SECCIÓN */}
