@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { GimnasioSesion, GimnasioEjercicio, SensorCaptureRecord } from './gimnasio-types';
-import { saveSensorCapture } from '@/app/actions';
+import { saveSensorCapture, getSensorCapturesForDate } from '@/app/actions';
 
 interface Props {
   isOpen: boolean;
@@ -59,23 +59,63 @@ export default function GimnasioEstacionModal({
   const simIntervalRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // 1. Identify monitored exercises or all exercises for selected date
-  const availableExercises = React.useMemo(() => {
-    const list: Array<{ id: string; nombre: string; monitorizado: boolean; tipoSensor: 'ENCODER' | 'DINAMOMETRO'; pesoDefectoKg?: number | string }> = [];
-    const seen = new Set<string>();
+  // Jugadores que ya han sido monitorizados en esta sesión / fecha
+  const [monitoredJugadorIds, setMonitoredJugadorIds] = useState<Set<string>>(new Set());
 
+  // Cargar jugadores monitorizados para la fecha seleccionada (localStorage + Supabase)
+  useEffect(() => {
+    const ids = new Set<string>();
+
+    try {
+      const raw = localStorage.getItem('gimnasio_sensor_capturas_v1');
+      if (raw) {
+        const list = JSON.parse(raw);
+        if (Array.isArray(list)) {
+          list.forEach((c: any) => {
+            if (c.fecha === selectedFecha && c.jugadorId) {
+              ids.add(c.jugadorId);
+            }
+          });
+        }
+      }
+    } catch {}
+
+    setMonitoredJugadorIds(new Set(ids));
+
+    // Consultar también en Supabase
+    getSensorCapturesForDate(selectedFecha).then(captures => {
+      if (Array.isArray(captures)) {
+        captures.forEach((c: any) => {
+          const jId = c.jugadorId || c.jugador_id;
+          if (jId) ids.add(jId);
+        });
+        setMonitoredJugadorIds(new Set(ids));
+      }
+    }).catch(console.warn);
+  }, [selectedFecha]);
+
+  // 1. Identificar ejercicios de la sesión actual Y ADEMÁS los monitorizados hasta día de hoy
+  const { sessionExercises, historyExercises, allAvailableExercises } = React.useMemo(() => {
+    const sessionList: Array<{ id: string; nombre: string; monitorizado: boolean; tipoSensor: 'ENCODER' | 'DINAMOMETRO'; pesoDefectoKg?: number | string; origen: 'SESION' }> = [];
+    const historyList: Array<{ id: string; nombre: string; monitorizado: boolean; tipoSensor: 'ENCODER' | 'DINAMOMETRO'; pesoDefectoKg?: number | string; origen: 'HISTORICO' }> = [];
+    const seenSession = new Set<string>();
+    const seenHistory = new Set<string>();
+
+    // A. Ejercicios de la sesión de la fecha seleccionada
     Object.entries(sesionesMap).forEach(([key, sesList]) => {
       sesList.forEach(ses => {
         if (ses.fecha === selectedFecha) {
           ses.ejercicios.forEach(ej => {
-            if (ej.nombre && !seen.has(ej.nombre.trim().toUpperCase())) {
-              seen.add(ej.nombre.trim().toUpperCase());
-              list.push({
+            const norm = (ej.nombre || '').trim().toUpperCase();
+            if (norm && !seenSession.has(norm)) {
+              seenSession.add(norm);
+              sessionList.push({
                 id: ej.id,
                 nombre: ej.nombre.trim(),
                 monitorizado: Boolean(ej.monitorizado),
                 tipoSensor: ej.tipoSensor || 'ENCODER',
                 pesoDefectoKg: ej.pesoKg ? parseFloat(ej.pesoKg) : 60,
+                origen: 'SESION',
               });
             }
           });
@@ -83,20 +123,66 @@ export default function GimnasioEstacionModal({
       });
     });
 
-    if (list.length === 0) {
-      list.push(
-        { id: 'ej_std_1', nombre: 'Sentadilla Trasera', monitorizado: true, tipoSensor: 'ENCODER', pesoDefectoKg: 60 },
-        { id: 'ej_std_2', nombre: 'Press Banca', monitorizado: true, tipoSensor: 'ENCODER', pesoDefectoKg: 50 },
-        { id: 'ej_std_3', nombre: 'Tracción Isométrica (Mid-Thigh Pull)', monitorizado: true, tipoSensor: 'DINAMOMETRO', pesoDefectoKg: 0 }
+    // B. Ejercicios monitorizados en el histórico de todas las sesiones
+    Object.entries(sesionesMap).forEach(([key, sesList]) => {
+      sesList.forEach(ses => {
+        ses.ejercicios.forEach(ej => {
+          const norm = (ej.nombre || '').trim().toUpperCase();
+          if (norm && !seenSession.has(norm) && !seenHistory.has(norm) && ej.monitorizado) {
+            seenHistory.add(norm);
+            historyList.push({
+              id: ej.id,
+              nombre: ej.nombre.trim(),
+              monitorizado: true,
+              tipoSensor: ej.tipoSensor || 'ENCODER',
+              pesoDefectoKg: ej.pesoKg ? parseFloat(ej.pesoKg) : 60,
+              origen: 'HISTORICO',
+            });
+          }
+        });
+      });
+    });
+
+    // C. Capturas anteriores en almacenamiento local
+    try {
+      const raw = localStorage.getItem('gimnasio_sensor_capturas_v1');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          parsed.forEach((c: any) => {
+            const norm = (c.ejercicioNombre || '').trim().toUpperCase();
+            if (norm && !seenSession.has(norm) && !seenHistory.has(norm)) {
+              seenHistory.add(norm);
+              historyList.push({
+                id: `hist_${c.ejercicioNombre}`,
+                nombre: c.ejercicioNombre.trim(),
+                monitorizado: true,
+                tipoSensor: c.tipoSensor || 'ENCODER',
+                pesoDefectoKg: c.pesoKg || 60,
+                origen: 'HISTORICO',
+              });
+            }
+          });
+        }
+      }
+    } catch {}
+
+    if (sessionList.length === 0 && historyList.length === 0) {
+      historyList.push(
+        { id: 'ej_std_1', nombre: 'Sentadilla Trasera', monitorizado: true, tipoSensor: 'ENCODER', pesoDefectoKg: 60, origen: 'HISTORICO' },
+        { id: 'ej_std_2', nombre: 'Press Banca', monitorizado: true, tipoSensor: 'ENCODER', pesoDefectoKg: 50, origen: 'HISTORICO' },
+        { id: 'ej_std_3', nombre: 'Tracción Isométrica (Mid-Thigh Pull)', monitorizado: true, tipoSensor: 'DINAMOMETRO', pesoDefectoKg: 0, origen: 'HISTORICO' }
       );
     }
-    return list;
+
+    const all = [...sessionList, ...historyList];
+    return { sessionExercises: sessionList, historyExercises: historyList, allAvailableExercises: all };
   }, [selectedFecha, sesionesMap]);
 
   // Set default exercise on date change
   useEffect(() => {
-    if (!selectedEjercicio || !availableExercises.some(e => e.nombre === selectedEjercicio)) {
-      const firstMonitored = availableExercises.find(e => e.monitorizado) || availableExercises[0];
+    if (!selectedEjercicio || !allAvailableExercises.some(e => e.nombre === selectedEjercicio)) {
+      const firstMonitored = allAvailableExercises.find(e => e.monitorizado) || allAvailableExercises[0];
       if (firstMonitored) {
         setSelectedEjercicio(firstMonitored.nombre);
         setSensorType(firstMonitored.tipoSensor || 'ENCODER');
@@ -105,7 +191,7 @@ export default function GimnasioEstacionModal({
         }
       }
     }
-  }, [availableExercises, selectedEjercicio]);
+  }, [allAvailableExercises, selectedEjercicio]);
 
   // Filter athletes assigned to the session of selected date
   const assignedJugadores = React.useMemo(() => {
@@ -287,6 +373,7 @@ export default function GimnasioEstacionModal({
 
     // Trigger save to Supabase
     if (activeJugador) {
+      setMonitoredJugadorIds(prev => new Set([...prev, activeJugador.id]));
       const record: SensorCaptureRecord = {
         id: `sensor_${Date.now()}_${activeJugador.id}`,
         jugadorId: activeJugador.id,
@@ -441,7 +528,7 @@ export default function GimnasioEstacionModal({
               value={selectedEjercicio}
               onChange={e => {
                 setSelectedEjercicio(e.target.value);
-                const found = availableExercises.find(ex => ex.nombre === e.target.value);
+                const found = allAvailableExercises.find(ex => ex.nombre === e.target.value);
                 if (found) {
                   setSensorType(found.tipoSensor || 'ENCODER');
                   if (found.pesoDefectoKg) setWeightKg(Number(found.pesoDefectoKg) || 60);
@@ -456,13 +543,27 @@ export default function GimnasioEstacionModal({
                 fontSize: '13px',
                 fontWeight: 800,
                 outline: 'none',
+                maxWidth: '260px',
               }}
             >
-              {availableExercises.map(ex => (
-                <option key={ex.id} value={ex.nombre}>
-                  {ex.monitorizado ? '⚡ ' : ''}{ex.nombre} ({ex.tipoSensor === 'DINAMOMETRO' ? 'Dinamómetro' : 'Encoder'})
-                </option>
-              ))}
+              {sessionExercises.length > 0 && (
+                <optgroup label="📋 Ejercicios de la Sesión">
+                  {sessionExercises.map(ex => (
+                    <option key={ex.id} value={ex.nombre}>
+                      {ex.monitorizado ? '⚡ ' : ''}{ex.nombre} ({ex.tipoSensor === 'DINAMOMETRO' ? 'Dinamómetro' : 'Encoder'})
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {historyExercises.length > 0 && (
+                <optgroup label="⚡ Histórico de Monitorizados">
+                  {historyExercises.map(ex => (
+                    <option key={ex.id} value={ex.nombre}>
+                      ⚡ {ex.nombre} ({ex.tipoSensor === 'DINAMOMETRO' ? 'Dinamómetro' : 'Encoder'})
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </div>
 
@@ -641,74 +742,113 @@ export default function GimnasioEstacionModal({
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
-                gap: '16px',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))',
+                gap: '14px',
                 paddingBottom: '20px',
               }}
             >
-              {filteredJugadores.map(j => (
-                <div
-                  key={j.id}
-                  onClick={() => handleSelectJugador(j)}
-                  style={{
-                    background: '#0f172a',
-                    border: '2px solid #1e293b',
-                    borderRadius: '16px',
-                    padding: '16px 10px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: '10px',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                    userSelect: 'none',
-                  }}
-                  onMouseEnter={e => {
-                    (e.currentTarget as HTMLElement).style.borderColor = '#38bdf8';
-                    (e.currentTarget as HTMLElement).style.transform = 'translateY(-3px)';
-                  }}
-                  onMouseLeave={e => {
-                    (e.currentTarget as HTMLElement).style.borderColor = '#1e293b';
-                    (e.currentTarget as HTMLElement).style.transform = 'translateY(0)';
-                  }}
-                >
-                  {/* Foto circular grande */}
+              {filteredJugadores.map(j => {
+                const isMonitored = monitoredJugadorIds.has(j.id);
+                return (
                   <div
+                    key={j.id}
+                    onClick={() => handleSelectJugador(j)}
                     style={{
-                      width: '84px',
-                      height: '84px',
-                      borderRadius: '50%',
-                      background: '#1e293b',
-                      border: '3px solid #38bdf8',
-                      overflow: 'hidden',
+                      position: 'relative',
+                      background: '#0f172a',
+                      border: isMonitored ? '2px solid #22c55e' : '2px solid #1e293b',
+                      borderRadius: '12px',
+                      padding: '10px 8px',
                       display: 'flex',
+                      flexDirection: 'column',
                       alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '24px',
-                      fontWeight: 900,
-                      color: '#38bdf8',
+                      gap: '8px',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      boxShadow: isMonitored ? '0 4px 14px rgba(34, 197, 94, 0.25)' : '0 4px 12px rgba(0,0,0,0.3)',
+                      userSelect: 'none',
+                    }}
+                    onMouseEnter={e => {
+                      (e.currentTarget as HTMLElement).style.borderColor = '#38bdf8';
+                      (e.currentTarget as HTMLElement).style.transform = 'translateY(-3px)';
+                    }}
+                    onMouseLeave={e => {
+                      (e.currentTarget as HTMLElement).style.borderColor = isMonitored ? '#22c55e' : '#1e293b';
+                      (e.currentTarget as HTMLElement).style.transform = 'translateY(0)';
                     }}
                   >
-                    {j.foto_url ? (
-                      <img src={j.foto_url} alt={j.nombre} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    ) : (
-                      <span>{(j.apodo || j.nombre).slice(0, 2).toUpperCase()}</span>
+                    {/* PUNTO VERDE ARRIBA A LA DERECHA SI SE HA MONITORIZADO EN ESTA SESIÓN */}
+                    {isMonitored && (
+                      <div
+                        title="Monitorizado en esta sesión"
+                        style={{
+                          position: 'absolute',
+                          top: '6px',
+                          right: '6px',
+                          width: '12px',
+                          height: '12px',
+                          borderRadius: '50%',
+                          background: '#22c55e',
+                          boxShadow: '0 0 10px #22c55e',
+                          border: '2px solid #0f172a',
+                          zIndex: 5,
+                        }}
+                      />
                     )}
-                  </div>
 
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: '13px', fontWeight: 900, color: '#f8fafc', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '130px' }}>
-                      {(j.apodo || j.nombre).toUpperCase()}
+                    {/* Foto rectangular del jugador */}
+                    <div
+                      style={{
+                        width: '100%',
+                        height: '135px',
+                        borderRadius: '8px',
+                        background: '#1e293b',
+                        border: '1px solid #334155',
+                        overflow: 'hidden',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '22px',
+                        fontWeight: 900,
+                        color: '#38bdf8',
+                      }}
+                    >
+                      {j.foto_url ? (
+                        <img
+                          src={j.foto_url}
+                          alt={j.nombre}
+                          style={{
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'cover',
+                            objectPosition: 'top center',
+                          }}
+                        />
+                      ) : (
+                        <span>{(j.apodo || j.nombre).slice(0, 2).toUpperCase()}</span>
+                      )}
                     </div>
-                    {j.posicion && (
-                      <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700, marginTop: '2px' }}>
-                        {j.posicion}
+
+                    {/* Nombre del jugador (sin posición) */}
+                    <div style={{ textAlign: 'center', width: '100%' }}>
+                      <div
+                        style={{
+                          fontSize: '12.5px',
+                          fontWeight: 900,
+                          color: '#f8fafc',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          width: '100%',
+                        }}
+                        title={j.apodo || j.nombre}
+                      >
+                        {(j.apodo || j.nombre).toUpperCase()}
                       </div>
-                    )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -743,11 +883,11 @@ export default function GimnasioEstacionModal({
               <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                 <div
                   style={{
-                    width: '60px',
-                    height: '60px',
-                    borderRadius: '50%',
+                    width: '52px',
+                    height: '62px',
+                    borderRadius: '6px',
                     background: '#1e293b',
-                    border: '3px solid #38bdf8',
+                    border: '2px solid #38bdf8',
                     overflow: 'hidden',
                     display: 'flex',
                     alignItems: 'center',
@@ -758,7 +898,7 @@ export default function GimnasioEstacionModal({
                   }}
                 >
                   {activeJugador.foto_url ? (
-                    <img src={activeJugador.foto_url} alt={activeJugador.nombre} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <img src={activeJugador.foto_url} alt={activeJugador.nombre} style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top center' }} />
                   ) : (
                     <span>{(activeJugador.apodo || activeJugador.nombre).slice(0, 2).toUpperCase()}</span>
                   )}
