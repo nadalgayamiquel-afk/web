@@ -5635,3 +5635,22 @@ export async function getSensorCapturesForDate(fecha: string): Promise<any[]> {
     return [];
   }
 }
+
+export async function getAllSensorCaptures(): Promise<any[]> {
+  try {
+    const supabase = getServerSupabase();
+    if (!supabase) return [];
+    const { data, error } = await supabase
+      .from('fuerza_sesiones')
+      .select('*')
+      .eq('tipo_entreno', 'MONITORIZACION_SENSOR')
+      .order('sesion_dia_id', { ascending: false });
+    if (error) {
+      console.warn('Error fetching all sensor captures:', error.message);
+      return [];
+    }
+    return (data || []).map((row: any) => row.contenido || row);
+  } catch {
+    return [];
+  }
+}

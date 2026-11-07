@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { GimnasioSesion, GimnasioEjercicio, SensorCaptureRecord } from './gimnasio-types';
-import { saveSensorCapture, getSensorCapturesForDate } from '@/app/actions';
+import { saveSensorCapture, getSensorCapturesForDate, getAllSensorCaptures } from '@/app/actions';
 
 interface Props {
   isOpen: boolean;
@@ -93,6 +93,93 @@ export default function GimnasioEstacionModal({
       }
     }).catch(console.warn);
   }, [selectedFecha]);
+
+  // Histórico completo de capturas (locales y de Supabase) para consultar registros previos
+  const [allHistoricalCaptures, setAllHistoricalCaptures] = useState<any[]>([]);
+
+  useEffect(() => {
+    let localList: any[] = [];
+    try {
+      const raw = localStorage.getItem('gimnasio_sensor_capturas_v1');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) localList = parsed;
+      }
+    } catch {}
+
+    setAllHistoricalCaptures(localList);
+
+    getAllSensorCaptures().then(remoteCaptures => {
+      if (Array.isArray(remoteCaptures) && remoteCaptures.length > 0) {
+        const combined = [...localList];
+        const seenIds = new Set(combined.map(c => c.id));
+        remoteCaptures.forEach(rc => {
+          if (!seenIds.has(rc.id)) {
+            combined.push(rc);
+          }
+        });
+        setAllHistoricalCaptures(combined);
+      }
+    }).catch(console.warn);
+  }, []);
+
+  // Mapa de última carga, velocidad máxima o kg máximos para cada jugador en el ejercicio seleccionado
+  const lastRecordsByJugador = React.useMemo(() => {
+    const map: Record<string, { pesoKg?: string | number; velMax?: string | number; kgMax?: number; fuerzaPicoN?: number; fecha?: string }> = {};
+    if (!selectedEjercicio) return map;
+
+    const targetEx = selectedEjercicio.trim().toUpperCase();
+
+    // 1. Buscar primero en capturas de sensores (de más reciente a más antigua)
+    allHistoricalCaptures.forEach(c => {
+      const cEx = (c.ejercicioNombre || c.ejercicioId || '').trim().toUpperCase();
+      const jId = c.jugadorId || c.jugador_id;
+      if (cEx === targetEx && jId && !map[jId]) {
+        const fPico = c.fuerzaPicoN ? Number(c.fuerzaPicoN) : undefined;
+        const kgFromForce = fPico ? Math.round(fPico / 9.81) : undefined;
+        map[jId] = {
+          pesoKg: c.pesoKg,
+          velMax: c.velocidadPico || c.velocidadMedia,
+          fuerzaPicoN: fPico,
+          kgMax: kgFromForce,
+          fecha: c.fecha,
+        };
+      }
+    });
+
+    // 2. Si no hay captura del sensor, buscar en las sesiones planificadas de gimnasio
+    (allDays || []).slice().reverse().forEach(d => {
+      Object.entries(sesionesMap).forEach(([key, sesList]) => {
+        sesList.forEach(ses => {
+          if (ses.fecha === d.fecha) {
+            ses.ejercicios.forEach(ej => {
+              if ((ej.nombre || '').trim().toUpperCase() === targetEx) {
+                if (ses.jugadorId === 'TEAM') {
+                  jugadores.forEach(j => {
+                    if (!map[j.id] && (ej.pesoKg || ej.velocidad)) {
+                      map[j.id] = {
+                        pesoKg: ej.pesoKg,
+                        velMax: ej.velocidad,
+                        fecha: ses.fecha,
+                      };
+                    }
+                  });
+                } else if (ses.jugadorId && !map[ses.jugadorId] && (ej.pesoKg || ej.velocidad)) {
+                  map[ses.jugadorId] = {
+                    pesoKg: ej.pesoKg,
+                    velMax: ej.velocidad,
+                    fecha: ses.fecha,
+                  };
+                }
+              }
+            });
+          }
+        });
+      });
+    });
+
+    return map;
+  }, [selectedEjercicio, allHistoricalCaptures, allDays, sesionesMap, jugadores]);
 
   // 1. Identificar ejercicios de la sesión actual Y ADEMÁS los monitorizados hasta día de hoy
   const { sessionExercises, historyExercises, allAvailableExercises } = React.useMemo(() => {
@@ -269,6 +356,13 @@ export default function GimnasioEstacionModal({
     setPeakForceN(0);
     setCurvePoints([]);
     setWorkoutState('LISTENING');
+
+    // Pre-cargar la última carga usada si es Encoder
+    const prev = lastRecordsByJugador[jugador.id];
+    if (prev?.pesoKg) {
+      const num = parseFloat(String(prev.pesoKg).replace(/[^0-9.]/g, ''));
+      if (!isNaN(num) && num > 0) setWeightKg(num);
+    }
   };
 
   // Movement detection & execution logic (Simulation or Live Sensor)
@@ -396,6 +490,7 @@ export default function GimnasioEstacionModal({
       };
 
       saveSensorCapture(record).catch(console.warn);
+      setAllHistoricalCaptures(prev => [record, ...prev]);
 
       // Save locally as immediate backup
       try {
@@ -749,6 +844,7 @@ export default function GimnasioEstacionModal({
             >
               {filteredJugadores.map(j => {
                 const isMonitored = monitoredJugadorIds.has(j.id);
+                const lastRec = lastRecordsByJugador[j.id];
                 return (
                   <div
                     key={j.id}
@@ -758,11 +854,11 @@ export default function GimnasioEstacionModal({
                       background: '#0f172a',
                       border: isMonitored ? '2px solid #22c55e' : '2px solid #1e293b',
                       borderRadius: '12px',
-                      padding: '10px 8px',
+                      padding: '10px 8px 8px 8px',
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'center',
-                      gap: '8px',
+                      gap: '6px',
                       cursor: 'pointer',
                       transition: 'all 0.15s ease',
                       boxShadow: isMonitored ? '0 4px 14px rgba(34, 197, 94, 0.25)' : '0 4px 12px rgba(0,0,0,0.3)',
@@ -796,11 +892,11 @@ export default function GimnasioEstacionModal({
                       />
                     )}
 
-                    {/* Foto rectangular del jugador */}
+                    {/* Foto rectangular del jugador (recortada desde abajo) */}
                     <div
                       style={{
                         width: '100%',
-                        height: '135px',
+                        height: '108px',
                         borderRadius: '8px',
                         background: '#1e293b',
                         border: '1px solid #334155',
@@ -840,10 +936,53 @@ export default function GimnasioEstacionModal({
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
                           width: '100%',
+                          lineHeight: 1.2,
                         }}
                         title={j.apodo || j.nombre}
                       >
                         {(j.apodo || j.nombre).toUpperCase()}
+                      </div>
+
+                      {/* Debajo del nombre en gris: última carga y vel máx (o kg máx en dinamómetro) */}
+                      <div
+                        style={{
+                          marginTop: '3px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          color: '#94a3b8',
+                          lineHeight: 1.2,
+                          minHeight: '14px',
+                        }}
+                      >
+                        {lastRec && (lastRec.pesoKg || lastRec.velMax || lastRec.kgMax || lastRec.fuerzaPicoN) ? (
+                          sensorType === 'DINAMOMETRO' ? (
+                            <span style={{ color: '#94a3b8' }}>
+                              {lastRec.kgMax ? `${lastRec.kgMax} kg máx` : lastRec.fuerzaPicoN ? `${Math.round(lastRec.fuerzaPicoN / 9.81)} kg máx` : '—'}
+                            </span>
+                          ) : (
+                            <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                              {lastRec.pesoKg && (
+                                <span>{String(lastRec.pesoKg).includes('kg') ? lastRec.pesoKg : `${lastRec.pesoKg}kg`}</span>
+                              )}
+                              {lastRec.pesoKg && lastRec.velMax && <span>•</span>}
+                              {lastRec.velMax && (
+                                <span style={{ color: '#38bdf8', fontWeight: 800 }}>
+                                  {String(lastRec.velMax).includes('m/s') ? lastRec.velMax : `${lastRec.velMax} m/s`}
+                                </span>
+                              )}
+                              {!lastRec.pesoKg && !lastRec.velMax && lastRec.kgMax && (
+                                <span>{lastRec.kgMax} kg</span>
+                              )}
+                            </span>
+                          )
+                        ) : (
+                          <span style={{ color: '#64748b', fontSize: '9px', fontStyle: 'italic' }}>
+                            Sin reg. previo
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
