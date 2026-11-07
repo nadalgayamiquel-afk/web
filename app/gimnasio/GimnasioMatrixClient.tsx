@@ -19,6 +19,7 @@ import {
   restoreFuerzaBBDDFromDisk,
   deleteFuerzaSesionFromSupabase,
 } from '@/app/actions';
+import GimnasioEstacionModal from './GimnasioEstacionModal';
 
 export type JugadorGimnasio = {
   id: string;
@@ -428,6 +429,7 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
   const [reportTipo, setReportTipo] = useState<'individual' | 'grupal' | 'ambos'>('individual');
   const [reportFecha, setReportFecha] = useState<string>('2026-10-10');
   const [selectedReportJugadorIds, setSelectedReportJugadorIds] = useState<string[]>([]);
+  const [showEstacionModal, setShowEstacionModal] = useState<boolean>(false);
 
   // Días ordenados
   const sortedDays = useMemo(() => {
@@ -658,6 +660,8 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
           notas: '',
           showNotas: false,
           variablesPersonalizadas: {},
+          monitorizado: false,
+          tipoSensor: 'ENCODER',
         },
       ],
     };
@@ -672,6 +676,8 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
       ...e,
       showNotas: Boolean(e.notas?.trim()),
       variablesPersonalizadas: e.variablesPersonalizadas || {},
+      monitorizado: Boolean(e.monitorizado),
+      tipoSensor: e.tipoSensor || 'ENCODER',
     }));
     if (copy.incluirRpe === undefined) copy.incluirRpe = true;
     if (!copy.variablesColumnas) copy.variablesColumnas = ['Material'];
@@ -1063,6 +1069,8 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
       notas: '',
       showNotas: false,
       variablesPersonalizadas: {},
+      monitorizado: false,
+      tipoSensor: 'ENCODER',
     };
     setModalSesion({ ...modalSesion, ejercicios: [...modalSesion.ejercicios, nuevo] });
     scrollToNewEjercicio(nuevoId);
@@ -1448,6 +1456,29 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
           >
             <span>🔄</span>
             <span>Restaurar 100%</span>
+          </button>
+
+          {/* BOTÓN MODO ESTACIÓN / TABLET KIOSCO */}
+          <button
+            onClick={() => setShowEstacionModal(true)}
+            title="Abrir Modo Estación Kiosco para dejar una tablet fija frente a un ejercicio con Encoder o Dinamómetro"
+            style={{
+              padding: '6px 14px',
+              borderRadius: '6px',
+              border: 'none',
+              background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+              color: '#ffffff',
+              fontSize: '11.5px',
+              fontWeight: 800,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              boxShadow: '0 2px 5px rgba(2, 132, 199, 0.3)',
+            }}
+          >
+            <span>📱</span>
+            <span>Modo Estación (Tablet)</span>
           </button>
 
           {/* BOTÓN REALIZAR REPORT (INDIVIDUAL O GRUPAL) */}
@@ -2714,6 +2745,9 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                         </th>
                       ))}
 
+                      <th style={{ padding: '7px 6px', textAlign: 'center', fontWeight: 800, width: '135px', background: '#f0f9ff', color: '#0369a1' }}>
+                        ⚡ Sensor Kiosco
+                      </th>
                       <th style={{ padding: '7px 8px', textAlign: 'center', width: '90px', background: '#f8fafc' }}>Acciones</th>
                     </tr>
                   </thead>
@@ -2869,6 +2903,51 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                               </td>
                             );
                           })}
+
+                          {/* Sensor Kiosco (Encoder / Dinamómetro) */}
+                          <td style={{ padding: '4px 6px', textAlign: 'center', background: ej.monitorizado ? '#f0fdf4' : 'transparent' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', cursor: 'pointer', fontSize: '11px', fontWeight: 700, color: ej.monitorizado ? '#15803d' : '#64748b' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={!!ej.monitorizado}
+                                  onChange={e => {
+                                    const copy = [...modalSesion.ejercicios];
+                                    copy[index].monitorizado = e.target.checked;
+                                    if (e.target.checked && !copy[index].tipoSensor) {
+                                      copy[index].tipoSensor = 'ENCODER';
+                                    }
+                                    setModalSesion({ ...modalSesion, ejercicios: copy });
+                                  }}
+                                  style={{ cursor: 'pointer', accentColor: '#16a34a' }}
+                                />
+                                <span>{ej.monitorizado ? 'Activo' : 'No'}</span>
+                              </label>
+                              {ej.monitorizado && (
+                                <select
+                                  value={ej.tipoSensor || 'ENCODER'}
+                                  onChange={e => {
+                                    const copy = [...modalSesion.ejercicios];
+                                    copy[index].tipoSensor = e.target.value as 'ENCODER' | 'DINAMOMETRO';
+                                    setModalSesion({ ...modalSesion, ejercicios: copy });
+                                  }}
+                                  style={{
+                                    fontSize: '10px',
+                                    padding: '2px 4px',
+                                    borderRadius: '4px',
+                                    border: '1px solid #86efac',
+                                    background: '#dcfce7',
+                                    color: '#166534',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  <option value="ENCODER">Encoder</option>
+                                  <option value="DINAMOMETRO">Dinamóm.</option>
+                                </select>
+                              )}
+                            </div>
+                          </td>
 
                           {/* Acciones */}
                           <td style={{ padding: '4px 6px', textAlign: 'center' }}>
@@ -3948,6 +4027,16 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
           </div>
         </div>
       )}
+
+      {/* MODAL MODO ESTACIÓN / TABLET KIOSCO */}
+      <GimnasioEstacionModal
+        isOpen={showEstacionModal}
+        onClose={() => setShowEstacionModal(false)}
+        allDays={sortedDays}
+        sesionesMap={sesionesMap}
+        jugadores={jugadores}
+        initialFecha={sortedDays[0]?.fecha}
+      />
     </div>
   );
 }
@@ -4642,7 +4731,24 @@ function MatrixCellSesionItem({
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '2px' }}>
-                <span style={{ fontWeight: 800, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span style={{ fontWeight: 800, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  {ej.monitorizado && (
+                    <span
+                      title={`Monitorizado: ${ej.tipoSensor === 'DINAMOMETRO' ? 'Dinamómetro' : 'Encoder'}`}
+                      style={{
+                        fontSize: '7.5px',
+                        padding: '1px 3px',
+                        borderRadius: '3px',
+                        background: '#dcfce7',
+                        color: '#15803d',
+                        fontWeight: 900,
+                        border: '1px solid #86efac',
+                        flexShrink: 0,
+                      }}
+                    >
+                      ⚡ {ej.tipoSensor === 'DINAMOMETRO' ? 'DIN' : 'VBT'}
+                    </span>
+                  )}
                   {ej.nombre}
                 </span>
                 {ej.bloque && (

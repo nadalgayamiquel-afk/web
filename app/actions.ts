@@ -5585,3 +5585,53 @@ export async function getCompleteSupabaseBackup(): Promise<any> {
   const { backupData } = await runBackup();
   return backupData;
 }
+
+export async function saveSensorCapture(capture: any): Promise<{ success: boolean; id: string }> {
+  try {
+    const supabase = getServerSupabase();
+    const id = capture.id || `sensor_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    const row = {
+      id,
+      jugador_id: capture.jugadorId,
+      sesion_dia_id: capture.fecha,
+      tipo_entreno: 'MONITORIZACION_SENSOR',
+      ejercicio_id: capture.ejercicioId || capture.ejercicioNombre || 'ejercicio',
+      contenido: {
+        ...capture,
+        id,
+        saved_at: new Date().toISOString(),
+      },
+    };
+
+    if (supabase) {
+      const { error } = await supabase.from('fuerza_sesiones').upsert(row, { onConflict: 'id' });
+      if (error) {
+        console.warn('Error saving sensor capture in Supabase:', error.message);
+      }
+    }
+
+    return { success: true, id };
+  } catch (e: any) {
+    console.error('Error in saveSensorCapture:', e);
+    return { success: false, id: capture?.id || '' };
+  }
+}
+
+export async function getSensorCapturesForDate(fecha: string): Promise<any[]> {
+  try {
+    const supabase = getServerSupabase();
+    if (!supabase) return [];
+    const { data, error } = await supabase
+      .from('fuerza_sesiones')
+      .select('*')
+      .eq('sesion_dia_id', fecha)
+      .eq('tipo_entreno', 'MONITORIZACION_SENSOR');
+    if (error) {
+      console.warn('Error fetching sensor captures:', error.message);
+      return [];
+    }
+    return (data || []).map((row: any) => row.contenido || row);
+  } catch {
+    return [];
+  }
+}

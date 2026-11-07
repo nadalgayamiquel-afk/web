@@ -16,6 +16,37 @@ export type GimnasioEjercicio = {
   showVideo?: boolean; // Plegado por defecto
   videoUrl?: string; // Enlace de video específico del ejercicio
   variablesPersonalizadas?: Record<string, string>; // ej: { "Tiempo": "45s", "Velocidad": "1.2 m/s", "Material": "Goma" }
+  // Monitorización con sensores (Encoder / Dinamómetro)
+  monitorizado?: boolean;
+  tipoSensor?: 'ENCODER' | 'DINAMOMETRO';
+  pesoDefectoKg?: number | string;
+};
+
+export type SensorCaptureRecord = {
+  id: string;
+  jugadorId: string;
+  jugadorNombre?: string;
+  fecha: string;
+  sesionId?: string;
+  ejercicioId: string;
+  ejercicioNombre: string;
+  tipoSensor: 'ENCODER' | 'DINAMOMETRO';
+  pesoKg?: number;
+  repsCount?: number;
+  repsData?: Array<{
+    rep: number;
+    velocidadMedia: number; // m/s
+    velocidadPico: number; // m/s
+    perdidaVelocidadPct: number; // % respecto a la mejor
+  }>;
+  velocidadMedia?: number;
+  velocidadPico?: number;
+  perdidaVelocidadTotalPct?: number;
+  fuerzaPicoN?: number;
+  fuerzaMediaN?: number;
+  curvaPuntos?: Array<{ t: number; f: number }>; // t: segundos, f: Newtons
+  duracionSegundos?: number;
+  timestamp: string;
 };
 
 export type GimnasioSesion = {
