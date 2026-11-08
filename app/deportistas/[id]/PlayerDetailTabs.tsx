@@ -24,6 +24,8 @@ import {
   getMicrocycleType,
   extractMicrocyclesFromGpsData,
   getMicrocycleForDate,
+  getMicrocycleTypeForDate,
+  OFFICIAL_SEASON_MICROCYCLES,
   parseDateStrToISO,
 } from "../../lib/microciclos";
 import {
@@ -1265,35 +1267,45 @@ export default function PlayerDetailTabs({
 
   // Variables activas en la fila del perfil competitivo de este jugador (según las favoritas del usuario)
   const [playerCompVariables, setPlayerCompVariables] = useState<string[]>(() => {
+    let result: string[] = [];
     if (initialPlayerCompVariables && initialPlayerCompVariables.length > 0) {
-      return initialPlayerCompVariables.filter((k) => k !== "derived_1791992159697" && k !== "derived_undefined");
-    }
-    if (typeof window !== "undefined") {
+      result = initialPlayerCompVariables.filter((k) => k !== "derived_1791992159697" && k !== "derived_undefined");
+    } else if (typeof window !== "undefined") {
       try {
         const stored = localStorage.getItem(`player_comp_vars_${jugador.id}`);
         if (stored) {
           const parsed = JSON.parse(stored);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            return parsed.filter((k: string) => k !== "derived_1791992159697" && k !== "derived_undefined");
+            result = parsed.filter((k: string) => k !== "derived_1791992159697" && k !== "derived_undefined");
           }
         }
-        const teamFavs = localStorage.getItem("gps_profile_selected_fav_keys");
-        if (teamFavs) {
-          const parsed = JSON.parse(teamFavs);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            return parsed.filter((k: string) => k !== "derived_1791992159697" && k !== "derived_undefined");
+        if (result.length === 0) {
+          const teamFavs = localStorage.getItem("gps_profile_selected_fav_keys");
+          if (teamFavs) {
+            const parsed = JSON.parse(teamFavs);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              result = parsed.filter((k: string) => k !== "derived_1791992159697" && k !== "derived_undefined");
+            }
           }
         }
       } catch {}
     }
-    return [
-      "Distance(m)",
-      "Distancia / Min",
-      "Distance +21 (m)",
-      "Acc+Dec",
-      "Player Load",
-      "MAX Speed(km/h)",
-    ];
+    if (result.length === 0) {
+      result = [
+        "Distance(m)",
+        "HSR Abs (m)",
+        "Distancia / Min",
+        "Distance +21 (m)",
+        "Acc+Dec",
+        "Player Load",
+        "MAX Speed(km/h)",
+      ];
+    }
+    // Asegurar SIEMPRE que HSR Abs (m) esté predeterminado en la tabla
+    if (!result.includes("HSR Abs (m)")) {
+      result.splice(1, 0, "HSR Abs (m)");
+    }
+    return result;
   });
 
   const handleToggleVariable = (key: string) => {
@@ -1349,6 +1361,7 @@ export default function PlayerDetailTabs({
     }
     return {
       "Distance(m)": 1.0,
+      "HSR Abs (m)": 1.0,
       "Distancia / Min": 1.0,
       "Distance +21 (m)": 1.0,
       "Acc+Dec": 1.0,
@@ -1632,7 +1645,19 @@ export default function PlayerDetailTabs({
   // Microciclos detectados y auto-ajustados según sesiones de partido y fechas
   const availableMicrocycles = useMemo(() => {
     const stored = getStoredMicrocycles();
-    return extractMicrocyclesFromGpsData(localGpsRecords, stored);
+    const extracted = extractMicrocyclesFromGpsData(localGpsRecords, stored);
+    const map = new Map<string, CustomMicrocycleDef>();
+    // Garantizar que todos los microciclos oficiales de la temporada siempre existan
+    OFFICIAL_SEASON_MICROCYCLES.forEach((mc) => map.set(mc.id, { ...mc }));
+    extracted.forEach((mc) => {
+      const existing = map.get(mc.id);
+      if (existing) {
+        map.set(mc.id, { ...existing, ...mc, tipo: existing.tipo });
+      } else {
+        map.set(mc.id, mc);
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => b.start.localeCompare(a.start));
   }, [localGpsRecords, microcycleRefreshKey]);
 
   // Microciclos que corresponden al tipo actualmente seleccionado en el filtro
@@ -1749,9 +1774,8 @@ export default function PlayerDetailTabs({
 
       // Filtrar estrictamente por tipo de microciclo si se selecciona un tipo específico
       const mc = getMicrocycleForDate(r.fecha, availableMicrocycles);
+      const mType = mc ? getMicrocycleType(mc) : getMicrocycleTypeForDate(r.fecha);
       if (gpsMicrocycleTypeFilter !== "todos") {
-        if (!mc) return false;
-        const mType = getMicrocycleType(mc);
         if (mType !== gpsMicrocycleTypeFilter) return false;
       }
 

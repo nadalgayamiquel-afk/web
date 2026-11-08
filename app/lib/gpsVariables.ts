@@ -426,6 +426,7 @@ export const ALL_GPS_VARIABLES = BASE_GPS_VARIABLES;
 
 export const DEFAULT_FAVORITE_GPS_VARIABLES: string[] = [
   "Distance(m)",
+  "HSR Abs (m)",
   "Distance +21 (m)",
   "MAX Speed(km/h)",
   "Sprints Count",
@@ -448,13 +449,13 @@ export function getStoredFavoriteKeys(): string[] {
     const derivedIds = derived.map((d) => d.id);
     if (!raw) {
       return Array.from(new Set([...DEFAULT_FAVORITE_GPS_VARIABLES, ...derivedIds])).filter(
-        (k) => k !== "HSR Abs (m)" && k !== "derived_1791992159697" && (!k.startsWith("derived_") || derivedIds.includes(k))
+        (k) => k !== "derived_1791992159697" && (!k.startsWith("derived_") || derivedIds.includes(k))
       );
     }
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
       const cleaned = parsed.filter(
-        (k) => k !== "HSR Abs (m)" && k !== "derived_1791992159697" && (!k.startsWith("derived_") || derivedIds.includes(k))
+        (k) => k !== "derived_1791992159697" && (!k.startsWith("derived_") || derivedIds.includes(k))
       );
       if (cleaned.length !== parsed.length) {
         try {
@@ -466,7 +467,7 @@ export function getStoredFavoriteKeys(): string[] {
       );
     }
   } catch (e) {}
-  return DEFAULT_FAVORITE_GPS_VARIABLES.filter((k) => k !== "HSR Abs (m)" && k !== "derived_1791992159697");
+  return DEFAULT_FAVORITE_GPS_VARIABLES.filter((k) => k !== "derived_1791992159697");
 }
 
 export function saveStoredFavoriteKeys(keys: string[]): void {
@@ -475,7 +476,7 @@ export function saveStoredFavoriteKeys(keys: string[]): void {
     const derived = getStoredDerivedVariables();
     const derivedIds = derived.map((d) => d.id);
     const cleaned = keys.filter(
-      (k) => k !== "HSR Abs (m)" && k !== "derived_1791992159697" && (!k.startsWith("derived_") || derivedIds.includes(k))
+      (k) => k !== "derived_1791992159697" && (!k.startsWith("derived_") || derivedIds.includes(k))
     );
     const val = cleaned.length > 0 ? cleaned : DEFAULT_FAVORITE_GPS_VARIABLES;
     localStorage.setItem(STORAGE_FAVORITES_KEY, JSON.stringify(val));
@@ -1079,7 +1080,7 @@ export function calculateGpsMetricValue(
 }
 
 export function useFavoriteGpsVariables() {
-  const [favoriteKeys, setFavoriteKeys] = useState<string[]>(() => DEFAULT_FAVORITE_GPS_VARIABLES.filter((k) => k !== "HSR Abs (m)"));
+  const [favoriteKeys, setFavoriteKeys] = useState<string[]>(() => DEFAULT_FAVORITE_GPS_VARIABLES);
   const [derivedVariables, setDerivedVariables] = useState<GpsDerivedVariable[]>([]);
 
   useEffect(() => {
@@ -1091,7 +1092,7 @@ export function useFavoriteGpsVariables() {
       .then((r) => (r.ok ? r.json() : null))
       .then((res) => {
         if (res && Array.isArray(res.favoriteVariables) && res.favoriteVariables.length > 0) {
-          const cleaned = res.favoriteVariables.filter((k: string) => k !== "HSR Abs (m)");
+          const cleaned = res.favoriteVariables;
           setFavoriteKeys((prev) => {
             const merged = Array.from(new Set([...prev, ...cleaned]));
             if (prev.length === merged.length && prev.every((v, i) => v === merged[i])) {
@@ -1127,7 +1128,7 @@ export function useFavoriteGpsVariables() {
       .catch(() => {});
 
     const handleFavUpdate = (e: any) => {
-      const next = Array.isArray(e.detail) ? e.detail.filter((k: string) => k !== "HSR Abs (m)") : getStoredFavoriteKeys();
+      const next = Array.isArray(e.detail) ? e.detail : getStoredFavoriteKeys();
       setFavoriteKeys((prev) => {
         if (prev.length === next.length && prev.every((v, i) => v === next[i])) return prev;
         return next;
@@ -1171,18 +1172,15 @@ export function useFavoriteGpsVariables() {
   }, [derivedVariables]);
 
   const updateFavorites = useCallback((newKeys: string[]) => {
-    const cleaned = newKeys.filter((k) => k !== "HSR Abs (m)");
-    setFavoriteKeys(cleaned);
-    saveStoredFavoriteKeys(cleaned);
+    setFavoriteKeys(newKeys);
+    saveStoredFavoriteKeys(newKeys);
   }, []);
 
   const toggleFavorite = useCallback((key: string) => {
-    if (key === "HSR Abs (m)") return;
     setFavoriteKeys((prev) => {
       const exists = prev.includes(key);
       const next = exists ? prev.filter((k) => k !== key) : [...prev, key];
-      const result = next.filter((k) => k !== "HSR Abs (m)");
-      const finalRes = result.length > 0 ? result : [key];
+      const finalRes = next.length > 0 ? next : [key];
       setTimeout(() => {
         saveStoredFavoriteKeys(finalRes);
       }, 0);
@@ -1200,7 +1198,7 @@ export function useFavoriteGpsVariables() {
 
       // Auto-añadir a favoritas
       if (!favoriteKeys.includes(id)) {
-        const nextFav = [...favoriteKeys, id].filter((k) => k !== "HSR Abs (m)");
+        const nextFav = [...favoriteKeys, id];
         setFavoriteKeys(nextFav);
         saveStoredFavoriteKeys(nextFav);
       }
@@ -1216,7 +1214,7 @@ export function useFavoriteGpsVariables() {
       saveStoredDerivedVariables(nextList);
 
       if (favoriteKeys.includes(id)) {
-        const nextFav = favoriteKeys.filter((k) => k !== id && k !== "HSR Abs (m)");
+        const nextFav = favoriteKeys.filter((k) => k !== id);
         setFavoriteKeys(nextFav);
         saveStoredFavoriteKeys(nextFav);
       }
@@ -1225,7 +1223,7 @@ export function useFavoriteGpsVariables() {
   );
 
   const favoriteVariables = useMemo(() => {
-    return allVariables.filter((v) => (favoriteKeys.includes(v.key) || v.esDerivada) && v.key !== "HSR Abs (m)");
+    return allVariables.filter((v) => (favoriteKeys.includes(v.key) || v.esDerivada));
   }, [allVariables, favoriteKeys]);
 
   return {

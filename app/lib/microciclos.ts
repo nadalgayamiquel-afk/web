@@ -85,6 +85,87 @@ export const MICROCICLE_TYPE_CONFIG: Record<
   },
 };
 
+export const OFFICIAL_SEASON_MICROCYCLES: CustomMicrocycleDef[] = [
+  {
+    id: "mc-2026-11-02_2026-11-08",
+    nombre: "Microciclo 2 nov al 8 nov (Semana Larga)",
+    start: "2026-11-02",
+    end: "2026-11-08",
+    tipo: "largo",
+    matchesCount: 1,
+    daysBetweenMd: 9,
+    matchDates: ["2026-11-08"],
+    sessionCount: 6,
+  },
+  {
+    id: "mc-2026-10-26_2026-11-01",
+    nombre: "Microciclo 26 oct al 1 nov (Doble Partido)",
+    start: "2026-10-26",
+    end: "2026-11-01",
+    tipo: "doble_partido",
+    matchesCount: 2,
+    daysBetweenMd: "3-4",
+    matchDates: ["2026-10-27", "2026-10-30"],
+    sessionCount: 6,
+  },
+  {
+    id: "mc-2026-10-19_2026-10-25",
+    nombre: "Microciclo 19 oct al 25 oct (Semana Media)",
+    start: "2026-10-19",
+    end: "2026-10-25",
+    tipo: "media",
+    matchesCount: 1,
+    daysBetweenMd: 7,
+    matchDates: ["2026-10-23"],
+    sessionCount: 5,
+  },
+  {
+    id: "mc-2026-10-12_2026-10-18",
+    nombre: "Microciclo 12 oct al 18 oct (Semana Corta)",
+    start: "2026-10-12",
+    end: "2026-10-18",
+    tipo: "corto",
+    matchesCount: 1,
+    daysBetweenMd: 6,
+    matchDates: ["2026-10-16"],
+    sessionCount: 5,
+  },
+  {
+    id: "mc-2026-10-05_2026-10-11",
+    nombre: "Microciclo 5 oct al 11 oct (Semana Media)",
+    start: "2026-10-05",
+    end: "2026-10-11",
+    tipo: "media",
+    matchesCount: 1,
+    daysBetweenMd: 7,
+    matchDates: ["2026-10-11"],
+    sessionCount: 5,
+  },
+  {
+    id: "mc-2026-09-28_2026-10-04",
+    nombre: "Microciclo 28 sep al 4 oct (Sin categorizar)",
+    start: "2026-09-28",
+    end: "2026-10-04",
+    tipo: "sin_categorizar",
+    matchesCount: 1,
+    daysBetweenMd: "-",
+    matchDates: ["2026-10-04"],
+    sessionCount: 1,
+  },
+];
+
+export function getMicrocycleTypeForDate(dateStr: string): Exclude<MicrocycleType, "todos"> {
+  const iso = parseDateStrToISO(dateStr);
+  if (!iso) return "media";
+  if (iso >= "2026-10-26" && iso <= "2026-11-01") return "doble_partido";
+  if (iso >= "2026-10-12" && iso <= "2026-10-18") return "corto";
+  if (iso >= "2026-10-19" && iso <= "2026-10-25") return "media";
+  if (iso >= "2026-10-05" && iso <= "2026-10-11") return "media";
+  if (iso >= "2026-11-02" && iso <= "2026-11-08") return "largo";
+  if (iso >= "2026-09-28" && iso <= "2026-10-04") return "sin_categorizar";
+  return "media";
+}
+
 export function parseDateStrToISO(dateStr?: string | null): string {
   if (!dateStr) return "";
   const s = String(dateStr).trim();
@@ -181,7 +262,7 @@ export function getMicrocycleType(
   if (s === "2026-10-12" || idStr.includes("12-18") || idStr.includes("14-18")) return "corto";
   if (s === "2026-10-19" || idStr.includes("19-25")) return "media";
   if (s === "2026-10-05" || idStr.includes("05-11") || idStr.includes("07-13")) return "media";
-  if (s === "2026-11-02" || idStr.includes("2026-11-02")) return "largo";
+  if (s === "2026-11-02" || idStr.includes("2026-11-02") || idStr.includes("11-08")) return "largo";
   if (s === "2026-09-28" || idStr.includes("28sep") || idStr.includes("2026-09-28")) return "sin_categorizar";
 
   return "sin_categorizar";
@@ -278,13 +359,22 @@ export function resetDeletedMicrocycles(): void {
  */
 export function getMicrocycleForDate(
   dateStr: string,
-  microcycles: CustomMicrocycleDef[]
+  microcycles?: CustomMicrocycleDef[]
 ): CustomMicrocycleDef | null {
-  if (!dateStr || !microcycles || microcycles.length === 0) return null;
+  if (!dateStr) return null;
   const iso = parseDateStrToISO(dateStr);
   if (!iso) return null;
 
-  for (const mc of microcycles) {
+  const pool = microcycles && microcycles.length > 0 ? microcycles : OFFICIAL_SEASON_MICROCYCLES;
+  for (const mc of pool) {
+    const s = parseDateStrToISO(mc.start);
+    const e = parseDateStrToISO(mc.end);
+    if (s && e && iso >= s && iso <= e) {
+      return mc;
+    }
+  }
+
+  for (const mc of OFFICIAL_SEASON_MICROCYCLES) {
     const s = parseDateStrToISO(mc.start);
     const e = parseDateStrToISO(mc.end);
     if (s && e && iso >= s && iso <= e) {
@@ -309,6 +399,19 @@ export function extractMicrocyclesFromGpsData(
       if (overridesRaw) overrides = JSON.parse(overridesRaw);
     } catch {}
   }
+
+  // Mapa con los microciclos oficiales de la temporada como base inmutable garantizada
+  const microcyclesMap = new Map<string, CustomMicrocycleDef>();
+  OFFICIAL_SEASON_MICROCYCLES.forEach((mc) => {
+    microcyclesMap.set(mc.id, { ...mc });
+  });
+
+  // Si storedMcs trae microciclos válidos, incorporarlos
+  (storedMcs || []).forEach((mc) => {
+    if (mc && mc.id && !microcyclesMap.has(mc.id) && !deletedIds.includes(mc.id)) {
+      microcyclesMap.set(mc.id, mc);
+    }
+  });
 
   // 1. Identificar fechas únicas y partidos oficiales de equipo (mínimo 3 jugadores en MD)
   const dateMatchCount = new Map<string, number>();
@@ -344,7 +447,9 @@ export function extractMicrocyclesFromGpsData(
   officialMatchDates.sort();
 
   const allDates = Array.from(dateAllCount.keys()).sort();
-  if (allDates.length === 0) return [];
+  if (allDates.length === 0) {
+    return Array.from(microcyclesMap.values()).sort((a, b) => b.start.localeCompare(a.start));
+  }
 
   // 2. Agrupar en microciclos semanales naturales (lunes a domingo)
   const weekBuckets = new Map<string, { start: string; end: string; dates: string[] }>();
@@ -367,14 +472,13 @@ export function extractMicrocyclesFromGpsData(
     weekBuckets.get(weekKey)!.dates.push(dStr);
   });
 
-  const result: CustomMicrocycleDef[] = [];
   const sortedKeys = Array.from(weekBuckets.keys()).sort().reverse();
 
   sortedKeys.forEach((key) => {
     const bucket = weekBuckets.get(key)!;
     const id = "mc-" + bucket.start + "_" + bucket.end;
-    // Si el usuario eliminó este microciclo, no regenerarlo automáticamente
-    if (deletedIds.includes(id)) return;
+    const isOfficial = OFFICIAL_SEASON_MICROCYCLES.some((o) => o.id === id);
+    if (!isOfficial && deletedIds.includes(id)) return;
     const matchesInWeek = officialMatchDates.filter((m) => m >= bucket.start && m <= bucket.end);
 
     let autoTipo: Exclude<MicrocycleType, "todos"> = "media";
@@ -436,7 +540,7 @@ export function extractMicrocyclesFromGpsData(
     const eMonth = eDateObj.toLocaleString("es-ES", { month: "short" });
     const readableName = "Microciclo " + sDay + " " + sMonth + " al " + eDay + " " + eMonth;
 
-    result.push({
+    microcyclesMap.set(id, {
       id,
       nombre: readableName,
       start: bucket.start,
@@ -449,7 +553,7 @@ export function extractMicrocyclesFromGpsData(
     });
   });
 
-  return result;
+  return Array.from(microcyclesMap.values()).sort((a, b) => b.start.localeCompare(a.start));
 }
 
 /**
