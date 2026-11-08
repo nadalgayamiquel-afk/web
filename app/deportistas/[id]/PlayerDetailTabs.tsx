@@ -1295,15 +1295,17 @@ export default function PlayerDetailTabs({
         "Distance(m)",
         "HSR Abs (m)",
         "Distancia / Min",
-        "Distance +21 (m)",
         "Acc+Dec",
         "Player Load",
         "MAX Speed(km/h)",
       ];
     }
-    // Asegurar SIEMPRE que HSR Abs (m) esté predeterminado en la tabla
+    // Asegurar SIEMPRE que HSR Abs (m) esté predeterminado en la tabla y evitar duplicados con Distance +21
     if (!result.includes("HSR Abs (m)")) {
       result.splice(1, 0, "HSR Abs (m)");
+    }
+    if (result.includes("HSR Abs (m)") && result.includes("Distance +21 (m)")) {
+      result = result.filter((k) => k !== "Distance +21 (m)");
     }
     return result;
   });
@@ -1632,10 +1634,11 @@ export default function PlayerDetailTabs({
       }
     }
 
-    if (combined.includes("-4") || combined.includes("4MD") || combined.includes("MD4")) return "-4 MD";
-    if (combined.includes("-3") || combined.includes("3MD") || combined.includes("MD3")) return "-3 MD";
-    if (combined.includes("-2") || combined.includes("2MD") || combined.includes("MD2")) return "-2 MD";
-    if (combined.includes("-1") || combined.includes("1MD") || combined.includes("MD1")) return "-1 MD";
+    if (combined.includes("-5") || combined.includes("5MD") || combined.includes("MD5") || combined.includes("MD-5") || combined.includes("-5MD")) return "-5 MD";
+    if (combined.includes("-4") || combined.includes("4MD") || combined.includes("MD4") || combined.includes("MD-4") || combined.includes("-4MD")) return "-4 MD";
+    if (combined.includes("-3") || combined.includes("3MD") || combined.includes("MD3") || combined.includes("MD-3") || combined.includes("-3MD")) return "-3 MD";
+    if (combined.includes("-2") || combined.includes("2MD") || combined.includes("MD2") || combined.includes("MD-2") || combined.includes("-2MD")) return "-2 MD";
+    if (combined.includes("-1") || combined.includes("1MD") || combined.includes("MD1") || combined.includes("MD-1") || combined.includes("-1MD")) return "-1 MD";
     if (combined.includes("MD") || combined.includes("PARTIDO") || combined.includes("MATCH")) return "MD";
     return null;
   };

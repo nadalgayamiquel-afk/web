@@ -406,10 +406,15 @@ export function extractMicrocyclesFromGpsData(
     microcyclesMap.set(mc.id, { ...mc });
   });
 
-  // Si storedMcs trae microciclos válidos, incorporarlos
+  // Si storedMcs trae microciclos válidos, incorporarlos solo si no solapan con las semanas oficiales de la temporada
   (storedMcs || []).forEach((mc) => {
     if (mc && mc.id && !microcyclesMap.has(mc.id) && !deletedIds.includes(mc.id)) {
-      microcyclesMap.set(mc.id, mc);
+      const overlapsOfficial = OFFICIAL_SEASON_MICROCYCLES.some(
+        (o) => (mc.start >= o.start && mc.start <= o.end) || (mc.end >= o.start && mc.end <= o.end)
+      );
+      if (!overlapsOfficial) {
+        microcyclesMap.set(mc.id, mc);
+      }
     }
   });
 

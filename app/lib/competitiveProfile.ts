@@ -166,9 +166,13 @@ export function getCompactMetricHeader(key: string, rawLabel?: string): string {
     return "DT";
   }
 
+  // 1b. Distancia +21 km/h
+  if (k === "distance +21 (m)" || k.includes("+21") || l.includes("+21") || l.includes(">21")) {
+    return "+21 km/h";
+  }
+
   // 2. Distancia 19,8 / HSR -> HSR
   if (
-    k === "distance +21 (m)" ||
     k === "hsr abs (m)" ||
     k.includes("19,8") ||
     k.includes("19.8") ||
