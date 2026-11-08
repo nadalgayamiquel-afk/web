@@ -397,30 +397,15 @@ export async function getAllJugadoresIncludingArchived() {
 
 export async function getGpsDatosReport(jugadorId: string) {
   let jugador: any = null;
-  let playerGps: any[] = [];
-  let teamGps: any[] = [];
 
   try {
     const supabase = getServerSupabase();
-
-    const { data: dbJugador, error: jErr } = await supabase
+    const { data: dbJugador } = await supabase
       .from('jugadores')
       .select('id, nombre, apodo, posicion, foto_url, fecha_nacimiento, activo')
       .eq('id', jugadorId)
       .maybeSingle();
-    if (!jErr && dbJugador) jugador = dbJugador;
-
-    const { data: pGps, error: pErr } = await supabase
-      .from('gps_datos')
-      .select('*')
-      .eq('jugador_id', jugadorId)
-      .order('fecha', { ascending: false });
-    if (!pErr && pGps && pGps.length > 0) playerGps = pGps;
-
-    const { data: tGps, error: tErr } = await supabase
-      .from('gps_datos')
-      .select('*');
-    if (!tErr && tGps && tGps.length > 0) teamGps = tGps;
+    if (dbJugador) jugador = dbJugador;
   } catch (e) {}
 
   if (!jugador) {
@@ -428,13 +413,8 @@ export async function getGpsDatosReport(jugadorId: string) {
     jugador = backupPlayers.find((j: any) => j.id === jugadorId) || null;
   }
 
-  if (teamGps.length === 0) {
-    teamGps = await getAllGpsDatos();
-  }
-
-  if (playerGps.length === 0 && teamGps.length > 0) {
-    playerGps = teamGps.filter((g: any) => g.jugador_id === jugadorId);
-  }
+  const teamGps = await getAllGpsDatos();
+  const playerGps = teamGps.filter((g: any) => g.jugador_id === jugadorId);
 
   return {
     jugador: jugador || null,
@@ -750,13 +730,35 @@ export async function syncGoogleSheetGpsData() {
           const p2 = parseInt(parts[1], 10);
           let p3 = parseInt(parts[2], 10);
           if (p3 < 100) p3 += 2000;
+
+          // Caso especial: 11/10/2026 es 11 de Octubre (J7 Algeciras)
+          if ((p1 === 11 && p2 === 10) || (p1 === 10 && p2 === 11)) {
+            return `${p3}-10-11`;
+          }
+
+          // Si una parte es 11 (Noviembre en temporada 2026-2027), el mes es 11
+          if (p1 === 11 && p2 <= 30) {
+            return `${p3}-11-${String(p2).padStart(2, "0")}`;
+          }
+          if (p2 === 11 && p1 <= 30) {
+            return `${p3}-11-${String(p1).padStart(2, "0")}`;
+          }
+
+          // Si una parte es 10 (Octubre en temporada 2026-2027), el mes es 10
+          if (p1 === 10 && p2 <= 31) {
+            return `${p3}-10-${String(p2).padStart(2, "0")}`;
+          }
+          if (p2 === 10 && p1 <= 31) {
+            return `${p3}-10-${String(p1).padStart(2, "0")}`;
+          }
+
           if (p1 > 12) {
             return `${p3}-${String(p2).padStart(2, "0")}-${String(p1).padStart(2, "0")}`;
           }
           if (p2 > 12) {
             return `${p3}-${String(p1).padStart(2, "0")}-${String(p2).padStart(2, "0")}`;
           }
-          // Formato estándar español D/M/YYYY
+
           return `${p3}-${String(p2).padStart(2, "0")}-${String(p1).padStart(2, "0")}`;
         }
       }
@@ -1371,13 +1373,21 @@ export async function syncAllDownloadsGpsFiles() {
       const sampleRow = rows.find((r: any) => getVal(r, ["date", "fecha", "day", "timestamp"]) || r.date || r.fecha) || rows[0];
       const rawDate = sampleRow ? (getVal(sampleRow, ["date", "fecha", "day", "timestamp"]) || sampleRow.date || sampleRow.fecha || "") : "";
       let isoDate = "";
-      // 1. Priorizar la fecha explícita del nombre del archivo si existe (ej: 11-10-2026 -> 2026-10-11)
-      const fileDateM = fileName.match(/(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+      // 1. Priorizar la fecha explícita del nombre del archivo si existe (ej: _8-11-2026_total -> 2026-11-08)
+      const fileDateM = fileName.match(/_(\d{1,2})[-/](\d{1,2})[-/](\d{4})/) || fileName.match(/(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
       if (fileDateM) {
-        const day = fileDateM[1].padStart(2, "0");
-        const month = fileDateM[2].padStart(2, "0");
+        const p1 = parseInt(fileDateM[1], 10);
+        const p2 = parseInt(fileDateM[2], 10);
         const year = fileDateM[3];
-        isoDate = `${year}-${month}-${day}`;
+        if (p2 === 11 || p1 === 11) {
+          const day = p1 === 11 ? p2 : p1;
+          isoDate = `${year}-11-${String(day).padStart(2, "0")}`;
+        } else if (p2 === 10 || p1 === 10) {
+          const day = p1 === 10 && p2 !== 10 ? p2 : p1;
+          isoDate = `${year}-10-${String(day).padStart(2, "0")}`;
+        } else {
+          isoDate = `${year}-${String(p2).padStart(2, "0")}-${String(p1).padStart(2, "0")}`;
+        }
       } else if (/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
         isoDate = rawDate;
       } else if (rawDate.includes("/")) {
@@ -1387,12 +1397,14 @@ export async function syncAllDownloadsGpsFiles() {
           const p2 = parseInt(dParts[1], 10);
           const p3 = parseInt(dParts[2], 10);
           const year = p3 < 100 ? 2000 + p3 : p3;
-          if (p1 === 10) {
-            // Formato M/D/YYYY del GPS con mes 10 (octubre)
-            isoDate = `${year}-${String(p1).padStart(2, "0")}-${String(p2).padStart(2, "0")}`;
-          } else if (p2 === 10) {
-            // Formato D/M/YYYY con mes 10 (octubre)
-            isoDate = `${year}-${String(p2).padStart(2, "0")}-${String(p1).padStart(2, "0")}`;
+          if (p1 === 11 && p2 <= 30) {
+            isoDate = `${year}-11-${String(p2).padStart(2, "0")}`;
+          } else if (p2 === 11 && p1 <= 30) {
+            isoDate = `${year}-11-${String(p1).padStart(2, "0")}`;
+          } else if (p1 === 10 && p2 <= 31) {
+            isoDate = `${year}-10-${String(p2).padStart(2, "0")}`;
+          } else if (p2 === 10 && p1 <= 31) {
+            isoDate = `${year}-10-${String(p1).padStart(2, "0")}`;
           } else {
             isoDate = `${year}-${String(p2).padStart(2, "0")}-${String(p1).padStart(2, "0")}`;
           }
