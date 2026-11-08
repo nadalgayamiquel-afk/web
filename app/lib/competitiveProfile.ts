@@ -265,8 +265,9 @@ export function computeCompetitiveProfiles({
     const tareas = r.metricas?.tareas;
     let matchParts: any[] = [];
 
-    if (Array.isArray(tareas) && tareas.length > 0) {
-      matchParts = tareas.filter((t: any) => isMatchHalfTask(t.nombre || t.name || t.tarea));
+    if (tareas && typeof tareas === "object") {
+      const rawList = Array.isArray(tareas) ? tareas : Object.values(tareas);
+      matchParts = rawList.filter((t: any) => isMatchHalfTask(t?.nombre || t?.name || t?.tarea || t?.Split_Name));
     }
 
     // Si no tiene array de tareas desglosadas pero es un partido registrado completo

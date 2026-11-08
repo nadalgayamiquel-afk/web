@@ -1599,6 +1599,45 @@ export default function PlayerDetailTabs({
   };
   const [showTotalColumn, setShowTotalColumn] = useState<boolean>(true);
 
+  // Estados para filtro de tareas en Match Day (por defecto SOLO primera y segunda parte)
+  const [mdIncludeActivacion, setMdIncludeActivacion] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        return localStorage.getItem("gps_md_include_activacion") === "true";
+      } catch {}
+    }
+    return false;
+  });
+
+  const [mdIncludeCarreras, setMdIncludeCarreras] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        return localStorage.getItem("gps_md_include_carreras") === "true";
+      } catch {}
+    }
+    return false;
+  });
+
+  const [showMdTaskMenu, setShowMdTaskMenu] = useState<boolean>(false);
+
+  const handleToggleMdActivacion = (val: boolean) => {
+    setMdIncludeActivacion(val);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("gps_md_include_activacion", String(val));
+      } catch {}
+    }
+  };
+
+  const handleToggleMdCarreras = (val: boolean) => {
+    setMdIncludeCarreras(val);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("gps_md_include_carreras", String(val));
+      } catch {}
+    }
+  };
+
   // Columnas de Match Day según el tipo de microciclo:
   // - Doble partido (3-4 días entre partidos): NO tiene MD-5 ni MD-4
   // - Semana media (7d) y corta (6d): NO tienen MD-5
@@ -1858,6 +1897,58 @@ export default function PlayerDetailTabs({
     return res;
   }, [matrixFilteredGpsRecords, mdColumns]);
 
+  // Helper para clasificar tareas de Match Day
+  const classifyMdTask = (taskName?: string): "activacion" | "carreras" | "partido" => {
+    const n = String(taskName || "").trim().toUpperCase();
+    if (n.includes("ACTIVACI") || n.includes("CALENTAMIENTO") || n.includes("PREPARTIDO") || n.includes("WARM")) {
+      return "activacion";
+    }
+    if (n.includes("CARRERA") || n.includes("CARRERE") || n.includes("POST-PARTIDO") || n.includes("POSTPARTIDO")) {
+      return "carreras";
+    }
+    return "partido";
+  };
+
+  const getRecordMetricValue = (
+    r: any,
+    vKey: string,
+    isMD: boolean
+  ): number => {
+    if (isMD && r.metricas?.tareas) {
+      const rawList = Array.isArray(r.metricas.tareas) ? r.metricas.tareas : Object.values(r.metricas.tareas);
+      const validTasks = rawList.filter((t: any) => {
+        if (!t || typeof t !== "object") return false;
+        const cat = classifyMdTask(t.nombre || t.tarea || t.name || t.Split_Name);
+        if (cat === "partido") return true;
+        if (cat === "activacion") return mdIncludeActivacion;
+        if (cat === "carreras") return mdIncludeCarreras;
+        return true;
+      });
+
+      if (validTasks.length > 0) {
+        if (isRateOrPeak(vKey)) {
+          const pVals = validTasks.map((t: any) => calculateGpsMetricValue(t, vKey, derivedVariables));
+          const maxVal = Math.max(...pVals);
+          return isNaN(maxVal) ? 0 : maxVal;
+        }
+        if (vKey === "Distancia / Min" || vKey.toLowerCase().includes("m/min")) {
+          const totalDist = validTasks.reduce((sum: number, t: any) => sum + calculateGpsMetricValue(t, "Distance(m)", derivedVariables), 0);
+          const totalMin = validTasks.reduce((sum: number, t: any) => sum + Number(t.Tiempo || t.duracion_min || t["Duration(min)"] || 0), 0);
+          return totalMin > 0 ? Math.round((totalDist / totalMin) * 10) / 10 : 0;
+        }
+        const sumVal = validTasks.reduce((sum: number, t: any) => sum + calculateGpsMetricValue(t, vKey, derivedVariables), 0);
+        return Math.round(sumVal * 100) / 100;
+      }
+    }
+
+    if (vKey === "Distancia / Min" || vKey.toLowerCase().includes("m/min")) {
+      const dur = Number(r.duracion || r.metricas?.["Duration(min)"] || r.metricas?.Tiempo || 0);
+      const dist = calculateGpsMetricValue(r.metricas || r, "Distance(m)", derivedVariables);
+      return dur > 0 ? Math.round((dist / dur) * 10) / 10 : calculateGpsMetricValue(r.metricas || r, vKey, derivedVariables);
+    }
+    return calculateGpsMetricValue(r.metricas || r, vKey, derivedVariables);
+  };
+
   // Cálculo reactivo de la matriz GPS según datos filtrados (Jugador o Equipo, Microciclos y Semanas)
   const realGpsMatrixByMD = useMemo(() => {
     const res: {
@@ -1899,12 +1990,7 @@ export default function PlayerDetailTabs({
         }
 
         const vals = colRecs.map((r) => {
-          if (vKey === "Distancia / Min" || vKey.toLowerCase().includes("m/min")) {
-            const dur = Number(r.duracion || r.metricas?.["Duration(min)"] || 0);
-            const dist = calculateGpsMetricValue(r.metricas || r, "Distance(m)", derivedVariables);
-            return dur > 0 ? dist / dur : calculateGpsMetricValue(r.metricas || r, vKey, derivedVariables);
-          }
-          return calculateGpsMetricValue(r.metricas || r, vKey, derivedVariables);
+          return getRecordMetricValue(r, vKey, col === "MD");
         }).filter((v) => typeof v === "number" && !isNaN(v) && v > 0);
 
         if (vals.length === 0) {
@@ -1958,7 +2044,7 @@ export default function PlayerDetailTabs({
     });
 
     return res;
-  }, [matrixFilteredGpsRecords, playerCompVariables, mdColumns, derivedVariables, playerCompProfile, gpsSubjectMode]);
+  }, [matrixFilteredGpsRecords, playerCompVariables, mdColumns, derivedVariables, playerCompProfile, gpsSubjectMode, mdIncludeActivacion, mdIncludeCarreras]);
 
 
 
@@ -4378,6 +4464,105 @@ export default function PlayerDetailTabs({
                 >
                   🧪 Reales + Simulados
                 </button>
+              </div>
+
+              {/* BOTÓN DISCRETO: TAREAS MD (1ª Y 2ª PARTE, ACTIVACIÓN, CARRERAS) */}
+              <div style={{ position: "relative" }}>
+                <button
+                  type="button"
+                  onClick={() => setShowMdTaskMenu(!showMdTaskMenu)}
+                  style={{
+                    padding: "3px 8px",
+                    borderRadius: "5px",
+                    border: `1px solid ${mdIncludeActivacion || mdIncludeCarreras ? "#0284c7" : "#cbd5e1"}`,
+                    background: mdIncludeActivacion || mdIncludeCarreras ? "#f0f9ff" : "#ffffff",
+                    color: mdIncludeActivacion || mdIncludeCarreras ? "#0284c7" : "#475569",
+                    fontSize: "10.5px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                    transition: "all 0.15s",
+                  }}
+                  title="Configurar qué tareas entran en el cómputo de Match Day (MD)"
+                >
+                  <span>⏱️ MD:</span>
+                  <span style={{ textDecoration: (!mdIncludeActivacion && !mdIncludeCarreras) ? "none" : "underline" }}>
+                    {!mdIncludeActivacion && !mdIncludeCarreras
+                      ? "Solo 1ª y 2ª parte"
+                      : mdIncludeActivacion && mdIncludeCarreras
+                      ? "1ª+2ª + Act + Carreras"
+                      : mdIncludeActivacion
+                      ? "1ª+2ª + Activación"
+                      : "1ª+2ª + Carreras"}
+                  </span>
+                  <span style={{ fontSize: "8px", opacity: 0.7 }}>▼</span>
+                </button>
+
+                {showMdTaskMenu && (
+                  <>
+                    <div
+                      style={{ position: "fixed", inset: 0, zIndex: 40 }}
+                      onClick={() => setShowMdTaskMenu(false)}
+                    />
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: "100%",
+                        left: 0,
+                        marginTop: "5px",
+                        background: "#ffffff",
+                        border: "1px solid #cbd5e1",
+                        borderRadius: "8px",
+                        boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
+                        padding: "10px 12px",
+                        zIndex: 50,
+                        minWidth: "260px",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "8px",
+                      }}
+                    >
+                      <div style={{ fontSize: "11px", fontWeight: 800, color: "#0f172a", borderBottom: "1px solid #f1f5f9", paddingBottom: "5px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span>⏱️ Tareas en Match Day (MD)</span>
+                        <button
+                          type="button"
+                          onClick={() => setShowMdTaskMenu(false)}
+                          style={{ border: "none", background: "none", cursor: "pointer", fontSize: "11px", color: "#94a3b8" }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "11px", color: "#1e293b", background: "#f8fafc", padding: "4px 8px", borderRadius: "5px" }}>
+                        <span style={{ color: "#16a34a", fontWeight: 900 }}>✓</span>
+                        <span style={{ fontWeight: 700 }}>1ª y 2ª Parte de Partido</span>
+                        <span style={{ fontSize: "9.5px", color: "#64748b", marginLeft: "auto", fontWeight: 600 }}>Siempre</span>
+                      </div>
+                      <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "11px", color: "#334155", cursor: "pointer", padding: "2px 4px" }}>
+                        <input
+                          type="checkbox"
+                          checked={mdIncludeActivacion}
+                          onChange={(e) => handleToggleMdActivacion(e.target.checked)}
+                          style={{ cursor: "pointer" }}
+                        />
+                        <span>Contar Activación Prepartido</span>
+                      </label>
+                      <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "11px", color: "#334155", cursor: "pointer", padding: "2px 4px" }}>
+                        <input
+                          type="checkbox"
+                          checked={mdIncludeCarreras}
+                          onChange={(e) => handleToggleMdCarreras(e.target.checked)}
+                          style={{ cursor: "pointer" }}
+                        />
+                        <span>Contar Carreras Día de Partido</span>
+                      </label>
+                      <div style={{ fontSize: "9.5px", color: "#94a3b8", borderTop: "1px solid #f1f5f9", paddingTop: "5px" }}>
+                        Por defecto solo se contabiliza el tiempo oficial de juego (1ª y 2ª parte).
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
