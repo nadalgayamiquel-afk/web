@@ -595,26 +595,25 @@ export async function syncGoogleSheetGpsData() {
     const fs = require("fs");
     const path = require("path");
 
-    // Obtener URL configurada para GPS o usar la por defecto
+    // Obtener URL configurada para GPS desde BBDD o archivo o usar la por defecto
     let sheetUrl = "https://docs.google.com/spreadsheets/d/1Q_jYilNR1KQk3YSmugbYXbeW8xdWUqQlWtcDJ2Np9JA/export?format=csv&gid=0";
     try {
-      const extLinksPath = path.join(process.cwd(), "public", "external_links.json");
-      if (fs.existsSync(extLinksPath)) {
-        const ext = JSON.parse(fs.readFileSync(extLinksPath, "utf8"));
-        if (ext?.gps?.url) {
-          let u = ext.gps.url.trim();
-          if (u.includes("docs.google.com/spreadsheets/d/")) {
-            const m = u.match(/docs\.google\.com\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-            const gidM = u.match(/gid=([0-9]+)/);
-            const gidParam = gidM && gidM[1] ? `&gid=${gidM[1]}` : "&gid=0";
-            if (m && m[1]) {
-              sheetUrl = `https://docs.google.com/spreadsheets/d/${m[1]}/export?format=csv${gidParam}`;
-            }
+      const extLinks = await getExternalLinksBBDD();
+      if (extLinks?.gps?.url) {
+        let u = extLinks.gps.url.trim();
+        if (u.includes("docs.google.com/spreadsheets/d/")) {
+          const m = u.match(/docs\.google\.com\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+          const gidM = u.match(/gid=([0-9]+)/);
+          const gidParam = gidM && gidM[1] ? `&gid=${gidM[1]}` : "&gid=0";
+          if (m && m[1]) {
+            sheetUrl = `https://docs.google.com/spreadsheets/d/${m[1]}/export?format=csv${gidParam}`;
           }
+        } else if (u.startsWith("http")) {
+          sheetUrl = u;
         }
       }
     } catch (e) {
-      console.warn("Could not read external_links.json, using fallback GPS sheet url", e);
+      console.warn("Could not read external links, using fallback GPS sheet url", e);
     }
 
     // Descargar CSV siguiendo redirecciones
@@ -742,7 +741,7 @@ export async function syncGoogleSheetGpsData() {
 
     const parseDateToISO = (rawDate: string) => {
       if (!rawDate) return "";
-      const s = rawDate.trim();
+      const s = String(rawDate).trim();
       if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
       if (s.includes("/")) {
         const parts = s.split("/");
@@ -751,14 +750,13 @@ export async function syncGoogleSheetGpsData() {
           const p2 = parseInt(parts[1], 10);
           let p3 = parseInt(parts[2], 10);
           if (p3 < 100) p3 += 2000;
-          // Normalizar formato MM/DD/YYYY vs DD/MM/YYYY:
-          // En octubre (temporada actual), 10/11/2026 corresponde al 11 de octubre (mes 10, día 11)
-          if (p1 === 10 && p2 === 11) {
-            return `${p3}-10-11`;
+          if (p1 > 12) {
+            return `${p3}-${String(p2).padStart(2, "0")}-${String(p1).padStart(2, "0")}`;
           }
-          if (p2 === 10) {
-            return `${p3}-10-${String(p1).padStart(2, "0")}`;
+          if (p2 > 12) {
+            return `${p3}-${String(p1).padStart(2, "0")}-${String(p2).padStart(2, "0")}`;
           }
+          // Formato estándar español D/M/YYYY
           return `${p3}-${String(p2).padStart(2, "0")}-${String(p1).padStart(2, "0")}`;
         }
       }
@@ -817,74 +815,81 @@ export async function syncGoogleSheetGpsData() {
     let simuladosCount = 0;
     let realesCount = 0;
     const allProcessedRecords: any[] = [];
+    const allDatesArray = Array.from(datesFound);
 
-    for (const isoDate of Array.from(datesFound)) {
-      // Buscar información de MD, rival y sesión en las filas del Google Sheet para esta fecha
-      const sampleDateRow = rawRows.find((r: any) => {
-        const rawD = getRowCol(r, ["date", "fecha"], 3) || getRowCol(r, [], 9);
-        return parseDateToISO(rawD) === isoDate && (getRowCol(r, ["md", "match_day"], 5));
-      }) || rawRows.find((r: any) => parseDateToISO(getRowCol(r, ["date", "fecha"], 3) || getRowCol(r, [], 9)) === isoDate);
+    // Consulta por lotes para sesiones_dia (mucho más rápido y eficiente)
+    const { data: existingSesiones } = await supabase
+      .from("sesiones_dia")
+      .select("id, fecha, evento_am, md, rival")
+      .in("fecha", allDatesArray);
 
-      const normalizeMD = (val: string) => {
-        if (!val) return "";
-        let s = val.trim();
-        if (/^[-+]?\d+\s*MD$/i.test(s)) {
-          const num = s.replace(/MD/i, "").trim();
-          return `MD${num.startsWith("-") || num.startsWith("+") ? num : `-${num}`}`;
-        }
-        if (/^MD\s*[-+]?\d+$/i.test(s)) return s.replace(/\s+/g, "");
-        return s;
-      };
+    const sesionesMap = new Map<string, any>();
+    (existingSesiones || []).forEach((s: any) => sesionesMap.set(s.fecha, s));
 
-      const rawMD = (getRowCol(sampleDateRow || {}, ["md", "match_day", "MD"], 5) || "").trim();
-      const sheetMD = normalizeMD(rawMD);
-      const rawRival = (sampleDateRow?.["Nº S / Nº J + RIVAL"] || sampleDateRow?._rawCols?.[4] || "").trim();
-      const rawSesion = (sampleDateRow?.["Sesión"] || sampleDateRow?._rawCols?.[7] || "").trim();
-      const isPartido = rawSesion.toLowerCase().includes("partido") || rawRival.toLowerCase().includes("huesca") || sheetMD.toUpperCase() === "MD";
-
-      const { data: sesionDia } = await supabase
-        .from("sesiones_dia")
-        .select("id, evento_am, md, rival")
-        .eq("fecha", isoDate)
-        .maybeSingle();
-
-      let sesion_dia_id = sesionDia?.id || null;
-      const cleanMD = sesionDia?.md || sheetMD || (isPartido ? "MD" : null);
-      const cleanRival = sesionDia?.rival || (rawRival.includes("HUESCA") ? "SD HUESCA" : rawRival);
-      const tipo_sesion = sesionDia?.rival || isPartido ? "PARTIDO" : "ENTRENAMIENTO";
-      const match_day = cleanMD;
-
-      if (!sesionDia) {
-        const { data: newSesion } = await supabase
-          .from("sesiones_dia")
-          .insert({
-            fecha: isoDate,
-            md: cleanMD,
-            evento_am: tipo_sesion === "PARTIDO" ? "PARTIDO" : "ENTRENAMIENTO",
-            rival: cleanRival,
-            volumen: 90,
-            equipo: "CE EUROPA",
-          })
-          .select("id")
-          .maybeSingle();
-        if (newSesion) sesion_dia_id = newSesion.id;
-      } else if (!sesionDia.md && cleanMD) {
-        await supabase.from("sesiones_dia").update({ md: cleanMD }).eq("id", sesionDia.id);
+    const normalizeMD = (val: string) => {
+      if (!val) return "";
+      let s = val.trim();
+      if (/^[-+]?\d+\s*MD$/i.test(s)) {
+        const num = s.replace(/MD/i, "").trim();
+        return `MD${num.startsWith("-") || num.startsWith("+") ? num : `-${num}`}`;
       }
+      if (/^MD\s*[-+]?\d+$/i.test(s)) return s.replace(/\s+/g, "");
+      return s;
+    };
 
-      const recordsForDate: any[] = [];
+    const missingSesionesToInsert: any[] = [];
+    for (const isoDate of allDatesArray) {
+      if (!sesionesMap.has(isoDate)) {
+        const sampleDateRow = rawRows.find((r: any) => {
+          const rawD = getRowCol(r, ["date", "fecha"], 3) || getRowCol(r, [], 9);
+          return parseDateToISO(rawD) === isoDate && (getRowCol(r, ["md", "match_day"], 5));
+        }) || rawRows.find((r: any) => parseDateToISO(getRowCol(r, ["date", "fecha"], 3) || getRowCol(r, [], 9)) === isoDate);
 
-      for (const [key, { player, rows: pRows }] of datePlayerMap.entries()) {
-        if (!key.startsWith(isoDate + "_")) continue;
+        const rawMD = (getRowCol(sampleDateRow || {}, ["md", "match_day", "MD"], 5) || "").trim();
+        const sheetMD = normalizeMD(rawMD);
+        const rawRival = (sampleDateRow?.["Nº S / Nº J + RIVAL"] || sampleDateRow?._rawCols?.[4] || "").trim();
+        const rawSesion = (sampleDateRow?.["Sesión"] || sampleDateRow?._rawCols?.[7] || "").trim();
+        const isPartido = rawSesion.toLowerCase().includes("partido") || rawRival.toLowerCase().includes("huesca") || sheetMD.toUpperCase() === "MD";
 
-        // FILTRO ESTRICTO: Olvidar las filas de "Total" y coger únicamente las tareas distintas
-        const taskRows = pRows.filter((r: any) => {
-          const tName = (getRowCol(r, ["task", "tarea", "period", "split"], 8) || r["Tarea"] || r["tarea"] || r._rawCols?.[8] || "").trim().toLowerCase();
-          return tName !== "total";
+        missingSesionesToInsert.push({
+          fecha: isoDate,
+          md: sheetMD || (isPartido ? "MD" : null),
+          evento_am: isPartido ? "PARTIDO" : "ENTRENAMIENTO",
+          rival: isPartido ? (rawRival.includes("HUESCA") ? "SD HUESCA" : rawRival) : "",
+          volumen: 90,
+          equipo: "CE EUROPA",
         });
+      }
+    }
 
-        // Si por alguna anomalía sólo existiese la fila "Total", se usa como fallback
-        const effectiveRows = taskRows.length > 0 ? taskRows : pRows;
+    if (missingSesionesToInsert.length > 0) {
+      try {
+        const { data: newInserted } = await supabase
+          .from("sesiones_dia")
+          .insert(missingSesionesToInsert)
+          .select("id, fecha, evento_am, md, rival");
+        if (newInserted) {
+          newInserted.forEach((s: any) => sesionesMap.set(s.fecha, s));
+        }
+      } catch (errSes) {
+        console.warn("Nota sesiones_dia batch insert:", errSes);
+      }
+    }
+
+    for (const [key, { isoDate, player, rows: pRows }] of datePlayerMap.entries()) {
+      const sesionDia = sesionesMap.get(isoDate);
+      const sesion_dia_id = sesionDia?.id || null;
+      const tipo_sesion = sesionDia?.rival ? "PARTIDO" : "ENTRENAMIENTO";
+      const match_day = sesionDia?.md || null;
+
+      // FILTRO ESTRICTO: Olvidar las filas de "Total" y coger únicamente las tareas distintas
+      const taskRows = pRows.filter((r: any) => {
+        const tName = (getRowCol(r, ["task", "tarea", "period", "split"], 8) || r["Tarea"] || r["tarea"] || r._rawCols?.[8] || "").trim().toLowerCase();
+        return tName !== "total";
+      });
+
+      // Si por alguna anomalía sólo existiese la fila "Total", se usa como fallback
+      const effectiveRows = taskRows.length > 0 ? taskRows : pRows;
 
         let sumDist = 0;
         let sumDur = 0;
@@ -1129,7 +1134,6 @@ export async function syncGoogleSheetGpsData() {
         };
 
         const newRecord = {
-          id: `gps_${player.id}_${isoDate}`,
           jugador_id: player.id,
           fecha: isoDate,
           sesion_dia_id,
@@ -1138,32 +1142,23 @@ export async function syncGoogleSheetGpsData() {
           tarea: "Total",
           duracion: mainMetrics["Duration(min)"],
           metricas: mainMetrics,
-          distancia_total: (mainMetrics as any).distancia_total,
-          distancia_z4: (mainMetrics as any).distancia_z4,
-          max_speed: (mainMetrics as any).max_speed,
-          player_load: (mainMetrics as any).player_load,
-          num_sprints: (mainMetrics as any).num_sprints,
-          aceleraciones: (mainMetrics as any).aceleraciones,
-          desaceleraciones: (mainMetrics as any).desaceleraciones,
-          duracion_min: (mainMetrics as any).duracion_min,
-          es_simulado: isSimulado,
-          tipo_registro: isSimulado ? "SIMULADO" : "REAL",
         };
 
-        recordsForDate.push(newRecord);
         allProcessedRecords.push(newRecord);
       }
 
-      if (recordsForDate.length > 0) {
-        totalInserted += recordsForDate.length;
+      if (allProcessedRecords.length > 0 && allDatesArray.length > 0) {
         try {
-          await supabase.from("gps_datos").delete().eq("fecha", isoDate);
-          await supabase.from("gps_datos").insert(recordsForDate);
+          await supabase.from("gps_datos").delete().in("fecha", allDatesArray);
+          const chunkSize = 200;
+          for (let i = 0; i < allProcessedRecords.length; i += chunkSize) {
+            const chunk = allProcessedRecords.slice(i, i + chunkSize);
+            await supabase.from("gps_datos").insert(chunk);
+          }
         } catch (insErr) {
-          console.warn(`Supabase insert note for ${isoDate}:`, insErr);
+          console.warn("Supabase insert note:", insErr);
         }
       }
-    }
 
     try {
       const fs = require("fs");
@@ -1194,27 +1189,28 @@ export async function syncGoogleSheetGpsData() {
  */
 export async function syncGpsDatabaseWeb() {
   try {
+    // 1. Sincronizar Google Sheet (enlace externo de GPS) con máxima prioridad y rapidez (~3s)
+    const sheetRes = await syncGoogleSheetGpsData();
+
+    // 2. Sincronizar CSVs locales de Downloads solo si existe el directorio local
     let downloadsRes: any = { datesProcessed: [], totalRecords: 0 };
     try {
       downloadsRes = await syncAllDownloadsGpsFiles();
     } catch (e) {}
-
-    // 2. Después procesar Google Sheet (DB GPS), asegurando que los nombres de tarea curados por el usuario tengan prioridad absoluta
-    const sheetRes = await syncGoogleSheetGpsData();
 
     const datesProcessed = Array.from(new Set([
       ...(sheetRes.datesProcessed || []),
       ...(downloadsRes.datesProcessed || []),
     ]));
 
-    const totalRecords = (sheetRes.totalRecords || 0) + (downloadsRes.totalRecords || 0);
+    const totalRecords = Math.max(sheetRes.totalRecords || 0, (sheetRes.totalRecords || 0) + (downloadsRes.totalRecords || 0));
 
     return {
-      success: true,
+      success: Boolean(sheetRes.success || downloadsRes.success),
       records: sheetRes.records || [],
       sheetRecords: sheetRes.totalRecords || 0,
       downloadsRecords: downloadsRes.totalRecords || 0,
-      totalRecords,
+      totalRecords: sheetRes.totalRecords || totalRecords,
       datesProcessed,
       simuladosCount: sheetRes.simuladosCount || 0,
       realesCount: sheetRes.realesCount || 0,
@@ -1557,9 +1553,7 @@ export async function syncAllDownloadsGpsFiles() {
       }
 
       if (recordsToInsert.length > 0) {
-        for (const rec of recordsToInsert) {
-          await supabase.from("gps_datos").delete().eq("fecha", isoDate).eq("jugador_id", rec.jugador_id);
-        }
+        await supabase.from("gps_datos").delete().eq("fecha", isoDate).in("jugador_id", recordsToInsert.map((r: any) => r.jugador_id));
         const { error: insErr } = await supabase.from("gps_datos").insert(recordsToInsert);
         if (!insErr) {
           totalInserted += recordsToInsert.length;
