@@ -4874,19 +4874,26 @@ export default function PlayerDetailTabs({
             </div>
 
             {/* GRÁFICO DE LÍNEAS CON PUNTOS Y CONEXIÓN ENTRE ELLOS */}
-            <div style={{ width: "100%", height: 230, marginBottom: "16px" }}>
+            <div style={{ width: "100%", height: 250, marginBottom: "16px" }}>
               {speedChartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={speedChartData} margin={{ top: 15, right: 20, left: -10, bottom: 0 }}>
+                  <LineChart data={speedChartData} margin={{ top: 25, right: 35, left: 10, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                    <XAxis dataKey="dateLabel" stroke="#64748b" fontSize={11} fontWeight={600} />
+                    <XAxis
+                      dataKey="dateLabel"
+                      stroke="#64748b"
+                      fontSize={11}
+                      fontWeight={600}
+                      padding={{ left: 50, right: 50 }}
+                    />
                     <YAxis
-                      domain={["dataMin - 1.5", "dataMax + 1.5"]}
+                      domain={[27, 36]}
+                      ticks={[27, 28, 29, 30, 31, 32, 33, 34, 35, 36]}
                       stroke="#2563eb"
                       fontSize={11}
                       fontWeight={600}
                       unit=" km/h"
-                      tickFormatter={(v) => `${Number(v).toFixed(1)}`}
+                      tickFormatter={(v) => `${Number(v)}`}
                     />
                     <Tooltip
                       content={({ active, payload }) => {
@@ -4915,6 +4922,21 @@ export default function PlayerDetailTabs({
                       strokeWidth={2.5}
                       dot={{ r: 5, fill: "#2563eb", stroke: "#ffffff", strokeWidth: 2 }}
                       activeDot={{ r: 7, fill: "#1d4ed8" }}
+                      label={({ x, y, value }: any) => {
+                        if (value === null || value === undefined) return null;
+                        return (
+                          <text
+                            x={x}
+                            y={y - 10}
+                            fill="#1e3a8a"
+                            fontSize={11.5}
+                            fontWeight={800}
+                            textAnchor="middle"
+                          >
+                            {`${Number(value).toFixed(2)} km/h`}
+                          </text>
+                        );
+                      }}
                     />
                   </LineChart>
                 </ResponsiveContainer>
@@ -4935,7 +4957,6 @@ export default function PlayerDetailTabs({
                       <th style={{ padding: "6px 10px", textAlign: "left" }}>Tipo / Tarea / Contexto</th>
                       <th style={{ padding: "6px 10px", textAlign: "center", background: "#1e3a8a" }}>Velocidad Máxima (km/h)</th>
                       <th style={{ padding: "6px 10px", textAlign: "center" }}>Δ Evolución</th>
-                      <th style={{ padding: "6px 10px", textAlign: "center" }}>Nivel / Rango</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -4974,15 +4995,6 @@ export default function PlayerDetailTabs({
                               <span style={{ color: "#dc2626" }}>{delta.toFixed(2)} km/h ↘</span>
                             ) : (
                               <span style={{ color: "#64748b" }}>0.00 km/h =</span>
-                            )}
-                          </td>
-                          <td style={{ padding: "6px 10px", textAlign: "center", fontWeight: 700, fontSize: "10.5px" }}>
-                            {row.velMax >= 31 ? (
-                              <span style={{ color: "#15803d", background: "#f0fdf4", padding: "2px 6px", borderRadius: "4px", border: "1px solid #bbf7d0" }}>⚡ Élite (+31 km/h)</span>
-                            ) : row.velMax >= 28 ? (
-                              <span style={{ color: "#1d4ed8", background: "#eff6ff", padding: "2px 6px", borderRadius: "4px", border: "1px solid #bfdbfe" }}>🚀 Muy Alta (28-31 km/h)</span>
-                            ) : (
-                              <span style={{ color: "#64748b", background: "#f8fafc", padding: "2px 6px", borderRadius: "4px", border: "1px solid #e2e8f0" }}>🏃 Estándar</span>
                             )}
                           </td>
                         </tr>
