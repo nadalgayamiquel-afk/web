@@ -4,6 +4,9 @@ import { createClient } from "@supabase/supabase-js";
 import { archiveJugadorFromForm, saveJugador, getFullExcelBBDDRows, getTestingDatasets, getAllGpsDatos, getActiveJugadores, getPlayerProfileConfigServer } from "../../actions";
 import PlayerDetailTabs from "./PlayerDetailTabs";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 type PageProps = { params: Promise<{ id: string }> };
 
 type Jugador = {

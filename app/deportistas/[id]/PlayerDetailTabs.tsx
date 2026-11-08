@@ -37,7 +37,7 @@ import {
   Legend,
 } from "recharts";
 
-import { checkDuplicateJugadorNombre, addLesion, getFullExcelBBDDRows, savePlayerProfileConfigServer } from "../../actions";
+import { checkDuplicateJugadorNombre, addLesion, getFullExcelBBDDRows, savePlayerProfileConfigServer, getAllGpsDatos } from "../../actions";
 import {
   CONTEXTOS_OPTIONS,
   CONTACTO_OPTIONS,
@@ -1031,6 +1031,102 @@ function loadRealReportDataForPlayer(
   return { evEquipo, dispJugador, evJugador };
 }
 
+export interface SpeedTestRecord {
+  fecha: string;
+  velMax: number;
+  tipo: string;
+  origen: "tarea_sprint" | "sesion_max";
+  sesion: string;
+}
+
+export function getPlayerSpeedTestRecords(
+  jugador: { id: string; nombre?: string | null; apodo?: string | null },
+  records: any[] = []
+): SpeedTestRecord[] {
+  const pRecords = (records || []).filter((r: any) => {
+    const isSim = Boolean(
+      r.es_simulado ||
+      r.metricas?.es_simulado ||
+      String(r.tipo_registro || r.metricas?.tipo_registro || "").toUpperCase() === "SIMULADO" ||
+      (r.metricas?.colC && String(r.metricas?.colC).toUpperCase().includes("SIMULA"))
+    );
+    if (isSim) return false;
+
+    const jId = r.jugador_id || r.metricas?.jugador_id;
+    if (jId && jId === jugador.id) return true;
+
+    const rName = String(r.jugador || r.metricas?.Player_Name || r.metricas?.jugador || "").trim().toLowerCase();
+    const pName = String(jugador.nombre || "").trim().toLowerCase();
+    const pApodo = String(jugador.apodo || "").trim().toLowerCase();
+    return (pName && rName === pName) || (pApodo && rName === pApodo);
+  });
+
+  if (!pRecords || pRecords.length === 0) return [];
+
+  const sprintTestRecords: SpeedTestRecord[] = [];
+  const otherSessionRecords: SpeedTestRecord[] = [];
+
+  pRecords.forEach((r: any) => {
+    const m = r.metricas || {};
+    const totalVel = Number(m["Vel Max"] || m.vel_max || m.max_speed || m["MAX Speed(km/h)"] || 0);
+
+    let hasSprintTask = false;
+    let sprintTaskVel = 0;
+    let sprintTaskName = "";
+
+    if (Array.isArray(m.tareas)) {
+      m.tareas.forEach((t: any) => {
+        const tName = String(t.nombre || t.tarea || "").trim();
+        if (tName.toUpperCase().includes("SPRINT")) {
+          const v = Number(t["Vel Max"] || t["MAX Speed(km/h)"] || t.vel_max || 0);
+          if (v > sprintTaskVel) {
+            sprintTaskVel = v;
+            sprintTaskName = tName;
+            hasSprintTask = true;
+          }
+        }
+      });
+    }
+
+    if (hasSprintTask && sprintTaskVel > 0) {
+      sprintTestRecords.push({
+        fecha: r.fecha,
+        velMax: Math.round(sprintTaskVel * 100) / 100,
+        tipo: `Test Sprint (${sprintTaskName})`,
+        origen: "tarea_sprint",
+        sesion: r.tipo_sesion || r.match_day || "Sesión",
+      });
+    } else if (totalVel > 0) {
+      otherSessionRecords.push({
+        fecha: r.fecha,
+        velMax: Math.round(totalVel * 100) / 100,
+        tipo: `Vel Máx (${r.tipo_sesion || r.match_day || "Sesión"})`,
+        origen: "sesion_max",
+        sesion: r.tipo_sesion || r.match_day || "Sesión",
+      });
+    }
+  });
+
+  const byDate = new Map<string, SpeedTestRecord>();
+  sprintTestRecords.forEach((s) => {
+    const existing = byDate.get(s.fecha);
+    if (!existing || s.velMax > existing.velMax) {
+      byDate.set(s.fecha, s);
+    }
+  });
+
+  otherSessionRecords.sort((a, b) => b.velMax - a.velMax);
+
+  for (const other of otherSessionRecords) {
+    if (!byDate.has(other.fecha)) {
+      byDate.set(other.fecha, other);
+      if (byDate.size >= 3) break;
+    }
+  }
+
+  return Array.from(byDate.values()).sort((a, b) => a.fecha.localeCompare(b.fecha));
+}
+
 export default function PlayerDetailTabs({
   jugador,
   saveJugadorAction,
@@ -1057,6 +1153,39 @@ export default function PlayerDetailTabs({
     skinfoldMetricsList: [],
     combinedChartData: [],
   });
+
+  // Registros GPS reactivos con carga en cliente y sincronización en tiempo real
+  const [localGpsRecords, setLocalGpsRecords] = useState<any[]>(allGpsRecords || []);
+
+  useEffect(() => {
+    if (allGpsRecords && allGpsRecords.length > 0) {
+      setLocalGpsRecords(allGpsRecords);
+    }
+  }, [allGpsRecords]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadFreshGps = async () => {
+      try {
+        const records = await getAllGpsDatos();
+        if (isMounted && Array.isArray(records) && records.length > 0) {
+          setLocalGpsRecords(records);
+        }
+      } catch (e) {
+        console.error("Error loading fresh GPS in PlayerDetailTabs:", e);
+      }
+    };
+    loadFreshGps();
+
+    const handleGpsSync = () => {
+      loadFreshGps();
+    };
+    window.addEventListener("gps_synced", handleGpsSync);
+    return () => {
+      isMounted = false;
+      window.removeEventListener("gps_synced", handleGpsSync);
+    };
+  }, []);
 
   const [isSavingGeneral, setIsSavingGeneral] = useState(false);
   const [saveGeneralMessage, setSaveGeneralMessage] = useState("");
@@ -1418,13 +1547,13 @@ export default function PlayerDetailTabs({
   // Se recalcula reactivamente al añadir nuevos partidos en gps_datos
   const competitiveProfilesMap = useMemo(() => {
     return computeCompetitiveProfiles({
-      gpsRecords: allGpsRecords,
+      gpsRecords: localGpsRecords,
       jugadores: allJugadores && allJugadores.length > 0 ? allJugadores : [jugador],
       customOverrides: compProfileOverrides,
       availableFavVariables: favoriteVariables,
       derivedVariables,
     });
-  }, [allGpsRecords, allJugadores, jugador, compProfileOverrides, favoriteVariables, derivedVariables]);
+  }, [localGpsRecords, allJugadores, jugador, compProfileOverrides, favoriteVariables, derivedVariables]);
 
   const playerCompProfile = useMemo(() => {
     return competitiveProfilesMap.get(jugador.id);
@@ -1494,8 +1623,8 @@ export default function PlayerDetailTabs({
   // Microciclos detectados y auto-ajustados según sesiones de partido y fechas
   const availableMicrocycles = useMemo(() => {
     const stored = getStoredMicrocycles();
-    return extractMicrocyclesFromGpsData(allGpsRecords, stored);
-  }, [allGpsRecords, microcycleRefreshKey]);
+    return extractMicrocyclesFromGpsData(localGpsRecords, stored);
+  }, [localGpsRecords, microcycleRefreshKey]);
 
   // Microciclos que corresponden al tipo actualmente seleccionado en el filtro
   const relevantMicrocyclesForCurrentFilter = useMemo(() => {
@@ -1570,7 +1699,7 @@ export default function PlayerDetailTabs({
 
   // Registros reales de GPS del jugador (todos los históricos reales)
   const playerRealGpsRecords = useMemo(() => {
-    return (allGpsRecords || []).filter((r) => {
+    return (localGpsRecords || []).filter((r) => {
       const isSim = Boolean(
         r.es_simulado ||
         r.metricas?.es_simulado ||
@@ -1587,11 +1716,11 @@ export default function PlayerDetailTabs({
       const pApodo = String(jugador.apodo || "").trim().toLowerCase();
       return (pName && rName === pName) || (pApodo && rName === pApodo);
     });
-  }, [allGpsRecords, jugador.id, jugador.nombre, jugador.apodo]);
+  }, [localGpsRecords, jugador.id, jugador.nombre, jugador.apodo, gpsDataSourceMode]);
 
   // Registros filtrados para la Matriz según Sujeto (Jugador o Equipo), Tipo de Microciclo y Semanas seleccionadas
   const matrixFilteredGpsRecords = useMemo(() => {
-    return (allGpsRecords || []).filter((r) => {
+    return (localGpsRecords || []).filter((r) => {
       const isSim = Boolean(
         r.es_simulado ||
         r.metricas?.es_simulado ||
@@ -1609,24 +1738,62 @@ export default function PlayerDetailTabs({
         if (!isThisPlayer) return false;
       }
 
-      const mc = getMicrocycleForDate(r.fecha, availableMicrocycles);
-      if (!mc) return false;
-
-      // 1. Filtrar estrictamente por tipo de microciclo si no es 'todos'
-      const mType = getMicrocycleType(mc);
-      if (gpsMicrocycleTypeFilter !== "todos" && mType !== gpsMicrocycleTypeFilter) {
-        return false;
-      }
-
-      // 2. Comprobar si la semana concreta está activa (no desmarcada) en el selector
-      const unselected = unselectedWeeksByType[gpsMicrocycleTypeFilter] || [];
-      if (unselected.includes(mc.id)) {
-        return false;
+      if (availableMicrocycles.length > 0) {
+        const mc = getMicrocycleForDate(r.fecha, availableMicrocycles);
+        if (gpsMicrocycleTypeFilter !== "todos") {
+          if (!mc) return false;
+          const mType = getMicrocycleType(mc);
+          if (mType !== gpsMicrocycleTypeFilter) return false;
+        }
+        if (mc) {
+          const unselected = unselectedWeeksByType[gpsMicrocycleTypeFilter] || [];
+          if (unselected.includes(mc.id)) return false;
+        }
       }
 
       return true;
     });
-  }, [allGpsRecords, gpsSubjectMode, jugador.id, jugador.nombre, jugador.apodo, availableMicrocycles, gpsMicrocycleTypeFilter, gpsDataSourceMode, unselectedWeeksByType]);
+  }, [localGpsRecords, gpsSubjectMode, jugador.id, jugador.nombre, jugador.apodo, availableMicrocycles, gpsMicrocycleTypeFilter, gpsDataSourceMode, unselectedWeeksByType]);
+
+  // Registros de Tests de Velocidad (Tareas SPRINT + Picos de Velocidad)
+  const speedTestRecords = useMemo(() => {
+    return getPlayerSpeedTestRecords(jugador, localGpsRecords);
+  }, [jugador, localGpsRecords]);
+
+  const speedChartData = useMemo(() => {
+    return speedTestRecords.map((r) => {
+      let dateLabel = r.fecha;
+      try {
+        const parts = r.fecha.split("-");
+        if (parts.length === 3) {
+          dateLabel = `${parts[2]}/${parts[1]}`;
+        }
+      } catch {}
+      return {
+        fecha: r.fecha,
+        dateLabel,
+        velMax: r.velMax,
+        tipo: r.tipo,
+        origen: r.origen,
+        sesion: r.sesion,
+      };
+    });
+  }, [speedTestRecords]);
+
+  const speedStats = useMemo(() => {
+    if (!speedTestRecords || speedTestRecords.length === 0) {
+      return { maxSpeed: 0, latestSprintTest: null, avgSpeed: 0 };
+    }
+    const max = Math.max(...speedTestRecords.map((r) => r.velMax));
+    const sprints = speedTestRecords.filter((r) => r.origen === "tarea_sprint");
+    const latestSprint = sprints.length > 0 ? sprints[sprints.length - 1] : null;
+    const avg = speedTestRecords.reduce((acc, r) => acc + r.velMax, 0) / speedTestRecords.length;
+    return {
+      maxSpeed: max,
+      latestSprintTest: latestSprint,
+      avgSpeed: avg,
+    };
+  }, [speedTestRecords]);
 
   // Overrides manuales para la matriz de GPS
   const [gpsMatrixCustomOverrides, setGpsMatrixCustomOverrides] = useState<Record<string, Record<string, number>>>(() => {
@@ -4672,7 +4839,163 @@ export default function PlayerDetailTabs({
           </div>
           
           {/* ══════════════════════════════════════════════════════════════ */}
-          {/* 2. EVOLUCIÓN ANTROPOMÉTRICA: PESO vs PLIEGUES (ABAJO)          */}
+          {/* 2. TESTS DE VELOCIDAD: PICOS Y TAREAS SPRINT (CRONOLÓGICO)     */}
+          {/* ══════════════════════════════════════════════════════════════ */}
+          <div style={{ background: "#ffffff", padding: "18px 20px", borderRadius: "10px", border: "1px solid #cbd5e1" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px", flexWrap: "wrap", gap: "10px" }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span style={{ fontSize: "18px" }}>⚡</span>
+                  <h3 style={{ fontSize: "14.5px", fontWeight: 800, color: "#0f172a", margin: 0 }}>
+                    Tests de Velocidad — Velocidad Máxima y Tareas de Sprint
+                  </h3>
+                </div>
+                <p style={{ fontSize: "11.5px", color: "#64748b", margin: "2px 0 0" }}>
+                  Progresión cronológica de la velocidad máxima registrada en tareas de sprint y sesiones oficiales de competición.
+                </p>
+              </div>
+
+              {/* RESUMEN DE MÉTRICAS */}
+              {speedTestRecords.length > 0 && (
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", fontSize: "11.5px" }}>
+                  <span style={{ color: "#1e3a8a", fontWeight: 800 }}>
+                    🏆 Pico Histórico: <strong>{speedStats.maxSpeed.toFixed(2)} km/h</strong>
+                  </span>
+                  {speedStats.latestSprintTest && (
+                    <span style={{ color: "#166534", fontWeight: 800 }}>
+                      ⚡ Último Test Sprint: <strong>{speedStats.latestSprintTest.velMax.toFixed(2)} km/h</strong>
+                    </span>
+                  )}
+                  <span style={{ color: "#7e22ce", fontWeight: 800 }}>
+                    📊 Media Tests: <strong>{speedStats.avgSpeed.toFixed(2)} km/h</strong>
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* GRÁFICO DE LÍNEAS CON PUNTOS Y CONEXIÓN ENTRE ELLOS */}
+            <div style={{ width: "100%", height: 230, marginBottom: "16px" }}>
+              {speedChartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={speedChartData} margin={{ top: 15, right: 20, left: -10, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                    <XAxis dataKey="dateLabel" stroke="#64748b" fontSize={11} fontWeight={600} />
+                    <YAxis
+                      domain={["dataMin - 1.5", "dataMax + 1.5"]}
+                      stroke="#2563eb"
+                      fontSize={11}
+                      fontWeight={600}
+                      unit=" km/h"
+                      tickFormatter={(v) => `${Number(v).toFixed(1)}`}
+                    />
+                    <Tooltip
+                      content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          const data = payload[0].payload;
+                          return (
+                            <div style={{ background: "#ffffff", borderRadius: "8px", border: "1px solid #cbd5e1", padding: "8px 12px", fontSize: "12px", boxShadow: "0 2px 6px rgba(0,0,0,0.08)" }}>
+                              <div style={{ fontWeight: 800, color: "#0f172a", marginBottom: "4px" }}>📅 {data.fecha}</div>
+                              <div style={{ color: "#1e3a8a", fontWeight: 900, fontSize: "13px", marginBottom: "3px" }}>
+                                ⚡ {data.velMax.toFixed(2)} km/h
+                              </div>
+                              <div style={{ color: "#2563eb", fontSize: "11px", fontWeight: 700 }}>{data.tipo}</div>
+                              <div style={{ color: "#64748b", fontSize: "10.5px" }}>Sesión: {data.sesion}</div>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                    <Legend />
+                    <Line
+                      type="monotone"
+                      dataKey="velMax"
+                      name="Velocidad Máxima (km/h)"
+                      stroke="#2563eb"
+                      strokeWidth={2.5}
+                      dot={{ r: 5, fill: "#2563eb", stroke: "#ffffff", strokeWidth: 2 }}
+                      activeDot={{ r: 7, fill: "#1d4ed8" }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <div style={{ padding: "30px 20px", textAlign: "center", color: "#94a3b8", fontSize: "12px", background: "#f8fafc", borderRadius: "8px", border: "1px dashed #cbd5e1" }}>
+                  ⚡ No hay registros de velocidad GPS registrados para {jugador.nombre || "este deportista"}. Se sincronizarán automáticamente al cargar sesiones GPS.
+                </div>
+              )}
+            </div>
+
+            {/* TABLA DE PROGRESIÓN TEMPORAL SINTÉTICA */}
+            {speedChartData.length > 0 && (
+              <div style={{ overflowX: "auto", borderRadius: "6px", border: "1px solid #cbd5e1" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px" }}>
+                  <thead>
+                    <tr style={{ background: "#0f172a", color: "#ffffff" }}>
+                      <th style={{ padding: "6px 10px", textAlign: "left" }}>Fecha</th>
+                      <th style={{ padding: "6px 10px", textAlign: "left" }}>Tipo / Tarea / Contexto</th>
+                      <th style={{ padding: "6px 10px", textAlign: "center", background: "#1e3a8a" }}>Velocidad Máxima (km/h)</th>
+                      <th style={{ padding: "6px 10px", textAlign: "center" }}>Δ Evolución</th>
+                      <th style={{ padding: "6px 10px", textAlign: "center" }}>Nivel / Rango</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {speedChartData.map((row, idx) => {
+                      const prev = idx > 0 ? speedChartData[idx - 1] : null;
+                      const delta = prev ? Number((row.velMax - prev.velMax).toFixed(2)) : null;
+                      const isSprint = row.origen === "tarea_sprint";
+
+                      return (
+                        <tr key={row.fecha + "-" + idx} style={{ background: idx % 2 === 0 ? "#ffffff" : "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
+                          <td style={{ padding: "6px 10px", fontWeight: 800, color: "#0f172a" }}>{row.fecha}</td>
+                          <td style={{ padding: "6px 10px" }}>
+                            <span style={{
+                              display: "inline-block",
+                              padding: "2px 8px",
+                              borderRadius: "4px",
+                              fontSize: "10.5px",
+                              fontWeight: 700,
+                              background: isSprint ? "#dcfce7" : "#eff6ff",
+                              color: isSprint ? "#15803d" : "#1e40af",
+                              border: `1px solid ${isSprint ? "#bbf7d0" : "#bfdbfe"}`
+                            }}>
+                              {row.tipo}
+                            </span>
+                            <span style={{ fontSize: "10.5px", color: "#64748b", marginLeft: "6px" }}>({row.sesion})</span>
+                          </td>
+                          <td style={{ padding: "6px 10px", textAlign: "center", fontWeight: 900, color: "#1e3a8a", fontSize: "12px" }}>
+                            {row.velMax.toFixed(2)} km/h
+                          </td>
+                          <td style={{ padding: "6px 10px", textAlign: "center", fontWeight: 800 }}>
+                            {delta === null ? (
+                              <span style={{ color: "#94a3b8" }}>📍 Base</span>
+                            ) : delta > 0 ? (
+                              <span style={{ color: "#16a34a" }}>+{delta.toFixed(2)} km/h ↗</span>
+                            ) : delta < 0 ? (
+                              <span style={{ color: "#dc2626" }}>{delta.toFixed(2)} km/h ↘</span>
+                            ) : (
+                              <span style={{ color: "#64748b" }}>0.00 km/h =</span>
+                            )}
+                          </td>
+                          <td style={{ padding: "6px 10px", textAlign: "center", fontWeight: 700, fontSize: "10.5px" }}>
+                            {row.velMax >= 31 ? (
+                              <span style={{ color: "#15803d", background: "#f0fdf4", padding: "2px 6px", borderRadius: "4px", border: "1px solid #bbf7d0" }}>⚡ Élite (+31 km/h)</span>
+                            ) : row.velMax >= 28 ? (
+                              <span style={{ color: "#1d4ed8", background: "#eff6ff", padding: "2px 6px", borderRadius: "4px", border: "1px solid #bfdbfe" }}>🚀 Muy Alta (28-31 km/h)</span>
+                            ) : (
+                              <span style={{ color: "#64748b", background: "#f8fafc", padding: "2px 6px", borderRadius: "4px", border: "1px solid #e2e8f0" }}>🏃 Estándar</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* ══════════════════════════════════════════════════════════════ */}
+          {/* 3. EVOLUCIÓN ANTROPOMÉTRICA: PESO vs PLIEGUES (ABAJO)          */}
           {/* ══════════════════════════════════════════════════════════════ */}
           <div style={{ background: "#ffffff", padding: "18px 20px", borderRadius: "10px", border: "1px solid #cbd5e1" }}>
             
