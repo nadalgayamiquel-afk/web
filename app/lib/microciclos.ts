@@ -129,14 +129,18 @@ export function normalizeMDColumn(rawMD?: string, tipoSesion?: string, microType
   // 2. MD+2 y +2MD son exactamente lo mismo
   if (combined.includes("+2") || combined.includes("MD+2") || combined.includes("+2MD") || combined.includes("2+MD")) return "+2 MD";
 
-  // 3. Una semana media o corta no tiene MD-5
+  // 3. Una semana media o corta no tiene MD-5, y una semana de doble partido no tiene MD-5 ni MD-4
   if (combined.includes("-5") || combined.includes("5MD") || combined.includes("MD5") || combined.includes("MD-5") || combined.includes("-5MD")) {
-    if (microType === "media" || microType === "corto" || microType === "doble_partido") return "-4 MD";
+    if (microType === "doble_partido") return "-3 MD";
+    if (microType === "media" || microType === "corto") return "-4 MD";
     return "-5 MD";
   }
 
   // MD-4 o -4MD
-  if (combined.includes("-4") || combined.includes("4MD") || combined.includes("MD4") || combined.includes("MD-4") || combined.includes("-4MD")) return "-4 MD";
+  if (combined.includes("-4") || combined.includes("4MD") || combined.includes("MD4") || combined.includes("MD-4") || combined.includes("-4MD")) {
+    if (microType === "doble_partido") return "-3 MD";
+    return "-4 MD";
+  }
 
   // MD-3 o -3MD
   if (combined.includes("-3") || combined.includes("3MD") || combined.includes("MD3") || combined.includes("MD-3") || combined.includes("-3MD")) return "-3 MD";
@@ -167,18 +171,18 @@ export function getMicrocycleType(
       }
     } catch {}
   }
-  if (mc.tipo) return mc.tipo;
+  if (mc.tipo && mc.tipo !== "sin_categorizar") return mc.tipo;
   if (matchDatesInWeek.length >= 2) return "doble_partido";
 
-  // Identificar el tipo basado en fechas e ID si no venía en el objeto
+  // Identificar el tipo basado en fechas e ID si no venía en el objeto o venía sin_categorizar
   const s = parseDateStrToISO(mc.start);
   const idStr = String(mc.id || "");
-  if (s === "2026-10-26" || idStr.includes("2026-10-26")) return "doble_partido";
+  if (s === "2026-10-26" || idStr.includes("2026-10-26") || (mc.end && parseDateStrToISO(mc.end) === "2026-11-01")) return "doble_partido";
   if (s === "2026-10-12" || idStr.includes("12-18") || idStr.includes("14-18")) return "corto";
   if (s === "2026-10-19" || idStr.includes("19-25")) return "media";
   if (s === "2026-10-05" || idStr.includes("05-11") || idStr.includes("07-13")) return "media";
+  if (s === "2026-11-02" || idStr.includes("2026-11-02")) return "largo";
   if (s === "2026-09-28" || idStr.includes("28sep") || idStr.includes("2026-09-28")) return "sin_categorizar";
-  if (s === "2026-11-02" || idStr.includes("2026-11-02")) return "sin_categorizar";
 
   return "sin_categorizar";
 }
@@ -333,7 +337,7 @@ export function extractMicrocyclesFromGpsData(
 
   const officialMatchDates: string[] = [];
   dateMatchCount.forEach((count, f) => {
-    if (count >= 3) {
+    if (count >= 1) {
       officialMatchDates.push(f);
     }
   });
@@ -376,13 +380,26 @@ export function extractMicrocyclesFromGpsData(
     let autoTipo: Exclude<MicrocycleType, "todos"> = "media";
     let daysBetween: number | string = 7;
 
-    // Si es la semana inicial del 28 sept al 4 oct, o no hay partido anterior previo, no se categoriza
+    // 1. Semana inicial de liga (sin MD previo)
     if (bucket.start === "2026-09-28" || bucket.end === "2026-10-04" || id.includes("2026-09-28")) {
       autoTipo = "sin_categorizar";
       daysBetween = "-";
-    } else if (matchesInWeek.length >= 2) {
+    } else if (bucket.start === "2026-10-26" || matchesInWeek.length >= 2) {
+      // Semana del 26 Oct al 1 Nov -> Doble Partido
       autoTipo = "doble_partido";
       daysBetween = "3-4";
+    } else if (bucket.start === "2026-10-12") {
+      // Semana del 12 al 18 Oct -> Corta (6d)
+      autoTipo = "corto";
+      daysBetween = 6;
+    } else if (bucket.start === "2026-10-19" || bucket.start === "2026-10-05") {
+      // Semanas del 5 al 11 y del 19 al 25 Oct -> Medias (7d)
+      autoTipo = "media";
+      daysBetween = 7;
+    } else if (bucket.start === "2026-11-02") {
+      // Semana del 2 al 8 Nov -> Larga (9d desde el partido del 30 Oct al 8 Nov)
+      autoTipo = "largo";
+      daysBetween = 9;
     } else if (matchesInWeek.length === 1) {
       const matchDate = matchesInWeek[0];
       const matchIdx = officialMatchDates.indexOf(matchDate);

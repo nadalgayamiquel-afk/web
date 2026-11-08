@@ -1584,9 +1584,15 @@ export default function PlayerDetailTabs({
   };
   const [showTotalColumn, setShowTotalColumn] = useState<boolean>(true);
 
-  // Una semana media (7 días entre MD) y una semana corta (6d) NO tienen MD-5
+  // Columnas de Match Day según el tipo de microciclo:
+  // - Doble partido (3-4 días entre partidos): NO tiene MD-5 ni MD-4
+  // - Semana media (7d) y corta (6d): NO tienen MD-5
+  // - Semana larga (8d+) o todos: muestra MD-5
   const mdColumns = useMemo(() => {
-    if (gpsMicrocycleTypeFilter === "media" || gpsMicrocycleTypeFilter === "corto" || gpsMicrocycleTypeFilter === "doble_partido") {
+    if (gpsMicrocycleTypeFilter === "doble_partido") {
+      return ["-3 MD", "-2 MD", "-1 MD", "MD", "+1 MD", "+2 MD"];
+    }
+    if (gpsMicrocycleTypeFilter === "media" || gpsMicrocycleTypeFilter === "corto") {
       return ["-4 MD", "-3 MD", "-2 MD", "-1 MD", "MD", "+1 MD", "+2 MD"];
     }
     return ["-5 MD", "-4 MD", "-3 MD", "-2 MD", "-1 MD", "MD", "+1 MD", "+2 MD"];
@@ -1602,12 +1608,15 @@ export default function PlayerDetailTabs({
     // 2. REGLA CLAVE: MD+2 y +2MD son exactamente lo mismo
     if (combined.includes("+2") || combined.includes("MD+2") || combined.includes("+2MD") || combined.includes("2+MD")) return "+2 MD";
 
-    // 3. REGLA CLAVE: Una semana media (7d) y corta (6d) NO tienen MD-5
-    if (combined.includes("-5") || combined.includes("5MD") || combined.includes("MD5")) {
-      if (gpsMicrocycleTypeFilter === "media" || gpsMicrocycleTypeFilter === "corto") {
+    // 3. REGLA CLAVE: En doble partido no hay MD-5 ni MD-4 (máximo MD-3)
+    if (gpsMicrocycleTypeFilter === "doble_partido") {
+      if (combined.includes("-5") || combined.includes("5MD") || combined.includes("-4") || combined.includes("4MD") || combined.includes("MD-4") || combined.includes("MD-5")) {
+        return "-3 MD";
+      }
+    } else if (gpsMicrocycleTypeFilter === "media" || gpsMicrocycleTypeFilter === "corto") {
+      if (combined.includes("-5") || combined.includes("5MD") || combined.includes("MD5") || combined.includes("MD-5")) {
         return "-4 MD";
       }
-      return "-5 MD";
     }
 
     if (combined.includes("-4") || combined.includes("4MD") || combined.includes("MD4")) return "-4 MD";
@@ -1738,17 +1747,17 @@ export default function PlayerDetailTabs({
         if (!isThisPlayer) return false;
       }
 
-      if (availableMicrocycles.length > 0) {
-        const mc = getMicrocycleForDate(r.fecha, availableMicrocycles);
-        if (gpsMicrocycleTypeFilter !== "todos") {
-          if (!mc) return false;
-          const mType = getMicrocycleType(mc);
-          if (mType !== gpsMicrocycleTypeFilter) return false;
-        }
-        if (mc) {
-          const unselected = unselectedWeeksByType[gpsMicrocycleTypeFilter] || [];
-          if (unselected.includes(mc.id)) return false;
-        }
+      // Filtrar estrictamente por tipo de microciclo si se selecciona un tipo específico
+      const mc = getMicrocycleForDate(r.fecha, availableMicrocycles);
+      if (gpsMicrocycleTypeFilter !== "todos") {
+        if (!mc) return false;
+        const mType = getMicrocycleType(mc);
+        if (mType !== gpsMicrocycleTypeFilter) return false;
+      }
+
+      if (mc) {
+        const unselected = unselectedWeeksByType[gpsMicrocycleTypeFilter] || [];
+        if (unselected.includes(mc.id)) return false;
       }
 
       return true;
