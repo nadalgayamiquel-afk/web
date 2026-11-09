@@ -328,15 +328,20 @@ function getCompactMetricHeader(key: string, rawLabel?: string): string {
   if (kLower.includes("+ 24") || kLower.includes("+24") || lLower.includes("+ 24") || lLower.includes("+24") || lLower.includes("z6")) return "Z6 (+24)";
   if (kLower.includes("+ 28") || kLower.includes("+28") || lLower.includes("+ 28") || lLower.includes("+28")) return "Max (+28)";
 
-  // 2. Distancia 19,8 / HSR -> HSR
+  // Distancia 19,8 Km/h -> HSR estándar
+  if (kLower.includes("19,8") || kLower.includes("19.8") || lLower.includes("19,8") || lLower.includes("19.8")) {
+    return "HSR (19.8)";
+  }
+
+  // 2. Distancia +21 / HSR Abs
   if (
     kLower === "distance +21 (m)" ||
     kLower === "hsr abs (m)" ||
     lLower.includes("distancia (+21") ||
-    lLower.includes("hsr") ||
+    lLower.includes("+21") ||
     kLower === "hsr"
   ) {
-    return "HSR (+21)";
+    return "+21 km/h";
   }
 
   // 3. Aceleraciones y Desaceleraciones -> Acc-Dec
@@ -392,11 +397,9 @@ export function isCustomHsrKey(key: string): boolean {
   if (!key) return false;
   const kLower = key.toLowerCase();
   return (
-    kLower.startsWith("derived_") ||
+    kLower === "hsri" ||
     kLower === "hsr_personalizada" ||
-    kLower.includes("personalizada") ||
-    kLower.includes("hsr indiv") ||
-    kLower.includes("hsri")
+    kLower.includes("hsr indiv")
   );
 }
 
@@ -868,58 +871,33 @@ export default function CargaExternaSection({
     }
   };
 
-  const [showCustomHsrInProfile, setShowCustomHsrInProfile] = useState<boolean>(() => {
+  const [showHsriColumn, setShowHsriColumn] = useState<boolean>(() => {
     if (typeof window !== "undefined") {
       try {
-        const stored = localStorage.getItem("gps_profile_show_custom_hsr");
+        const stored = localStorage.getItem("gps_profile_show_hsri");
         if (stored !== null) return stored === "true";
       } catch {}
     }
-    return false; // Por defecto desactivado (OFF) para evitar columnas vacías y separación excesiva
+    return false; // Por defecto desactivado (OFF)
   });
 
   const displayedProfileKeys = useMemo(() => {
-    let keys = selectedProfileKeys.filter((k) => {
-      if (isCustomHsrKey(k)) {
-        return showCustomHsrInProfile;
-      }
-      return true;
-    });
+    // Variables estándar seleccionadas por el usuario (la HSR normal 19,8 es una variable fija como las demás)
+    const cleanKeys = selectedProfileKeys.filter(
+      (k) => k !== "HSR_Personalizada" && k !== "derived_undefined" && k !== "derived_1791992159697" && !isCustomHsrKey(k)
+    );
 
-    if (showCustomHsrInProfile && !keys.some(isCustomHsrKey)) {
-      const customVar =
-        availableFavVariables.find((v) => isCustomHsrKey(v.key)) ||
-        derivedVariables.find((d) => isCustomHsrKey(d.id || (d as any).key));
-      if (customVar) {
-        keys.push((customVar as any).key || (customVar as any).id);
-      } else {
-        keys.push("HSR_Personalizada");
-      }
-    }
-
-    // Ordenar de manera compacta y lógica:
-    // DT siempre primero, luego velocidades, luego HSR personalizada (si está activa), luego Acc-Dec y Player Load
-    return [...keys].sort((a, b) => {
+    // Ordenar para que DT esté siempre primero
+    return [...cleanKeys].sort((a, b) => {
       const aLower = a.toLowerCase();
       const bLower = b.toLowerCase();
       const aIsDT = a === "Distance(m)" || aLower.includes("distancia total") || aLower === "dt";
       const bIsDT = b === "Distance(m)" || bLower.includes("distancia total") || bLower === "dt";
       if (aIsDT) return -1;
       if (bIsDT) return 1;
-
-      const aIsCustom = isCustomHsrKey(a);
-      const bIsCustom = isCustomHsrKey(b);
-      if (aIsCustom && !bIsCustom) {
-        if (bLower.includes("acc") || bLower.includes("load")) return -1;
-        return 1;
-      }
-      if (!aIsCustom && bIsCustom) {
-        if (aLower.includes("acc") || aLower.includes("load")) return 1;
-        return -1;
-      }
       return 0;
     });
-  }, [selectedProfileKeys, showCustomHsrInProfile, availableFavVariables, derivedVariables]);
+  }, [selectedProfileKeys]);
 
   const [showHeatmapColors, setShowHeatmapColors] = useState<boolean>(() => {
     if (typeof window !== "undefined") {
@@ -2844,17 +2822,7 @@ export default function CargaExternaSection({
       const vals: number[] = [];
       filteredProfileJugadores.forEach((j) => {
         const p = competitiveProfiles.get(j.id);
-        let val = p?.values ? (p.values as Record<string, any>)[k] : undefined;
-        if ((val === undefined || val === null) && isCustomHsrKey(k)) {
-          if (typeof window !== "undefined") {
-            try {
-              const playerHsriVar = localStorage.getItem(`player_hsri_var_${j.id}`);
-              if (playerHsriVar && p?.values?.[playerHsriVar] !== undefined && p.values[playerHsriVar] !== null) {
-                val = p.values[playerHsriVar];
-              }
-            } catch {}
-          }
-        }
+        const val = p?.values ? (p.values as Record<string, any>)[k] : undefined;
         if (typeof val === "number" && !isNaN(val) && val > 0) {
           vals.push(val);
         }
@@ -2865,8 +2833,32 @@ export default function CargaExternaSection({
         map[k] = { min: 0, max: 0 };
       }
     });
+
+    if (showHsriColumn) {
+      const hsriVals: number[] = [];
+      filteredProfileJugadores.forEach((j) => {
+        const p = competitiveProfiles.get(j.id);
+        if (typeof window !== "undefined") {
+          try {
+            const assignedKey = localStorage.getItem(`player_hsri_var_${j.id}`);
+            if (assignedKey && p?.values) {
+              const val = p.values[assignedKey];
+              if (typeof val === "number" && !isNaN(val) && val > 0) {
+                hsriVals.push(val);
+              }
+            }
+          } catch {}
+        }
+      });
+      if (hsriVals.length > 0) {
+        map["HSRI"] = { min: Math.min(...hsriVals), max: Math.max(...hsriVals) };
+      } else {
+        map["HSRI"] = { min: 0, max: 0 };
+      }
+    }
+
     return map;
-  }, [displayedProfileKeys, filteredProfileJugadores, competitiveProfiles]);
+  }, [displayedProfileKeys, filteredProfileJugadores, competitiveProfiles, showHsriColumn]);
 
   const getDemandBgColor = (val: number | undefined | null, key: string): string => {
     if (!showHeatmapColors || val === undefined || val === null || typeof val !== "number" || isNaN(val) || val <= 0) {
@@ -5498,15 +5490,15 @@ export default function CargaExternaSection({
                 <span>Colores: {showHeatmapColors ? "ON" : "OFF"}</span>
               </button>
 
-              {/* Botón Toggle HSR Personalizada */}
+              {/* Botón Toggle HSRI (HSR Individualizada) */}
               <button
                 type="button"
                 onClick={() => {
-                  setShowCustomHsrInProfile((prev) => {
+                  setShowHsriColumn((prev) => {
                     const next = !prev;
                     if (typeof window !== "undefined") {
                       try {
-                        localStorage.setItem("gps_profile_show_custom_hsr", String(next));
+                        localStorage.setItem("gps_profile_show_hsri", String(next));
                       } catch {}
                     }
                     return next;
@@ -5518,18 +5510,18 @@ export default function CargaExternaSection({
                   gap: "5px",
                   padding: "4px 9px",
                   borderRadius: "5px",
-                  border: showCustomHsrInProfile ? "1px solid #16a34a" : "1px solid #cbd5e1",
-                  background: showCustomHsrInProfile ? "#f0fdf4" : "#ffffff",
-                  color: showCustomHsrInProfile ? "#15803d" : "#475569",
+                  border: showHsriColumn ? "1px solid #16a34a" : "1px solid #cbd5e1",
+                  background: showHsriColumn ? "#f0fdf4" : "#ffffff",
+                  color: showHsriColumn ? "#15803d" : "#475569",
                   fontSize: "11px",
                   fontWeight: 700,
                   cursor: "pointer",
                   transition: "all 0.15s ease",
                 }}
-                title={showCustomHsrInProfile ? "HSR Personalizada activa en tabla (clic para ocultar)" : "HSR Personalizada oculta (clic para mostrar)"}
+                title={showHsriColumn ? "Ocultar columna HSRI (Individualizada)" : "Mostrar columna HSRI (Individualizada por jugador)"}
               >
-                <span style={{ fontSize: "11px" }}>{showCustomHsrInProfile ? "⚡" : "⚪"}</span>
-                <span>HSR Pers.: {showCustomHsrInProfile ? "ON" : "OFF"}</span>
+                <span style={{ fontSize: "11px" }}>{showHsriColumn ? "⚡" : "⚪"}</span>
+                <span>HSRI: {showHsriColumn ? "ON" : "OFF"}</span>
               </button>
 
               {/* Botón Discreto para Variables */}
@@ -5781,6 +5773,22 @@ export default function CargaExternaSection({
                         </th>
                       );
                     })}
+                    {showHsriColumn && (
+                      <th
+                        style={{
+                          padding: "8px 10px",
+                          textAlign: "right",
+                          color: "#166534",
+                          fontWeight: 800,
+                          whiteSpace: "nowrap",
+                          minWidth: "75px",
+                          background: "#f0fdf4",
+                        }}
+                        title="High Speed Running Individualizada por jugador"
+                      >
+                        ⚡ HSRI
+                      </th>
+                    )}
                     <th style={{ padding: "8px 8px", textAlign: "center", width: "40px", minWidth: "40px" }}>Edit</th>
                   </tr>
                 </thead>
@@ -5877,19 +5885,7 @@ export default function CargaExternaSection({
 
                         {/* Columnas dinámicas según favoritas elegidas */}
                         {displayedProfileKeys.map((key) => {
-                          let val = p.values ? (p.values as Record<string, any>)[key] : undefined;
-                          
-                          // Si es la columna de HSR personalizada y val es undefined, buscar si el jugador tiene variable HSRI asignada
-                          if ((val === undefined || val === null) && isCustomHsrKey(key)) {
-                            if (typeof window !== "undefined") {
-                              try {
-                                const playerHsriVar = localStorage.getItem(`player_hsri_var_${j.id}`);
-                                if (playerHsriVar && p.values?.[playerHsriVar] !== undefined && p.values[playerHsriVar] !== null) {
-                                  val = p.values[playerHsriVar];
-                                }
-                              } catch {}
-                            }
-                          }
+                          const val = p.values ? (p.values as Record<string, any>)[key] : undefined;
 
                           const isEstimated = p.category === "estimado_45";
                           const isCopied = p.category === "copiado_posicion";
@@ -5934,6 +5930,63 @@ export default function CargaExternaSection({
                             </td>
                           );
                         })}
+
+                        {/* Columna HSR Individualizada (HSRI) - Si está activa */}
+                        {showHsriColumn && (() => {
+                          let hsriVal: number | undefined = undefined;
+                          if (typeof window !== "undefined") {
+                            try {
+                              const assignedKey = localStorage.getItem(`player_hsri_var_${j.id}`);
+                              if (assignedKey && p.values?.[assignedKey] !== undefined && p.values[assignedKey] !== null) {
+                                hsriVal = p.values[assignedKey];
+                              }
+                            } catch {}
+                          }
+
+                          const isEstimated = p.category === "estimado_45";
+                          const isCopied = p.category === "copiado_posicion";
+                          const suffix = isEstimated ? "*" : isCopied ? "**" : "";
+
+                          return (
+                            <td
+                              key="hsri-col"
+                              style={{
+                                padding: "6px 8px",
+                                textAlign: "right",
+                                fontWeight: 700,
+                                whiteSpace: "nowrap",
+                                fontSize: "11px",
+                                color: "#166534",
+                                backgroundColor: getDemandBgColor(hsriVal, "HSRI"),
+                                transition: "background-color 0.15s ease",
+                              }}
+                              title="HSR Individualizada calculada con el umbral asignado al jugador"
+                            >
+                              <span>
+                                {hsriVal !== undefined && hsriVal !== null
+                                  ? typeof hsriVal === "number"
+                                    ? hsriVal % 1 !== 0
+                                      ? hsriVal.toFixed(1)
+                                      : hsriVal.toLocaleString()
+                                    : hsriVal
+                                  : "—"}
+                              </span>
+                              {suffix && (
+                                <span
+                                  style={{
+                                    marginLeft: "2px",
+                                    fontWeight: 800,
+                                    color: isEstimated ? "#b45309" : "#c2410c",
+                                    fontSize: "10px",
+                                  }}
+                                  title={isEstimated ? "Estimado 45' x 2 (No real *)" : "Copiado de posición (No real **)"}
+                                >
+                                  {suffix}
+                                </span>
+                              )}
+                            </td>
+                          );
+                        })()}
 
                         {/* Acciones */}
                         <td style={{ padding: "6px 6px", textAlign: "center" }}>
