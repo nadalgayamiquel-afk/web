@@ -1641,5 +1641,76 @@ html[data-device-mode="desktop"] .athletes-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
 }
 
+/* ─── REGLAS GLOBALES DEFINITIVAS DE IMPRESIÓN (PDF / PRINT) ─── */
+@media print {
+  html, body,
+  html[data-device-mode="desktop"],
+  html[data-device-mode="tablet"],
+  html[data-device-mode="mobile"] {
+    background: #ffffff !important;
+    color: #000000 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+
+  html .sidebar,
+  html aside.sidebar,
+  html[data-device-mode="desktop"] .sidebar,
+  html[data-device-mode="tablet"] .sidebar,
+  html[data-device-mode="mobile"] .sidebar,
+  aside.sidebar,
+  .sidebar,
+  .main-nav,
+  .sidebar-mobile-header,
+  .mobile-bottom-nav,
+  .device-view-switcher,
+  .no-print {
+    display: none !important;
+    visibility: hidden !important;
+    width: 0 !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    position: absolute !important;
+    left: -9999px !important;
+  }
+
+  html .app-shell,
+  html[data-device-mode="desktop"] .app-shell,
+  html[data-device-mode="tablet"] .app-shell,
+  html[data-device-mode="mobile"] .app-shell,
+  .app-shell {
+    display: block !important;
+    grid-template-columns: 1fr !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    min-height: auto !important;
+    background: #ffffff !important;
+  }
+
+  html section.content,
+  html .content,
+  html[data-device-mode="desktop"] .content,
+  html[data-device-mode="tablet"] .content,
+  html[data-device-mode="mobile"] .content,
+  section.content,
+  .content {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+  }
+}
+
+
 
 

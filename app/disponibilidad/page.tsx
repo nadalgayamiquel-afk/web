@@ -1343,7 +1343,7 @@ function DisponibilidadContent() {
   return (
     <main className="app-shell">
       {/* Sidebar Integrada */}
-      <aside className="sidebar">
+      <aside className="sidebar no-print">
         
         
         <div className="brand-header" style={{ padding: "20px 0", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center" }}>
@@ -3218,10 +3218,76 @@ function DisponibilidadContent() {
             size: A4 portrait;
             margin: 6mm 8mm 6mm 8mm;
           }
+          html, body,
+          html[data-device-mode="desktop"],
+          html[data-device-mode="tablet"],
+          html[data-device-mode="mobile"] {
+            background: #ffffff !important;
+            color: #000000 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            width: 100% !important;
+          }
+          html .sidebar,
+          html aside.sidebar,
+          html[data-device-mode="desktop"] .sidebar,
+          html[data-device-mode="tablet"] .sidebar,
+          html[data-device-mode="mobile"] .sidebar,
+          aside.sidebar,
+          .sidebar,
+          .main-nav,
+          .sidebar-mobile-header,
+          .mobile-bottom-nav,
+          .device-view-switcher,
+          .no-print {
+            display: none !important;
+            visibility: hidden !important;
+            width: 0 !important;
+            height: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow: hidden !important;
+            position: absolute !important;
+            left: -9999px !important;
+          }
+          html .app-shell,
+          html[data-device-mode="desktop"] .app-shell,
+          html[data-device-mode="tablet"] .app-shell,
+          html[data-device-mode="mobile"] .app-shell,
+          .app-shell {
+            display: block !important;
+            grid-template-columns: 1fr !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #ffffff !important;
+          }
+          html section.content,
+          html .content,
+          html[data-device-mode="desktop"] .content,
+          html[data-device-mode="tablet"] .content,
+          html[data-device-mode="mobile"] .content,
+          section.content,
+          .content {
+            display: block !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
+            background: transparent !important;
+          }
           .disponibilidad-report-card {
+            width: 100% !important;
+            max-width: 100% !important;
+            margin: 0 auto !important;
             padding: 8px 12px !important;
             box-shadow: none !important;
             border: 1px solid #cbd5e1 !important;
+            box-sizing: border-box !important;
           }
           .disponibilidad-header-block {
             margin-bottom: 4px !important;
