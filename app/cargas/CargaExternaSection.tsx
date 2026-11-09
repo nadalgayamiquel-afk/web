@@ -375,11 +375,29 @@ function getCompactMetricHeader(key: string, rawLabel?: string): string {
     return l;
   }
 
-  if (k.toLowerCase().startsWith("derived_")) {
-    return "Personalizada";
+  if (k.toLowerCase().startsWith("derived_") || k === "HSR_Personalizada") {
+    try {
+      const derivedList = getStoredDerivedVariables();
+      const found = derivedList.find((d) => d.id === k);
+      if (found && found.shortLabel) return found.shortLabel;
+      if (found && found.label && !found.label.toLowerCase().startsWith("derived_")) return found.label;
+    } catch (e) {}
+    return "HSR Pers.";
   }
 
   return rawLabel || key;
+}
+
+export function isCustomHsrKey(key: string): boolean {
+  if (!key) return false;
+  const kLower = key.toLowerCase();
+  return (
+    kLower.startsWith("derived_") ||
+    kLower === "hsr_personalizada" ||
+    kLower.includes("personalizada") ||
+    kLower.includes("hsr indiv") ||
+    kLower.includes("hsri")
+  );
 }
 
 function isRecordSimulado(record: any): boolean {
@@ -849,6 +867,59 @@ export default function CargaExternaSection({
       localStorage.setItem("gps_profile_selected_fav_keys", JSON.stringify(keys));
     }
   };
+
+  const [showCustomHsrInProfile, setShowCustomHsrInProfile] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("gps_profile_show_custom_hsr");
+        if (stored !== null) return stored === "true";
+      } catch {}
+    }
+    return false; // Por defecto desactivado (OFF) para evitar columnas vacías y separación excesiva
+  });
+
+  const displayedProfileKeys = useMemo(() => {
+    let keys = selectedProfileKeys.filter((k) => {
+      if (isCustomHsrKey(k)) {
+        return showCustomHsrInProfile;
+      }
+      return true;
+    });
+
+    if (showCustomHsrInProfile && !keys.some(isCustomHsrKey)) {
+      const customVar =
+        availableFavVariables.find((v) => isCustomHsrKey(v.key)) ||
+        derivedVariables.find((d) => isCustomHsrKey(d.id || (d as any).key));
+      if (customVar) {
+        keys.push((customVar as any).key || (customVar as any).id);
+      } else {
+        keys.push("HSR_Personalizada");
+      }
+    }
+
+    // Ordenar de manera compacta y lógica:
+    // DT siempre primero, luego velocidades, luego HSR personalizada (si está activa), luego Acc-Dec y Player Load
+    return [...keys].sort((a, b) => {
+      const aLower = a.toLowerCase();
+      const bLower = b.toLowerCase();
+      const aIsDT = a === "Distance(m)" || aLower.includes("distancia total") || aLower === "dt";
+      const bIsDT = b === "Distance(m)" || bLower.includes("distancia total") || bLower === "dt";
+      if (aIsDT) return -1;
+      if (bIsDT) return 1;
+
+      const aIsCustom = isCustomHsrKey(a);
+      const bIsCustom = isCustomHsrKey(b);
+      if (aIsCustom && !bIsCustom) {
+        if (bLower.includes("acc") || bLower.includes("load")) return -1;
+        return 1;
+      }
+      if (!aIsCustom && bIsCustom) {
+        if (aLower.includes("acc") || aLower.includes("load")) return 1;
+        return -1;
+      }
+      return 0;
+    });
+  }, [selectedProfileKeys, showCustomHsrInProfile, availableFavVariables, derivedVariables]);
 
   const [ratioFormat, setRatioFormat] = useState<"real" | "multiplier" | "remaining">(() => {
     if (typeof window !== "undefined") {
@@ -5295,6 +5366,40 @@ export default function CargaExternaSection({
                 <option value="COPIADOS">Copiados (**)</option>
               </select>
 
+              {/* Botón Toggle HSR Personalizada */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCustomHsrInProfile((prev) => {
+                    const next = !prev;
+                    if (typeof window !== "undefined") {
+                      try {
+                        localStorage.setItem("gps_profile_show_custom_hsr", String(next));
+                      } catch {}
+                    }
+                    return next;
+                  });
+                }}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                  padding: "4px 9px",
+                  borderRadius: "5px",
+                  border: showCustomHsrInProfile ? "1px solid #16a34a" : "1px solid #cbd5e1",
+                  background: showCustomHsrInProfile ? "#f0fdf4" : "#ffffff",
+                  color: showCustomHsrInProfile ? "#15803d" : "#475569",
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  transition: "all 0.15s ease",
+                }}
+                title={showCustomHsrInProfile ? "HSR Personalizada activa en tabla (clic para ocultar)" : "HSR Personalizada oculta (clic para mostrar)"}
+              >
+                <span style={{ fontSize: "11px" }}>{showCustomHsrInProfile ? "⚡" : "⚪"}</span>
+                <span>HSR Pers.: {showCustomHsrInProfile ? "ON" : "OFF"}</span>
+              </button>
+
               {/* Botón Discreto para Variables */}
               <div style={{ position: "relative" }}>
                 <button
@@ -5418,7 +5523,7 @@ export default function CargaExternaSection({
                     <th style={{ padding: "8px 6px", textAlign: "center", minWidth: "75px", fontSize: "10px" }}>
                       Partidos
                     </th>
-                    {selectedProfileKeys.map((key) => {
+                    {displayedProfileKeys.map((key) => {
                       const v = availableFavVariables.find((item) => item.key === key);
                       const label = getCompactMetricHeader(key, v ? v.label : key);
                       return (
@@ -5548,8 +5653,21 @@ export default function CargaExternaSection({
                           </td>
 
                           {/* Columnas dinámicas según favoritas elegidas */}
-                          {selectedProfileKeys.map((key) => {
-                            const val = p.values ? (p.values as Record<string, any>)[key] : undefined;
+                          {displayedProfileKeys.map((key) => {
+                            let val = p.values ? (p.values as Record<string, any>)[key] : undefined;
+                            
+                            // Si es la columna de HSR personalizada y val es undefined, buscar si el jugador tiene variable HSRI asignada
+                            if ((val === undefined || val === null) && isCustomHsrKey(key)) {
+                              if (typeof window !== "undefined") {
+                                try {
+                                  const playerHsriVar = localStorage.getItem(`player_hsri_var_${j.id}`);
+                                  if (playerHsriVar && p.values?.[playerHsriVar] !== undefined && p.values[playerHsriVar] !== null) {
+                                    val = p.values[playerHsriVar];
+                                  }
+                                } catch {}
+                              }
+                            }
+
                             const isEstimated = p.category === "estimado_45";
                             const isCopied = p.category === "copiado_posicion";
                             const suffix = isEstimated ? "*" : isCopied ? "**" : "";
