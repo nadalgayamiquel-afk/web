@@ -921,6 +921,33 @@ export default function CargaExternaSection({
     });
   }, [selectedProfileKeys, showCustomHsrInProfile, availableFavVariables, derivedVariables]);
 
+  const [showHeatmapColors, setShowHeatmapColors] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("gps_profile_show_heatmap");
+        if (stored !== null) return stored === "true";
+      } catch {}
+    }
+    return true; // Por defecto activo para ver visualmente la demanda
+  });
+
+  const [columnPickerSearch, setColumnPickerSearch] = useState<string>("");
+  const [columnPickerTab, setColumnPickerTab] = useState<"favoritas" | "todas">("favoritas");
+
+  const pickerVariablesList = useMemo(() => {
+    const base = columnPickerTab === "favoritas" ? availableFavVariables : allVariables;
+    if (!columnPickerSearch.trim()) return base;
+    const q = columnPickerSearch.toLowerCase().trim();
+    return base.filter(
+      (v) =>
+        v.label?.toLowerCase().includes(q) ||
+        v.shortLabel?.toLowerCase().includes(q) ||
+        v.key?.toLowerCase().includes(q) ||
+        v.categoria?.toLowerCase().includes(q) ||
+        v.unit?.toLowerCase().includes(q)
+    );
+  }, [columnPickerTab, availableFavVariables, allVariables, columnPickerSearch]);
+
   const [ratioFormat, setRatioFormat] = useState<"real" | "multiplier" | "remaining">(() => {
     if (typeof window !== "undefined") {
       try {
@@ -2785,6 +2812,77 @@ export default function CargaExternaSection({
       derivedVariables,
     });
   }, [gpsRecords, jugadores, customOverrides, availableFavVariables, derivedVariables]);
+
+  const filteredProfileJugadores = useMemo(() => {
+    return jugadores.filter((j) => {
+      if (profileSearch) {
+        const name = (j.apodo || j.nombre || "").toLowerCase();
+        const dorsalStr = String(j.dorsal || "");
+        if (!name.includes(profileSearch.toLowerCase()) && !dorsalStr.includes(profileSearch)) return false;
+      }
+      if (profileFilterPos !== "TODOS") {
+        const pos = (j.posicion || "").toUpperCase();
+        if (profileFilterPos === "DEF" && !pos.includes("DEF") && !pos.includes("LAT") && !pos.includes("CEN")) return false;
+        if (profileFilterPos === "MED" && !pos.includes("MED") && !pos.includes("PIV") && !pos.includes("INT")) return false;
+        if (profileFilterPos === "DEL" && !pos.includes("DEL") && !pos.includes("EXT") && !pos.includes("PUN")) return false;
+        if (profileFilterPos === "POR" && !pos.includes("POR")) return false;
+      }
+      if (profileFilterCategory !== "TODOS") {
+        const p = competitiveProfiles.get(j.id);
+        if (!p) return false;
+        if (profileFilterCategory === "REALS" && !p.isReal) return false;
+        if (profileFilterCategory === "ESTIMADOS" && p.category !== "estimado_45") return false;
+        if (profileFilterCategory === "COPIADOS" && p.category !== "copiado_posicion") return false;
+      }
+      return true;
+    });
+  }, [jugadores, profileSearch, profileFilterPos, profileFilterCategory, competitiveProfiles]);
+
+  const columnMinMaxMap = useMemo(() => {
+    const map: Record<string, { min: number; max: number }> = {};
+    displayedProfileKeys.forEach((k) => {
+      const vals: number[] = [];
+      filteredProfileJugadores.forEach((j) => {
+        const p = competitiveProfiles.get(j.id);
+        let val = p?.values ? (p.values as Record<string, any>)[k] : undefined;
+        if ((val === undefined || val === null) && isCustomHsrKey(k)) {
+          if (typeof window !== "undefined") {
+            try {
+              const playerHsriVar = localStorage.getItem(`player_hsri_var_${j.id}`);
+              if (playerHsriVar && p?.values?.[playerHsriVar] !== undefined && p.values[playerHsriVar] !== null) {
+                val = p.values[playerHsriVar];
+              }
+            } catch {}
+          }
+        }
+        if (typeof val === "number" && !isNaN(val) && val > 0) {
+          vals.push(val);
+        }
+      });
+      if (vals.length > 0) {
+        map[k] = { min: Math.min(...vals), max: Math.max(...vals) };
+      } else {
+        map[k] = { min: 0, max: 0 };
+      }
+    });
+    return map;
+  }, [displayedProfileKeys, filteredProfileJugadores, competitiveProfiles]);
+
+  const getDemandBgColor = (val: number | undefined | null, key: string): string => {
+    if (!showHeatmapColors || val === undefined || val === null || typeof val !== "number" || isNaN(val) || val <= 0) {
+      return "transparent";
+    }
+    const range = columnMinMaxMap[key];
+    if (!range || range.max <= range.min) return "transparent";
+
+    const pct = Math.max(0, Math.min(1, (val - range.min) / (range.max - range.min)));
+    // Escala deportiva suave y profesional de demanda relativa (Top 20% verde intenso, degradado hasta azul claro)
+    if (pct >= 0.8) return "rgba(34, 197, 94, 0.28)";  // Verde vivo (demanda muy alta)
+    if (pct >= 0.6) return "rgba(74, 222, 128, 0.18)"; // Verde claro (demanda alta)
+    if (pct >= 0.4) return "rgba(250, 204, 21, 0.18)";  // Ámbar/dorado (demanda media)
+    if (pct >= 0.2) return "rgba(147, 197, 253, 0.18)"; // Celeste (demanda moderada)
+    return "rgba(224, 231, 255, 0.24)";                 // Índigo tenue (demanda baja)
+  };
 
   // ── 5. CÁLCULO DE RATIOS SEMANALES (% MATCH DEMANDS) Y PLANIFICACIÓN POR SESIÓN ──
   const activeWeek = availableWeeks[selectedWeekIdx] || availableWeeks[0];
@@ -5366,6 +5464,40 @@ export default function CargaExternaSection({
                 <option value="COPIADOS">Copiados (**)</option>
               </select>
 
+              {/* Botón Toggle Colores / Mapa de Calor */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowHeatmapColors((prev) => {
+                    const next = !prev;
+                    if (typeof window !== "undefined") {
+                      try {
+                        localStorage.setItem("gps_profile_show_heatmap", String(next));
+                      } catch {}
+                    }
+                    return next;
+                  });
+                }}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                  padding: "4px 9px",
+                  borderRadius: "5px",
+                  border: showHeatmapColors ? "1px solid #0284c7" : "1px solid #cbd5e1",
+                  background: showHeatmapColors ? "#e0f2fe" : "#ffffff",
+                  color: showHeatmapColors ? "#0369a1" : "#64748b",
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  transition: "all 0.15s ease",
+                }}
+                title={showHeatmapColors ? "Quitar colores de fondo de demanda" : "Mostrar colores de fondo de demanda"}
+              >
+                <span style={{ fontSize: "11px" }}>{showHeatmapColors ? "🎨" : "⚪"}</span>
+                <span>Colores: {showHeatmapColors ? "ON" : "OFF"}</span>
+              </button>
+
               {/* Botón Toggle HSR Personalizada */}
               <button
                 type="button"
@@ -5433,73 +5565,180 @@ export default function CargaExternaSection({
                       zIndex: 50,
                       background: "#ffffff",
                       border: "1px solid #cbd5e1",
-                      borderRadius: "6px",
-                      boxShadow: "0 6px 16px rgba(0,0,0,0.08)",
-                      padding: "10px",
-                      width: "260px",
+                      borderRadius: "8px",
+                      boxShadow: "0 10px 25px rgba(0,0,0,0.12)",
+                      padding: "12px",
+                      width: "360px",
                       display: "flex",
                       flexDirection: "column",
                       gap: "8px",
                     }}
                   >
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #f1f5f9", paddingBottom: "4px" }}>
-                      <strong style={{ fontSize: "11.5px", color: "#0f172a" }}>Tus Variables Favoritas</strong>
-                      <span style={{ fontSize: "9.5px", color: "#64748b" }}>{selectedProfileKeys.length} visibles</span>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #f1f5f9", paddingBottom: "6px" }}>
+                      <strong style={{ fontSize: "12px", color: "#0f172a" }}>Variables del Perfil</strong>
+                      <span style={{ fontSize: "10px", color: "#64748b", fontWeight: 700 }}>
+                        {selectedProfileKeys.length} seleccionadas
+                      </span>
                     </div>
 
-                    <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
+                    {/* Buscador de variable */}
+                    <div style={{ position: "relative" }}>
+                      <input
+                        type="text"
+                        placeholder="Buscar por nombre o unidad (ej. m, km/h, hsr)..."
+                        value={columnPickerSearch}
+                        onChange={(e) => setColumnPickerSearch(e.target.value)}
+                        style={{
+                          width: "100%",
+                          padding: "5px 8px 5px 24px",
+                          borderRadius: "5px",
+                          border: "1px solid #cbd5e1",
+                          fontSize: "11px",
+                          outline: "none",
+                          background: "#f8fafc",
+                          boxSizing: "border-box",
+                        }}
+                      />
+                      <span style={{ position: "absolute", left: "7px", top: "5px", fontSize: "10px", color: "#94a3b8" }}>🔍</span>
+                      {columnPickerSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setColumnPickerSearch("")}
+                          style={{ position: "absolute", right: "6px", top: "4px", background: "none", border: "none", cursor: "pointer", fontSize: "11px", color: "#94a3b8" }}
+                        >✕</button>
+                      )}
+                    </div>
+
+                    {/* Selector de origen: Favoritas vs Todas de Ajustes */}
+                    <div style={{ display: "flex", gap: "4px", background: "#f1f5f9", padding: "2px", borderRadius: "6px" }}>
+                      <button
+                        type="button"
+                        onClick={() => setColumnPickerTab("favoritas")}
+                        style={{
+                          flex: 1,
+                          padding: "3px 6px",
+                          borderRadius: "4px",
+                          border: "none",
+                          background: columnPickerTab === "favoritas" ? "#ffffff" : "transparent",
+                          color: columnPickerTab === "favoritas" ? "#1e3a8a" : "#64748b",
+                          fontWeight: 700,
+                          fontSize: "10.5px",
+                          cursor: "pointer",
+                          boxShadow: columnPickerTab === "favoritas" ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
+                        }}
+                      >
+                        ⭐ Favoritas ({availableFavVariables.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setColumnPickerTab("todas")}
+                        style={{
+                          flex: 1,
+                          padding: "3px 6px",
+                          borderRadius: "4px",
+                          border: "none",
+                          background: columnPickerTab === "todas" ? "#ffffff" : "transparent",
+                          color: columnPickerTab === "todas" ? "#1e3a8a" : "#64748b",
+                          fontWeight: 700,
+                          fontSize: "10.5px",
+                          cursor: "pointer",
+                          boxShadow: columnPickerTab === "todas" ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
+                        }}
+                      >
+                        📋 Todas de Ajustes ({allVariables.length})
+                      </button>
+                    </div>
+
+                    {/* Presets rápidos */}
+                    <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+                      <span style={{ fontSize: "10px", color: "#64748b", fontWeight: 600 }}>Presets:</span>
                       <button
                         type="button"
                         onClick={() => handleSetPresetColumns(["Distance(m)", "Distancia / Min", "Distance +21 (m)", "Acc+Dec", "Player Load"])}
-                        style={{ padding: "2px 5px", borderRadius: "3px", border: "1px solid #e2e8f0", background: "#f8fafc", fontSize: "10px", color: "#334155", cursor: "pointer", fontWeight: 600 }}
+                        style={{ padding: "2px 6px", borderRadius: "3px", border: "1px solid #e2e8f0", background: "#ffffff", fontSize: "10px", color: "#334155", cursor: "pointer", fontWeight: 700 }}
                       >
                         Top 5
                       </button>
                       <button
                         type="button"
                         onClick={() => handleSetPresetColumns(availableFavVariables.map((v) => v.key))}
-                        style={{ padding: "2px 5px", borderRadius: "3px", border: "1px solid #e2e8f0", background: "#f8fafc", fontSize: "10px", color: "#334155", cursor: "pointer", fontWeight: 600 }}
+                        style={{ padding: "2px 6px", borderRadius: "3px", border: "1px solid #e2e8f0", background: "#ffffff", fontSize: "10px", color: "#334155", cursor: "pointer", fontWeight: 700 }}
                       >
-                        Todas
+                        Todas Favs
                       </button>
                     </div>
 
-                    <div style={{ maxHeight: "200px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "3px" }}>
-                      {availableFavVariables.map((v) => {
-                        const isChecked = selectedProfileKeys.includes(v.key);
-                        const displayLabel = getCompactMetricHeader(v.key, v.label);
-                        return (
-                          <label
-                            key={v.key}
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "6px",
-                              padding: "3px 4px",
-                              borderRadius: "3px",
-                              background: isChecked ? "#f8fafc" : "transparent",
-                              cursor: "pointer",
-                              fontSize: "11px",
-                              color: isChecked ? "#0f172a" : "#64748b",
-                            }}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={() => handleToggleColumn(v.key)}
-                              style={{ cursor: "pointer" }}
-                            />
-                            <span>{displayLabel}</span>
-                          </label>
-                        );
-                      })}
+                    {/* Lista con nomenclatura idéntica a Ajustes */}
+                    <div style={{ maxHeight: "220px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "2px", border: "1px solid #f1f5f9", borderRadius: "5px", padding: "4px" }}>
+                      {pickerVariablesList.length === 0 ? (
+                        <div style={{ padding: "12px", textAlign: "center", color: "#94a3b8", fontSize: "11px" }}>
+                          No se encontraron variables con "{columnPickerSearch}"
+                        </div>
+                      ) : (
+                        pickerVariablesList.map((v) => {
+                          const isChecked = selectedProfileKeys.includes(v.key);
+                          return (
+                            <label
+                              key={v.key}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                gap: "8px",
+                                padding: "4px 6px",
+                                borderRadius: "4px",
+                                background: isChecked ? "#eff6ff" : "transparent",
+                                cursor: "pointer",
+                                transition: "background-color 0.1s ease",
+                              }}
+                            >
+                              <div style={{ display: "flex", alignItems: "center", gap: "7px", minWidth: 0, flex: 1 }}>
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => handleToggleColumn(v.key)}
+                                  style={{ cursor: "pointer", flexShrink: 0 }}
+                                />
+                                <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                  <span style={{ fontSize: "11px", fontWeight: isChecked ? 800 : 600, color: isChecked ? "#1e40af" : "#0f172a" }}>
+                                    {v.label}
+                                  </span>
+                                  {v.categoria && (
+                                    <span style={{ fontSize: "9px", color: "#94a3b8", marginLeft: "4px" }}>
+                                      • {v.categoria}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              {v.unit && (
+                                <span
+                                  style={{
+                                    fontSize: "9.5px",
+                                    fontWeight: 700,
+                                    padding: "1px 5px",
+                                    borderRadius: "3px",
+                                    background: isChecked ? "#dbeafe" : "#f1f5f9",
+                                    color: isChecked ? "#1e40af" : "#475569",
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  {v.unit}
+                                </span>
+                              )}
+                            </label>
+                          );
+                        })
+                      )}
                     </div>
 
-                    <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "4px", display: "flex", justifyContent: "flex-end" }}>
+                    <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "6px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: "10px", color: "#94a3b8" }}>
+                        Misma nomenclatura que Ajustes
+                      </span>
                       <button
                         type="button"
                         onClick={() => setShowColumnPicker(false)}
-                        style={{ padding: "2px 6px", borderRadius: "3px", background: "#0f172a", color: "#ffffff", fontSize: "10px", fontWeight: 700, border: "none", cursor: "pointer" }}
+                        style={{ padding: "3px 8px", borderRadius: "4px", background: "#0f172a", color: "#ffffff", fontSize: "10.5px", fontWeight: 700, border: "none", cursor: "pointer" }}
                       >
                         Cerrar
                       </button>
@@ -5517,11 +5756,11 @@ export default function CargaExternaSection({
                 <thead>
                   <tr style={{ background: "#f8fafc", borderBottom: "1.5px solid #cbd5e1", textAlign: "left", color: "#475569", fontSize: "10.5px", textTransform: "uppercase" }}>
                     <th style={{ padding: "8px 10px", minWidth: "140px" }}>Jugador</th>
-                    <th style={{ padding: "8px 4px", textAlign: "center", width: "50px", minWidth: "50px", fontSize: "9.5px", letterSpacing: "0.2px" }}>
+                    <th style={{ padding: "8px 2px", textAlign: "center", width: "38px", minWidth: "38px", fontSize: "9px", letterSpacing: "0.2px" }}>
                       MÉT.
                     </th>
-                    <th style={{ padding: "8px 6px", textAlign: "center", minWidth: "75px", fontSize: "10px" }}>
-                      Partidos
+                    <th style={{ padding: "8px 2px", textAlign: "center", width: "44px", minWidth: "44px", fontSize: "9px" }}>
+                      PART.
                     </th>
                     {displayedProfileKeys.map((key) => {
                       const v = availableFavVariables.find((item) => item.key === key);
@@ -5546,210 +5785,196 @@ export default function CargaExternaSection({
                   </tr>
                 </thead>
                 <tbody>
-                  {jugadores
-                    .filter((j) => {
-                      if (profileSearch) {
-                        const name = (j.apodo || j.nombre || "").toLowerCase();
-                        const dorsalStr = String(j.dorsal || "");
-                        if (!name.includes(profileSearch.toLowerCase()) && !dorsalStr.includes(profileSearch)) return false;
-                      }
-                      if (profileFilterPos !== "TODOS") {
-                        const pos = (j.posicion || "").toUpperCase();
-                        if (profileFilterPos === "DEF" && !pos.includes("DEF") && !pos.includes("LAT") && !pos.includes("CEN")) return false;
-                        if (profileFilterPos === "MED" && !pos.includes("MED") && !pos.includes("PIV") && !pos.includes("INT")) return false;
-                        if (profileFilterPos === "DEL" && !pos.includes("DEL") && !pos.includes("EXT") && !pos.includes("PUN")) return false;
-                        if (profileFilterPos === "POR" && !pos.includes("POR")) return false;
-                      }
-                      if (profileFilterCategory !== "TODOS") {
-                        const p = competitiveProfiles.get(j.id);
-                        if (!p) return false;
-                        if (profileFilterCategory === "REALS" && !p.isReal) return false;
-                        if (profileFilterCategory === "ESTIMADOS" && p.category !== "estimado_45") return false;
-                        if (profileFilterCategory === "COPIADOS" && p.category !== "copiado_posicion") return false;
-                      }
-                      return true;
-                    })
-                    .map((j, idx) => {
-                      const p = competitiveProfiles.get(j.id) || {
-                        values: {} as Record<string, any>,
-                        category: "copiado_posicion" as const,
-                        isReal: false,
-                        shortBadgeText: "Pos.**",
-                        badgeText: "Posición **",
-                        detailText: "Sin partidos",
-                        asterisk: "**",
-                        matchesCount: 0,
-                        fullMatchesCount: 0,
-                        dist: 0,
-                      };
+                  {filteredProfileJugadores.map((j, idx) => {
+                    const p = competitiveProfiles.get(j.id) || {
+                      values: {} as Record<string, any>,
+                      category: "copiado_posicion" as const,
+                      isReal: false,
+                      shortBadgeText: "Pos.**",
+                      badgeText: "Posición **",
+                      detailText: "Sin partidos",
+                      asterisk: "**",
+                      matchesCount: 0,
+                      fullMatchesCount: 0,
+                      dist: 0,
+                    };
 
-                      let badgeBg = "#f1f5f9";
-                      let badgeColor = "#334155";
-                      if (p.category === "estimado_45") {
-                        badgeBg = "#fefce8";
-                        badgeColor = "#854d0e";
-                      } else if (p.category === "copiado_posicion") {
-                        badgeBg = "#fff7ed";
-                        badgeColor = "#9a3412";
-                      } else if (p.category === "sin_perfil") {
-                        badgeBg = "#f8fafc";
-                        badgeColor = "#94a3b8";
-                      }
+                    let badgeBg = "#f1f5f9";
+                    let badgeColor = "#334155";
+                    if (p.category === "estimado_45") {
+                      badgeBg = "#fefce8";
+                      badgeColor = "#854d0e";
+                    } else if (p.category === "copiado_posicion") {
+                      badgeBg = "#fff7ed";
+                      badgeColor = "#9a3412";
+                    } else if (p.category === "sin_perfil") {
+                      badgeBg = "#f8fafc";
+                      badgeColor = "#94a3b8";
+                    }
 
-                      return (
-                        <tr key={j.id || idx} style={{ borderBottom: "1px solid #f1f5f9", background: idx % 2 === 0 ? "#ffffff" : "#fbfcfd" }}>
-                          {/* Jugador */}
-                          <td style={{ padding: "7px 10px" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                              {renderDisponibilidadBadge && renderDisponibilidadBadge(j)}
-                              <span
-                                style={{
-                                  padding: "1px 4px",
-                                  borderRadius: "3px",
-                                  background: "#1e3a8a",
-                                  color: "#ffffff",
-                                  fontSize: "10px",
-                                  fontWeight: 900,
-                                }}
-                              >
-                                #{j.dorsal || "—"}
-                              </span>
-                              <div style={{ display: "flex", flexDirection: "column" }}>
-                                <strong style={{ fontSize: "11.5px", color: "#0f172a" }}>
-                                  {j.apodo || j.nombre}
-                                </strong>
-                                <span style={{ fontSize: "9px", color: "#64748b", fontWeight: 600 }}>
-                                  {j.posicion || "JUG"}
-                                </span>
-                              </div>
-                            </div>
-                          </td>
-
-                          {/* Método (Ultra discreto y pequeño) */}
-                          <td style={{ padding: "6px 4px", textAlign: "center" }}>
+                    return (
+                      <tr key={j.id || idx} style={{ borderBottom: "1px solid #f1f5f9", background: idx % 2 === 0 ? "#ffffff" : "#fbfcfd" }}>
+                        {/* Jugador */}
+                        <td style={{ padding: "7px 10px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                            {renderDisponibilidadBadge && renderDisponibilidadBadge(j)}
                             <span
                               style={{
-                                display: "inline-block",
                                 padding: "1px 4px",
                                 borderRadius: "3px",
-                                background: badgeBg,
-                                color: badgeColor,
-                                fontSize: "9px",
+                                background: "#1e3a8a",
+                                color: "#ffffff",
+                                fontSize: "10px",
+                                fontWeight: 900,
+                              }}
+                            >
+                              #{j.dorsal || "—"}
+                            </span>
+                            <div style={{ display: "flex", flexDirection: "column" }}>
+                              <strong style={{ fontSize: "11.5px", color: "#0f172a" }}>
+                                {j.apodo || j.nombre}
+                              </strong>
+                              <span style={{ fontSize: "9px", color: "#64748b", fontWeight: 600 }}>
+                                {j.posicion || "JUG"}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Método (Ultra discreto y compacto) */}
+                        <td style={{ padding: "4px 2px", textAlign: "center", width: "38px" }}>
+                          <span
+                            style={{
+                              display: "inline-block",
+                              padding: "1px 3px",
+                              borderRadius: "3px",
+                              background: badgeBg,
+                              color: badgeColor,
+                              fontSize: "8.5px",
+                              fontWeight: 800,
+                              whiteSpace: "nowrap",
+                            }}
+                            title={p.detailText}
+                          >
+                            {p.shortBadgeText || "—"}
+                          </span>
+                        </td>
+
+                        {/* Partidos (Ultra discreto y compacto) */}
+                        <td style={{ padding: "4px 2px", textAlign: "center", width: "44px", fontSize: "10px", color: "#334155" }}>
+                          <span
+                            style={{ fontWeight: 800, fontSize: "11px", color: "#0f172a" }}
+                            title={`${p.matchesCount || 0} partidos (${p.fullMatchesCount || 0} de 90' completos)`}
+                          >
+                            {p.matchesCount || 0}
+                          </span>
+                          {p.fullMatchesCount ? (
+                            <span style={{ fontSize: "8.5px", color: "#94a3b8", marginLeft: "1.5px" }}>
+                              ({p.fullMatchesCount})
+                            </span>
+                          ) : null}
+                        </td>
+
+                        {/* Columnas dinámicas según favoritas elegidas */}
+                        {displayedProfileKeys.map((key) => {
+                          let val = p.values ? (p.values as Record<string, any>)[key] : undefined;
+                          
+                          // Si es la columna de HSR personalizada y val es undefined, buscar si el jugador tiene variable HSRI asignada
+                          if ((val === undefined || val === null) && isCustomHsrKey(key)) {
+                            if (typeof window !== "undefined") {
+                              try {
+                                const playerHsriVar = localStorage.getItem(`player_hsri_var_${j.id}`);
+                                if (playerHsriVar && p.values?.[playerHsriVar] !== undefined && p.values[playerHsriVar] !== null) {
+                                  val = p.values[playerHsriVar];
+                                }
+                              } catch {}
+                            }
+                          }
+
+                          const isEstimated = p.category === "estimado_45";
+                          const isCopied = p.category === "copiado_posicion";
+                          const suffix = isEstimated ? "*" : isCopied ? "**" : "";
+
+                          return (
+                            <td
+                              key={key}
+                              style={{
+                                padding: "6px 8px",
+                                textAlign: "right",
                                 fontWeight: 700,
                                 whiteSpace: "nowrap",
+                                fontSize: "11px",
+                                color: "#0f172a",
+                                backgroundColor: getDemandBgColor(typeof val === "number" ? val : undefined, key),
+                                transition: "background-color 0.15s ease",
                               }}
-                              title={p.detailText}
                             >
-                              {p.shortBadgeText || "—"}
-                            </span>
-                          </td>
-
-                          {/* Partidos */}
-                          <td style={{ padding: "6px 6px", textAlign: "center", fontSize: "10.5px", color: "#475569" }}>
-                            <span style={{ fontWeight: 700 }}>{p.matchesCount || 0}</span>
-                            <span style={{ fontSize: "9px", color: "#94a3b8", marginLeft: "2px" }}>
-                              ({p.fullMatchesCount || 0} / 90')
-                            </span>
-                          </td>
-
-                          {/* Columnas dinámicas según favoritas elegidas */}
-                          {displayedProfileKeys.map((key) => {
-                            let val = p.values ? (p.values as Record<string, any>)[key] : undefined;
-                            
-                            // Si es la columna de HSR personalizada y val es undefined, buscar si el jugador tiene variable HSRI asignada
-                            if ((val === undefined || val === null) && isCustomHsrKey(key)) {
-                              if (typeof window !== "undefined") {
-                                try {
-                                  const playerHsriVar = localStorage.getItem(`player_hsri_var_${j.id}`);
-                                  if (playerHsriVar && p.values?.[playerHsriVar] !== undefined && p.values[playerHsriVar] !== null) {
-                                    val = p.values[playerHsriVar];
-                                  }
-                                } catch {}
-                              }
-                            }
-
-                            const isEstimated = p.category === "estimado_45";
-                            const isCopied = p.category === "copiado_posicion";
-                            const suffix = isEstimated ? "*" : isCopied ? "**" : "";
-
-                            return (
-                              <td
-                                key={key}
-                                style={{
-                                  padding: "7px 10px",
-                                  textAlign: "right",
-                                  fontWeight: 700,
-                                  whiteSpace: "nowrap",
-                                  fontSize: "11.5px",
-                                  color: "#0f172a",
-                                }}
-                              >
-                                <span>
-                                  {val !== undefined && val !== null
-                                    ? typeof val === "number"
-                                      ? val % 1 !== 0
-                                        ? val.toFixed(1)
-                                        : val.toLocaleString()
-                                      : val
-                                    : "—"}
+                              <span>
+                                {val !== undefined && val !== null
+                                  ? typeof val === "number"
+                                    ? val % 1 !== 0
+                                      ? val.toFixed(1)
+                                      : val.toLocaleString()
+                                    : val
+                                  : "—"}
+                              </span>
+                              {suffix && (
+                                <span
+                                  style={{
+                                    marginLeft: "2px",
+                                    fontWeight: 800,
+                                    color: isEstimated ? "#b45309" : "#c2410c",
+                                    fontSize: "10px",
+                                  }}
+                                  title={isEstimated ? "Estimado 45' x 2 (No real *)" : "Copiado de posición (No real **)"}
+                                >
+                                  {suffix}
                                 </span>
-                                {suffix && (
-                                  <span
-                                    style={{
-                                      marginLeft: "2px",
-                                      fontWeight: 800,
-                                      color: isEstimated ? "#b45309" : "#c2410c",
-                                      fontSize: "10.5px",
-                                    }}
-                                    title={isEstimated ? "Estimado 45' x 2 (No real *)" : "Copiado de posición (No real **)"}
-                                  >
-                                    {suffix}
-                                  </span>
-                                )}
-                              </td>
-                            );
-                          })}
+                              )}
+                            </td>
+                          );
+                        })}
 
-                          {/* Acciones */}
-                          <td style={{ padding: "6px 6px", textAlign: "center" }}>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const currentDist = p.dist;
-                                const input = window.prompt(`Editar DT para ${j.apodo || j.nombre} (m):`, String(currentDist));
-                                if (input && !isNaN(Number(input))) {
-                                  const newDist = Number(input);
-                                  const updated = { ...customOverrides, [j.id]: { ...(customOverrides[j.id] || {}), "Distance(m)": newDist, dist: newDist } };
-                                  setCustomOverrides(updated);
-                                  if (typeof window !== "undefined") {
-                                    localStorage.setItem("gps_competitive_profile_overrides", JSON.stringify(updated));
-                                  }
+                        {/* Acciones */}
+                        <td style={{ padding: "6px 6px", textAlign: "center" }}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const currentDist = p.dist;
+                              const input = window.prompt(`Editar DT para ${j.apodo || j.nombre} (m):`, String(currentDist));
+                              if (input && !isNaN(Number(input))) {
+                                const newDist = Number(input);
+                                const updated = { ...customOverrides, [j.id]: { ...(customOverrides[j.id] || {}), "Distance(m)": newDist, dist: newDist } };
+                                setCustomOverrides(updated);
+                                if (typeof window !== "undefined") {
+                                  localStorage.setItem("gps_competitive_profile_overrides", JSON.stringify(updated));
                                 }
-                              }}
-                              style={{
-                                padding: "1px 4px",
-                                borderRadius: "3px",
-                                border: "1px solid #cbd5e1",
-                                background: "#f8fafc",
-                                fontSize: "10px",
-                                fontWeight: 600,
-                                cursor: "pointer",
-                                color: "#475569",
-                              }}
-                              title="Ajuste manual"
-                            >
-                              ✏️
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                              }
+                            }}
+                            style={{
+                              padding: "1px 4px",
+                              borderRadius: "3px",
+                              border: "1px solid #cbd5e1",
+                              background: "#f8fafc",
+                              fontSize: "10px",
+                              fontWeight: 600,
+                              cursor: "pointer",
+                              color: "#475569",
+                            }}
+                            title="Ajuste manual"
+                          >
+                            ✏️
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           </div>
 
-          {/* LEYENDA DISCRETA DE ASTERISCOS */}
+          {/* LEYENDA DISCRETA DE ASTERISCOS Y MAPA DE CALOR */}
           <div
             style={{
               fontSize: "10.5px",
@@ -5759,7 +5984,7 @@ export default function CargaExternaSection({
               justifyContent: "space-between",
               flexWrap: "wrap",
               gap: "8px",
-              padding: "2px 2px",
+              padding: "4px 2px",
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
@@ -5775,6 +6000,16 @@ export default function CargaExternaSection({
               <span>
                 <strong style={{ color: "#94a3b8" }}>S/P:</strong> Sin perfil competitivo (porteros sin partidos GPS).
               </span>
+              {showHeatmapColors && (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", marginLeft: "6px", background: "#f8fafc", padding: "2px 6px", borderRadius: "4px", border: "1px solid #e2e8f0" }}>
+                  <strong style={{ color: "#0f172a" }}>Demanda:</strong>
+                  <span style={{ background: "rgba(224, 231, 255, 0.7)", padding: "0 4px", borderRadius: "2px", fontSize: "9px" }}>Baja</span>
+                  <span style={{ background: "rgba(147, 197, 253, 0.5)", padding: "0 4px", borderRadius: "2px", fontSize: "9px" }}>Mod</span>
+                  <span style={{ background: "rgba(250, 204, 21, 0.45)", padding: "0 4px", borderRadius: "2px", fontSize: "9px" }}>Media</span>
+                  <span style={{ background: "rgba(74, 222, 128, 0.45)", padding: "0 4px", borderRadius: "2px", fontSize: "9px" }}>Alta</span>
+                  <span style={{ background: "rgba(34, 197, 94, 0.55)", padding: "0 4px", borderRadius: "2px", fontSize: "9px", fontWeight: 800 }}>Muy Alta</span>
+                </span>
+              )}
             </div>
             <div style={{ fontStyle: "italic", color: "#94a3b8", fontSize: "10px" }}>
               Filtrado exclusivo: 1ª parte y 2ª parte de partido oficial
