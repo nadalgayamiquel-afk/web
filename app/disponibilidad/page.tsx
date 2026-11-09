@@ -2928,7 +2928,10 @@ function DisponibilidadContent() {
                           </span>
 
                           {assignedEventsStr ? (
-                            <div style={{ display: "flex", gap: "2px", flexWrap: "wrap", marginTop: "2px" }}>
+                            <div
+                              className="no-print player-comment-events-tags"
+                              style={{ display: "flex", gap: "2px", flexWrap: "wrap", marginTop: "2px" }}
+                            >
                               {assignedEventsStr.split(",").map((token: string) => {
                                 const t = token.trim();
                                 if (!t) return null;
@@ -3363,6 +3366,9 @@ function DisponibilidadContent() {
           .player-comment-col-player span {
             font-size: 9.5px !important;
             padding: 2px 6px !important;
+          }
+          .player-comment-events-tags {
+            display: none !important;
           }
           .player-comment-col-text {
             padding: 2px 6px !important;
