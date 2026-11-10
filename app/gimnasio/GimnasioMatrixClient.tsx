@@ -3651,7 +3651,7 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
           <div
             className="gym-print-sheets-container"
             style={{ padding: '24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '24px' }}>
-            <style jsx global>{`
+            <style dangerouslySetInnerHTML={{ __html: `
               @media print {
                 @page {
                   size: A4 portrait !important;
@@ -3662,6 +3662,8 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                   margin: 0 !important;
                   padding: 0 !important;
                   width: 100% !important;
+                  min-width: 100% !important;
+                  max-width: 100% !important;
                   height: auto !important;
                   -webkit-print-color-adjust: exact !important;
                   print-color-adjust: exact !important;
@@ -3675,6 +3677,8 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                   padding: 0 !important;
                   margin: 0 !important;
                   width: 100% !important;
+                  min-width: 100% !important;
+                  max-width: 100% !important;
                   height: auto !important;
                   overflow: visible !important;
                   display: block !important;
@@ -3683,6 +3687,8 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                   padding: 0 !important;
                   margin: 0 !important;
                   width: 100% !important;
+                  min-width: 100% !important;
+                  max-width: 100% !important;
                   gap: 0 !important;
                   display: block !important;
                 }
@@ -3692,12 +3698,15 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                   page-break-inside: avoid !important;
                   break-inside: avoid !important;
                   width: 100% !important;
+                  min-width: 100% !important;
                   max-width: 100% !important;
-                  margin: 0 auto !important;
+                  margin: 0 !important;
                   padding: 0 !important;
                   box-sizing: border-box !important;
                   box-shadow: none !important;
                   border: none !important;
+                  display: block !important;
+                  background: #ffffff !important;
                 }
                 .report-page-break:last-child {
                   page-break-after: auto !important;
@@ -3705,19 +3714,36 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                 }
                 .report-page-break .gym-header-top {
                   margin-bottom: 8px !important;
+                  width: 100% !important;
+                  min-width: 100% !important;
+                  box-sizing: border-box !important;
+                  display: grid !important;
+                  grid-template-columns: 1fr auto 1fr !important;
                 }
                 .report-page-break .gym-yellow-bar {
                   margin-bottom: 6px !important;
-                  padding: 4px 8px !important;
+                  padding: 5px 10px !important;
+                  width: 100% !important;
+                  min-width: 100% !important;
+                  box-sizing: border-box !important;
+                  display: grid !important;
+                  grid-template-columns: 1fr auto 1fr !important;
                 }
                 .report-page-break .gym-comment-block {
                   margin-bottom: 5px !important;
                   padding-bottom: 2px !important;
+                  width: 100% !important;
+                  min-width: 100% !important;
+                  box-sizing: border-box !important;
                 }
                 .report-page-break table {
                   margin-bottom: 4px !important;
                   width: 100% !important;
-                  table-layout: fixed !important;
+                  min-width: 100% !important;
+                  max-width: 100% !important;
+                  table-layout: auto !important;
+                  border-collapse: collapse !important;
+                  box-sizing: border-box !important;
                 }
                 .report-page-break th,
                 .report-page-break td {
@@ -3725,7 +3751,7 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                   print-color-adjust: exact !important;
                 }
               }
-            `}</style>
+            ` }} />
 
             {/* FICHAS INDIVIDUALES (COMO EN LA FOTO DE JOAN MASCARÓ) */}
             {(reportTipo === 'individual' || reportTipo === 'ambos') && (
@@ -4318,12 +4344,11 @@ function ReportExerciseTable({ sesion }: { sesion: GimnasioSesion }) {
     });
   }
 
-  // Ejercicio siempre visible con ancho horizontal amplio y proporcionado
+  // Ejercicio siempre visible con ancho horizontal amplio y fluido (ocupa el espacio restante hasta 100%)
   cols.push({
     id: 'ejercicio',
     label: 'Ejercicio',
     align: 'left',
-    width: '210px',
     renderCell: (ej) => (
       <div style={{
         fontWeight: 900,
@@ -4496,10 +4521,12 @@ function ReportExerciseTable({ sesion }: { sesion: GimnasioSesion }) {
   return (
     <table style={{
       width: '100%',
+      minWidth: '100%',
       borderCollapse: 'collapse',
       fontSize: '10.5px',
       marginBottom: '8px',
       tableLayout: 'auto',
+      boxSizing: 'border-box',
     }}>
       <thead>
         <tr style={{ borderBottom: '2px solid #0f172a', height: '28px', color: '#0f172a' }}>
