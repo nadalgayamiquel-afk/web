@@ -5069,6 +5069,7 @@ export async function saveFuerzaSesionesBatch(rows: Array<Omit<FuerzaBBDDRow, 'i
         material: materialVal,
         potencia: potenciaVal,
         variables: fullVars,
+        video_url: videoUrlVal || null,
       };
     });
 

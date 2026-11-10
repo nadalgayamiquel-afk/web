@@ -39,6 +39,31 @@ interface Props {
 }
 
 const STORAGE_KEY = 'gimnasio_sesiones_map_v1';
+const VIDEOS_CATALOG_KEY = 'gimnasio_ejercicios_videos_catalog';
+
+export const getEjerciciosVideoCatalog = (): Record<string, string> => {
+  if (typeof window === 'undefined') return {};
+  try {
+    const stored = localStorage.getItem(VIDEOS_CATALOG_KEY);
+    return stored ? JSON.parse(stored) : {};
+  } catch {
+    return {};
+  }
+};
+
+export const saveEjercicioVideoToCatalog = (nombreEj: string, url: string) => {
+  if (!nombreEj || typeof window === 'undefined') return;
+  try {
+    const cat = getEjerciciosVideoCatalog();
+    const key = nombreEj.toLowerCase().trim();
+    if (url && url.trim()) {
+      cat[key] = url.trim();
+    } else {
+      delete cat[key];
+    }
+    localStorage.setItem(VIDEOS_CATALOG_KEY, JSON.stringify(cat));
+  } catch {}
+};
 
 const DEFAULT_JUGADORES: JugadorGimnasio[] = [
   { id: 'jug_jm', nombre: 'JOAN MASCARÓ', apodo: 'MASCARÓ', foto_url: 'https://img.a.transfermarkt.technology/portrait/medium/948295-1730833823.jpg?lm=4711', dorsal: 9, activo: true },
@@ -418,6 +443,15 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
   const [draggedEjercicioIndex, setDraggedEjercicioIndex] = useState<number | null>(null);
   const [nuevaVariableInput, setNuevaVariableInput] = useState<string>('');
   const [showAddVariableDropdown, setShowAddVariableDropdown] = useState<boolean>(false);
+  const [mostrarGrupoMuscular, setMostrarGrupoMuscular] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('gimnasio_mostrar_grupo_muscular');
+        if (stored !== null) return stored === 'true';
+      } catch {}
+    }
+    return false; // Por defecto desactivado para dar más espacio a Ejercicio
+  });
 
   // Refs para scroll dinámico de ejercicios
   const modalBodyRef = useRef<HTMLDivElement | null>(null);
@@ -713,6 +747,13 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
       localStorage.setItem(STORAGE_KEY, JSON.stringify(newMap));
     } catch (e) {}
 
+    // Guardar enlaces de video de los ejercicios en el catálogo permanente para recordarlos siempre
+    modalSesion.ejercicios.forEach(ej => {
+      if (ej.nombre?.trim() && ej.videoUrl?.trim()) {
+        saveEjercicioVideoToCatalog(ej.nombre, ej.videoUrl);
+      }
+    });
+
     // Sincronizar con Supabase
     let targetJugadoresList: JugadorGimnasio[] = [];
     if (modalSesion.jugadorId === 'TEAM') targetJugadoresList = jugadores;
@@ -885,6 +926,13 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(newMap));
     } catch (e) {}
+
+    // Guardar enlaces de video de los ejercicios en el catálogo permanente para recordarlos siempre
+    pasted.ejercicios.forEach(ej => {
+      if (ej.nombre?.trim() && ej.videoUrl?.trim()) {
+        saveEjercicioVideoToCatalog(ej.nombre, ej.videoUrl);
+      }
+    });
 
     // Sincronizar con Supabase
     const targetJug = jugadores.find(j => j.id === targetJugadorId);
@@ -2639,8 +2687,8 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
           <div style={{
             background: '#ffffff',
             borderRadius: '10px',
-            width: '100%',
-            maxWidth: '940px',
+            width: '96%',
+            maxWidth: '1080px',
             maxHeight: '92vh',
             height: '92vh',
             display: 'flex',
@@ -2789,6 +2837,18 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                       <div style={{ fontSize: '10px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase' }}>
                         Variables Disponibles
                       </div>
+                      {!mostrarGrupoMuscular && (
+                        <button
+                          onClick={() => {
+                            setMostrarGrupoMuscular(true);
+                            try { localStorage.setItem('gimnasio_mostrar_grupo_muscular', 'true'); } catch {}
+                            setShowAddVariableDropdown(false);
+                          }}
+                          style={{ textAlign: 'left', padding: '4px 8px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '4px', fontSize: '11px', fontWeight: 800, cursor: 'pointer', color: '#166534' }}
+                        >
+                          + Grupo Muscular
+                        </button>
+                      )}
                       {['Material', 'Velocidad', 'Bloque', 'Tiempo', 'Descanso', 'Potencia', 'Distancia'].map(v => (
                         <button
                           key={v}
@@ -2835,8 +2895,25 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                     <tr style={{ background: '#f8fafc', borderBottom: '1px solid #cbd5e1', color: '#475569' }}>
                       <th style={{ padding: '7px 8px', width: '32px', textAlign: 'center', background: '#f8fafc' }}>⠿</th>
                       <th style={{ padding: '7px 6px', textAlign: 'center', width: '55px', fontWeight: 800, background: '#f8fafc' }}>Bloq</th>
-                      <th style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 800, background: '#f8fafc' }}>Ejercicio</th>
-                      <th style={{ padding: '7px 8px', textAlign: 'left', fontWeight: 800, width: '110px', background: '#f8fafc' }}>G. Muscular</th>
+                      <th style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 800, background: '#f8fafc', minWidth: '220px' }}>Ejercicio</th>
+                      {mostrarGrupoMuscular && (
+                        <th style={{ padding: '7px 6px', textAlign: 'left', fontWeight: 800, width: '100px', background: '#f8fafc' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '2px' }}>
+                            <span>G. Muscular</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setMostrarGrupoMuscular(false);
+                                try { localStorage.setItem('gimnasio_mostrar_grupo_muscular', 'false'); } catch {}
+                              }}
+                              style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: '10px', cursor: 'pointer', padding: '0 2px' }}
+                              title="Ocultar columna Grupo Muscular"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </th>
+                      )}
                       <th style={{ padding: '7px 6px', textAlign: 'center', fontWeight: 800, width: '60px', background: '#f8fafc' }}>Series</th>
                       <th style={{ padding: '7px 6px', textAlign: 'center', fontWeight: 800, width: '65px', background: '#f8fafc' }}>Reps</th>
                       <th style={{ padding: '7px 6px', textAlign: 'center', fontWeight: 800, width: '75px', background: '#f8fafc' }}>Carga (kg)</th>
@@ -2854,8 +2931,8 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                         </th>
                       ))}
 
-                      <th style={{ padding: '7px 6px', textAlign: 'center', fontWeight: 800, width: '135px', background: '#f0f9ff', color: '#0369a1' }}>
-                        ⚡ Sensor Kiosco
+                      <th style={{ padding: '7px 4px', textAlign: 'center', fontWeight: 800, width: '60px', background: '#f0f9ff', color: '#0369a1' }} title="Sensor / Kiosco (Encoder o Dinamómetro)">
+                        ⚡ Sensor
                       </th>
                       <th style={{ padding: '7px 8px', textAlign: 'center', width: '90px', background: '#f8fafc' }}>Acciones</th>
                     </tr>
@@ -2892,15 +2969,23 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                           </td>
 
                           {/* Ejercicio */}
-                          <td style={{ padding: '4px 6px' }}>
+                          <td style={{ padding: '4px 6px', minWidth: '220px' }}>
                             <input
                               id={`ej_input_nombre_${ej.id}`}
                               type="text"
                               list="ejercicios_datalist"
                               value={ej.nombre}
                               onChange={e => {
+                                const val = e.target.value;
                                 const copy = [...modalSesion.ejercicios];
-                                copy[index].nombre = e.target.value;
+                                copy[index].nombre = val;
+                                if (!copy[index].videoUrl?.trim()) {
+                                  const cat = getEjerciciosVideoCatalog();
+                                  const savedVid = cat[val.toLowerCase().trim()];
+                                  if (savedVid) {
+                                    copy[index].videoUrl = savedVid;
+                                  }
+                                }
                                 setModalSesion({ ...modalSesion, ejercicios: copy });
                               }}
                               placeholder="Nombre del ejercicio..."
@@ -2908,20 +2993,22 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                             />
                           </td>
 
-                          {/* Grupo Muscular (INICIA EN BLANCO) */}
-                          <td style={{ padding: '4px 4px' }}>
-                            <input
-                              type="text"
-                              value={ej.grupoMuscular || ''}
-                              onChange={e => {
-                                const copy = [...modalSesion.ejercicios];
-                                copy[index].grupoMuscular = e.target.value;
-                                setModalSesion({ ...modalSesion, ejercicios: copy });
-                              }}
-                              placeholder=""
-                              style={{ width: '100%', padding: '4px 6px', borderRadius: '4px', border: '1px solid #cbd5e1', fontSize: '11px' }}
-                            />
-                          </td>
+                          {/* Grupo Muscular (INICIA EN BLANCO, CONDICIONAL) */}
+                          {mostrarGrupoMuscular && (
+                            <td style={{ padding: '4px 4px' }}>
+                              <input
+                                type="text"
+                                value={ej.grupoMuscular || ''}
+                                onChange={e => {
+                                  const copy = [...modalSesion.ejercicios];
+                                  copy[index].grupoMuscular = e.target.value;
+                                  setModalSesion({ ...modalSesion, ejercicios: copy });
+                                }}
+                                placeholder=""
+                                style={{ width: '100%', padding: '4px 6px', borderRadius: '4px', border: '1px solid #cbd5e1', fontSize: '11px' }}
+                              />
+                            </td>
+                          )}
 
                           {/* Series (INICIA EN BLANCO) */}
                           <td style={{ padding: '4px 4px' }}>
@@ -3013,25 +3100,23 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                             );
                           })}
 
-                          {/* Sensor Kiosco (Encoder / Dinamómetro) */}
-                          <td style={{ padding: '4px 6px', textAlign: 'center', background: ej.monitorizado ? '#f0fdf4' : 'transparent' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
-                              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', cursor: 'pointer', fontSize: '11px', fontWeight: 700, color: ej.monitorizado ? '#15803d' : '#64748b' }}>
-                                <input
-                                  type="checkbox"
-                                  checked={!!ej.monitorizado}
-                                  onChange={e => {
-                                    const copy = [...modalSesion.ejercicios];
-                                    copy[index].monitorizado = e.target.checked;
-                                    if (e.target.checked && !copy[index].tipoSensor) {
-                                      copy[index].tipoSensor = 'ENCODER';
-                                    }
-                                    setModalSesion({ ...modalSesion, ejercicios: copy });
-                                  }}
-                                  style={{ cursor: 'pointer', accentColor: '#16a34a' }}
-                                />
-                                <span>{ej.monitorizado ? 'Activo' : 'No'}</span>
-                              </label>
+                          {/* Sensor Kiosco (Compacto, sin ocupar espacio excesivo) */}
+                          <td style={{ padding: '4px 2px', textAlign: 'center', width: '60px', background: ej.monitorizado ? '#f0fdf4' : 'transparent' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px' }}>
+                              <input
+                                type="checkbox"
+                                checked={!!ej.monitorizado}
+                                onChange={e => {
+                                  const copy = [...modalSesion.ejercicios];
+                                  copy[index].monitorizado = e.target.checked;
+                                  if (e.target.checked && !copy[index].tipoSensor) {
+                                    copy[index].tipoSensor = 'ENCODER';
+                                  }
+                                  setModalSesion({ ...modalSesion, ejercicios: copy });
+                                }}
+                                title={ej.monitorizado ? "Sensor activo en Kiosco" : "Activar sensor Kiosco para este ejercicio"}
+                                style={{ cursor: 'pointer', accentColor: '#16a34a', width: '15px', height: '15px' }}
+                              />
                               {ej.monitorizado && (
                                 <select
                                   value={ej.tipoSensor || 'ENCODER'}
@@ -3041,18 +3126,19 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                                     setModalSesion({ ...modalSesion, ejercicios: copy });
                                   }}
                                   style={{
-                                    fontSize: '10px',
-                                    padding: '2px 4px',
-                                    borderRadius: '4px',
+                                    fontSize: '8.5px',
+                                    padding: '1px 2px',
+                                    borderRadius: '3px',
                                     border: '1px solid #86efac',
                                     background: '#dcfce7',
                                     color: '#166534',
-                                    fontWeight: 700,
+                                    fontWeight: 800,
                                     cursor: 'pointer',
+                                    maxWidth: '54px',
                                   }}
                                 >
-                                  <option value="ENCODER">Encoder</option>
-                                  <option value="DINAMOMETRO">Dinamóm.</option>
+                                  <option value="ENCODER">Enc.</option>
+                                  <option value="DINAMOMETRO">Din.</option>
                                 </select>
                               )}
                             </div>
@@ -3067,18 +3153,23 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                                   copy[index].showVideo = !copy[index].showVideo;
                                   setModalSesion({ ...modalSesion, ejercicios: copy });
                                 }}
-                                title={ej.videoUrl?.trim() ? "Editar enlace de video (Tiene video asignado)" : "Añadir enlace de video a este ejercicio"}
+                                title={ej.videoUrl?.trim() ? `Video guardado: ${ej.videoUrl}` : "Añadir enlace de video a este ejercicio"}
                                 style={{
                                   background: ej.videoUrl?.trim() ? '#fee2e2' : '#f1f5f9',
                                   color: ej.videoUrl?.trim() ? '#b91c1c' : '#64748b',
-                                  border: '1px solid ' + (ej.videoUrl?.trim() ? '#fca5a5' : '#cbd5e1'),
+                                  border: '1px solid ' + (ej.videoUrl?.trim() ? '#f87171' : '#cbd5e1'),
                                   borderRadius: '3px',
                                   padding: '2px 4px',
                                   fontSize: '10px',
+                                  fontWeight: ej.videoUrl?.trim() ? 800 : 400,
                                   cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '2px',
                                 }}
                               >
-                                🎥
+                                <span>🎥</span>
+                                {ej.videoUrl?.trim() && <span style={{ fontSize: '8px' }}>▶</span>}
                               </button>
                               <button
                                 onClick={() => {
@@ -3110,15 +3201,19 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                         {/* ENLACE DE VIDEO PLEGADO */}
                         {ej.showVideo && (
                           <tr style={{ background: '#fef2f2', borderBottom: '1px solid #fee2e2' }}>
-                            <td colSpan={7 + (modalSesion.incluirRpe ? 1 : 0) + (modalSesion.variablesColumnas?.length || 0) + 1} style={{ padding: '4px 10px 8px 38px' }}>
+                            <td colSpan={7 + (mostrarGrupoMuscular ? 1 : 0) + (modalSesion.incluirRpe ? 1 : 0) + (modalSesion.variablesColumnas?.length || 0) + 1} style={{ padding: '6px 10px 8px 38px' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <span style={{ fontSize: '10px', fontWeight: 800, color: '#b91c1c', whiteSpace: 'nowrap' }}>🎥 Enlace de Video:</span>
+                                <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#b91c1c', whiteSpace: 'nowrap' }}>🎥 Enlace de Video:</span>
                                 <input
                                   type="url"
                                   value={ej.videoUrl || ''}
                                   onChange={e => {
+                                    const val = e.target.value;
                                     const copy = [...modalSesion.ejercicios];
-                                    copy[index].videoUrl = e.target.value;
+                                    copy[index].videoUrl = val;
+                                    if (copy[index].nombre?.trim()) {
+                                      saveEjercicioVideoToCatalog(copy[index].nombre, val);
+                                    }
                                     setModalSesion({ ...modalSesion, ejercicios: copy });
                                   }}
                                   placeholder="https://... (Enlace de YouTube, Drive, Vimeo de este ejercicio)"
@@ -3129,9 +3224,9 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                                     href={ej.videoUrl}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    style={{ padding: '3px 8px', borderRadius: '4px', background: '#dc2626', color: '#ffffff', fontSize: '10px', fontWeight: 800, textDecoration: 'none', whiteSpace: 'nowrap' }}
+                                    style={{ padding: '3px 8px', borderRadius: '4px', background: '#dc2626', color: '#ffffff', fontSize: '10px', fontWeight: 800, textDecoration: 'none', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '3px' }}
                                   >
-                                    ▶ Probar
+                                    <span>▶</span> Probar
                                   </a>
                                 )}
                                 <button
@@ -3145,13 +3240,19 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                                   Plegar ▲
                                 </button>
                               </div>
+                              {ej.videoUrl && (
+                                <div style={{ fontSize: '9.5px', color: '#16a34a', marginTop: '3px', fontWeight: 600 }}>
+                                  ✓ Enlace guardado para "{ej.nombre || 'este ejercicio'}". Se recordará automáticamente en futuras sesiones.
+                                </div>
+                              )}
                             </td>
                           </tr>
                         )}
-{/* COMENTARIO PLEGADO */}
+
+                        {/* COMENTARIO PLEGADO */}
                         {ej.showNotas && (
                           <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                            <td colSpan={7 + (modalSesion.incluirRpe ? 1 : 0) + (modalSesion.variablesColumnas?.length || 0) + 1} style={{ padding: '4px 10px 8px 38px' }}>
+                            <td colSpan={7 + (mostrarGrupoMuscular ? 1 : 0) + (modalSesion.incluirRpe ? 1 : 0) + (modalSesion.variablesColumnas?.length || 0) + 1} style={{ padding: '4px 10px 8px 38px' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <span style={{ fontSize: '10px', fontWeight: 800, color: '#0369a1' }}>Observación:</span>
                                 <input
