@@ -1847,7 +1847,39 @@ html[data-device-mode="desktop"] .athletes-grid {
     box-sizing: border-box !important;
     width: 100% !important;
   }
+
+  /* ─── EVENTOS / CALENDARIO DE EQUIPO: REGLAS DE IMPRESIÓN Y EXPORTACIÓN PDF ─── */
+  .pdf-print-header {
+    display: block !important;
+    background: #0f172a !important;
+    color: #ffffff !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    page-break-inside: avoid !important;
+    page-break-after: avoid !important;
+    box-sizing: border-box !important;
+    width: 100% !important;
+  }
+
+  .pdf-print-footer {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    page-break-inside: avoid !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    box-sizing: border-box !important;
+    width: 100% !important;
+  }
+
+  .eventos-grid-week {
+    display: grid !important;
+    grid-template-columns: repeat(7, 1fr) !important;
+    width: 100% !important;
+    gap: 6px !important;
+  }
 }
+
 
 
 

@@ -3,6 +3,7 @@
 import { pruneStaleFutureLocalStorage } from "@/app/lib/cleanStorage";
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import Link from "next/link";
+import { useClubConfig } from "@/app/lib/useClubConfig";
 import { getActiveJugadores, getEventosBloquesBBDD, saveFullPlanificacionBBDD, saveMinutosJugadorEvento, getMinutosJugadorEventoAll, getPlayerEventsBBDD, savePlayerEventAssignments, saveEventDetailBBDD, getPlayerCommentsBBDD, saveSingleBloqueBBDD } from "../actions";
 
 export type EventoBloque = {
@@ -209,6 +210,7 @@ const HOUR_SLOTS = [
 const HOUR_HEIGHT = 60;
 
 export default function EventosCalendarPage() {
+  const clubConfig = useClubConfig();
   const [viewMode, setViewMode] = useState<"dia" | "microciclo" | "mesociclo" | "cronograma">("microciclo");
   const [selectedDateStr, setSelectedDateStr] = useState<string>(() => {
     return new Date().toISOString().split("T")[0];
@@ -1249,20 +1251,21 @@ export default function EventosCalendarPage() {
   return (
     <div style={{ background: "#f8fafc", minHeight: "100vh", padding: "16px", color: "#0f172a", fontFamily: "system-ui, -apple-system, sans-serif" }}>
       {/* IMPRESIÓN IMPERATIVA DE ESTILOS CSS PARA EXPORTACIÓN PDF A4 LANDSCAPE */}
-      <style jsx global>{`
+      <style dangerouslySetInnerHTML={{ __html: `
         @media print {
           @page {
-            size: A4 landscape;
-            margin: 12mm 10mm 8mm 10mm;
+            size: A4 landscape !important;
+            margin: 6mm 8mm 6mm 8mm !important;
           }
           html, body {
             width: 100% !important;
+            min-width: 100% !important;
+            max-width: 100% !important;
             height: auto !important;
             margin: 0 !important;
             padding: 0 !important;
             background: #ffffff !important;
             color: #000000 !important;
-            zoom: 0.85;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
@@ -1270,8 +1273,31 @@ export default function EventosCalendarPage() {
             display: none !important;
           }
           .pdf-print-header {
-            display: block !important;
-            margin-top: 4px !important;
+            display: grid !important;
+            grid-template-columns: 1fr auto 1fr !important;
+            background: #0f172a !important;
+            color: #ffffff !important;
+            margin-top: 0 !important;
+            margin-bottom: 8px !important;
+            padding: 8px 14px !important;
+            border-radius: 6px !important;
+            border: 1px solid #0f172a !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            page-break-inside: avoid !important;
+            page-break-after: avoid !important;
+            box-sizing: border-box !important;
+            width: 100% !important;
+          }
+          .pdf-print-footer {
+            display: flex !important;
+            page-break-inside: avoid !important;
+            margin-top: 8px !important;
+            padding-top: 4px !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            box-sizing: border-box !important;
+            width: 100% !important;
           }
           main {
             box-shadow: none !important;
@@ -1279,6 +1305,7 @@ export default function EventosCalendarPage() {
             padding: 0 !important;
             margin: 0 !important;
             width: 100% !important;
+            min-width: 100% !important;
             max-width: 100% !important;
             background: #ffffff !important;
           }
@@ -1286,6 +1313,21 @@ export default function EventosCalendarPage() {
             overflow: visible !important;
             max-width: 100% !important;
             box-sizing: border-box !important;
+          }
+          .eventos-grid-week {
+            display: grid !important;
+            grid-template-columns: repeat(7, 1fr) !important;
+            width: 100% !important;
+            min-width: 100% !important;
+            gap: 6px !important;
+          }
+          .eventos-day-col {
+            min-height: 480px !important;
+            width: 100% !important;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
           div[style*="minmax(140px"] {
             grid-template-columns: repeat(7, 1fr) !important;
@@ -1300,7 +1342,7 @@ export default function EventosCalendarPage() {
             width: 100% !important;
           }
         }
-      `}</style>
+      ` }} />
 
       {/* BARRA SUPERIOR DE ENCABEZADO Y ACCIONES */}
       <header
@@ -1882,39 +1924,101 @@ export default function EventosCalendarPage() {
       )}
 
       {/* CABECERA EXCLUSIVA PARA LA EXPORTACIÓN EN PDF (IMPRESIÓN LANDSCAPE) */}
-      <div className="pdf-print-header" style={{ display: "none", width: "100%", borderBottom: "2px solid #0284c7", paddingBottom: "10px", marginBottom: "14px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-            <img src={undefined} alt="Escudo CE Europa" style={{ height: "48px", objectFit: "contain", background: "#ffffff", borderRadius: "6px", padding: "2px" }} />
-            <div>
-              <h1 style={{ fontSize: "18px", fontWeight: 900, color: "#0f172a", margin: 0, textTransform: "uppercase", letterSpacing: "-0.01em" }}>
-                CE MANRESA · CALENDARIO DE EQUIPO
-              </h1>
-              <div style={{ fontSize: "11px", fontWeight: 800, color: "#0284c7" }}>
-                {viewMode === "dia" && `Agenda Diaria · ${selectedDateStr}`}
-                {(viewMode === "microciclo" || viewMode === "cronograma") && `Microciclo · ${microcicloDays[0].dayNum} ${microcicloDays[0].monthShort} - ${microcicloDays[6].dayNum} ${microcicloDays[6].monthShort} 2026`}
-                {viewMode === "mesociclo" && `Mesociclo · Agosto / Septiembre 2026`}
-                {selectedJugador ? ` · Calendario Individual: ${(selectedJugador.apodo || selectedJugador.nombre || "").toUpperCase()}` : " · Vista General de Equipo"}
+      <div
+        className="pdf-print-header"
+        style={{
+          display: "none",
+          width: "100%",
+          marginBottom: "12px",
+          background: "linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%)",
+          borderRadius: "8px",
+          padding: "10px 16px",
+          color: "#ffffff",
+          boxShadow: "0 2px 6px rgba(15, 23, 42, 0.15)",
+          border: "1px solid #1e3a8a",
+          boxSizing: "border-box",
+        }}
+      >
+        <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: "12px", width: "100%" }}>
+          {/* LADO IZQUIERDO: ESCUDO + DATOS DEL CLUB */}
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <img
+              src={clubConfig?.escudoUrl || "/ce-europa.png"}
+              alt={clubConfig?.nombreClub || "Club"}
+              style={{
+                height: "50px",
+                width: "50px",
+                objectFit: "contain",
+                background: "transparent",
+                filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.3))",
+              }}
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).src = "/ce-europa.png";
+              }}
+            />
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              <div style={{ fontSize: "14px", fontWeight: 900, color: "#ffffff", textTransform: "uppercase", letterSpacing: "0.5px", lineHeight: 1.2 }}>
+                {clubConfig?.nombreClub || activeTeam || "CE EUROPA"}
+              </div>
+              <div style={{ fontSize: "10.5px", fontWeight: 700, color: "#93c5fd", marginTop: "2px", lineHeight: 1.2 }}>
+                {clubConfig?.categoria || "1er Equipo"} • Área de Rendimiento
+              </div>
+              <div style={{ fontSize: "9.5px", fontWeight: 600, color: "#cbd5e1", marginTop: "1px" }}>
+                Temporada {clubConfig?.temporadaActiva || "2026/27"}
               </div>
             </div>
           </div>
-          <div style={{ fontSize: "10px", color: "#64748b", fontWeight: 800, textAlign: "right" }}>
-            Impresión: {new Date().toLocaleDateString("es-ES")}
+
+          {/* CENTRO: TÍTULO DESTACADO Y RANGO DE FECHAS */}
+          <div style={{ textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+            <div style={{
+              fontSize: "15px",
+              fontWeight: 900,
+              textTransform: "uppercase",
+              letterSpacing: "0.8px",
+              color: "#ffffff",
+              lineHeight: 1.2,
+            }}>
+              CALENDARIO DE EQUIPO
+            </div>
+            <div style={{ fontSize: "11px", fontWeight: 800, color: "#fef08a", marginTop: "3px" }}>
+              {viewMode === "dia" && `Agenda Diaria · ${selectedDateStr}`}
+              {(viewMode === "microciclo" || viewMode === "cronograma") && (
+                `Microciclo · ${microcicloDays[0]?.dayNum} ${microcicloDays[0]?.monthShort} — ${microcicloDays[6]?.dayNum} ${microcicloDays[6]?.monthShort} 2026`
+              )}
+              {viewMode === "mesociclo" && `Planificación Mesociclo`}
+            </div>
+            <div style={{ fontSize: "9.5px", fontWeight: 700, color: "#e0f2fe", marginTop: "2px" }}>
+              {selectedJugador ? `Ficha Individual: ${(selectedJugador.apodo || selectedJugador.nombre || "").toUpperCase()}` : "Vista General de la Plantilla"}
+            </div>
+          </div>
+
+          {/* LADO DERECHO: METADATA OFICIAL */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", justifyContent: "center" }}>
+            <div style={{ fontSize: "11px", fontWeight: 900, letterSpacing: "0.5px", color: "#67e8f9", textTransform: "uppercase" }}>
+              TOP PLAY TRAINING
+            </div>
+            <div style={{ fontSize: "9.5px", fontWeight: 700, color: "#cbd5e1", marginTop: "2px" }}>
+              Planificación Semanal
+            </div>
+            <div style={{ fontSize: "9px", color: "#94a3b8", fontWeight: 600, marginTop: "1px" }}>
+              Emitido: {new Date().toLocaleDateString("es-ES")}
+            </div>
           </div>
         </div>
 
-        {/* COMENTARIOS LIMPIOS POR ENCIMA DE LA REJILLA / SEMANAS (SIN TÍTULO 'OBSERVACIONES') */}
+        {/* COMENTARIOS LIMPIOS SI SE ESCRIBIERON EN EL MODAL DE PDF */}
         {pdfComment.trim() !== "" && (
           <div
             style={{
-              marginTop: "10px",
-              padding: "8px 12px",
-              background: "#f8fafc",
-              borderLeft: "3px solid #0284c7",
+              marginTop: "8px",
+              padding: "6px 12px",
+              background: "rgba(255, 255, 255, 0.1)",
+              borderLeft: "3px solid #fef08a",
               borderRadius: "4px",
-              fontSize: "11px",
+              fontSize: "10.5px",
               lineHeight: "1.4",
-              color: "#1e293b",
+              color: "#ffffff",
               fontWeight: 700,
               whiteSpace: "pre-wrap",
             }}
@@ -2037,7 +2141,10 @@ export default function EventosCalendarPage() {
         {/* ========================================================================= */}
         {viewMode === "microciclo" && (
           <div style={{ overflowX: "auto" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(140px, 1fr))", gap: "8px" }}>
+            <div
+              className="eventos-grid-week"
+              style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(140px, 1fr))", gap: "8px" }}
+            >
               {microcicloDays.map((day) => {
                 const dayEvents = filteredEventos
                   .filter((e) => e.fecha === day.dateStr)
@@ -2046,6 +2153,7 @@ export default function EventosCalendarPage() {
                 return (
                   <div
                     key={day.dateStr}
+                    className="eventos-day-col"
                     style={{
                       background: day.isToday ? "#f0f9ff" : "#ffffff",
                       borderRadius: "8px",
@@ -2349,6 +2457,29 @@ export default function EventosCalendarPage() {
             </div>
           </div>
         )}
+
+        {/* PIE DE PÁGINA PROFESIONAL EN IMPRESIÓN / EXPORTACIÓN */}
+        <div
+          className="pdf-print-footer"
+          style={{
+            display: "none",
+            justifyContent: "space-between",
+            alignItems: "center",
+            padding: "8px 10px",
+            marginTop: "12px",
+            fontSize: "9.5px",
+            fontWeight: 600,
+            color: "#64748b",
+            borderTop: "1px solid #cbd5e1",
+          }}
+        >
+          <span>
+            © {new Date().getFullYear()} {clubConfig?.nombreClub || activeTeam || "CE Europa"} • Área de Rendimiento Deportivo • Top Play Training
+          </span>
+          <span>
+            Documento técnico oficial para uso exclusivo del club y cuerpo técnico
+          </span>
+        </div>
       </main>
 
 
@@ -2404,8 +2535,16 @@ export default function EventosCalendarPage() {
                 type="button"
                 onClick={() => {
                   setShowPdfModal(false);
+                  const prevTitle = document.title;
+                  const clubClean = (clubConfig?.nombreClub || activeTeam || "CE_Europa").replace(/\s+/g, "_");
+                  const fFirst = microcicloDays[0]?.dateStr || "";
+                  const fLast = microcicloDays[6]?.dateStr || "";
+                  document.title = `Calendario_${clubClean}_${viewMode}_${fFirst}_${fLast}`;
                   setTimeout(() => {
                     window.print();
+                    setTimeout(() => {
+                      document.title = prevTitle;
+                    }, 1500);
                   }, 150);
                 }}
                 style={{ background: "#0284c7", color: "#ffffff", border: "none", borderRadius: "6px", padding: "6px 16px", fontSize: "11px", fontWeight: 900, cursor: "pointer", boxShadow: "0 2px 5px rgba(2,132,199,0.3)" }}
