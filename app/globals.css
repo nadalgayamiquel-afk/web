@@ -1082,13 +1082,8 @@ body {
   font-weight: 700;
 }
 
-/* ===== Estilos para Exportación en PDF (1 página vertical A4) ===== */
+/* ===== Estilos para Exportación en PDF ===== */
 @media print {
-  @page {
-    size: A4 portrait;
-    margin: 10mm 10mm 10mm 10mm;
-  }
-
   html, body {
     background: #ffffff !important;
     color: #000000 !important;
@@ -1713,11 +1708,6 @@ html[data-device-mode="desktop"] .athletes-grid {
 
 /* ─── GIMNASIO: REGLAS DE IMPRESIÓN Y EXPORTACIÓN PDF A4 100% ANCHO ─── */
 @media print {
-  @page {
-    size: A4 portrait !important;
-    margin: 8mm 8mm 8mm 8mm !important;
-  }
-
   html, body {
     width: 100% !important;
     min-width: 100% !important;
@@ -1816,38 +1806,6 @@ html[data-device-mode="desktop"] .athletes-grid {
   }
 }
 
-/* ─── EVENTOS / CALENDARIO DE EQUIPO: REGLAS DE IMPRESIÓN Y EXPORTACIÓN PDF ─── */
-@media print {
-  .pdf-print-header {
-    display: block !important;
-    background: #0f172a !important;
-    color: #ffffff !important;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-    page-break-inside: avoid !important;
-    page-break-after: avoid !important;
-    box-sizing: border-box !important;
-    width: 100% !important;
-  }
-
-  .pdf-print-footer {
-    display: flex !important;
-    justify-content: space-between !important;
-    align-items: center !important;
-    page-break-inside: avoid !important;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-    box-sizing: border-box !important;
-    width: 100% !important;
-  }
-
-  .eventos-grid-week {
-    display: grid !important;
-    grid-template-columns: repeat(7, 1fr) !important;
-    width: 100% !important;
-    gap: 6px !important;
-  }
-}
 
 
 
