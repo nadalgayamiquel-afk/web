@@ -1251,12 +1251,13 @@ export default function EventosCalendarPage() {
   return (
     <div style={{ background: "#f8fafc", minHeight: "100vh", padding: "16px", color: "#0f172a", fontFamily: "system-ui, -apple-system, sans-serif" }}>
       {/* IMPRESIÓN IMPERATIVA DE ESTILOS CSS PARA EXPORTACIÓN PDF A4 LANDSCAPE */}
-      <style dangerouslySetInnerHTML={{ __html: `
+      <style jsx global>{`
+        @page {
+          size: 297mm 210mm;
+          size: landscape;
+          margin: 5mm 6mm;
+        }
         @media print {
-          @page {
-            size: landscape;
-            margin: 5mm 6mm;
-          }
           html, body {
             width: 100% !important;
             min-width: 100% !important;
@@ -1395,7 +1396,7 @@ export default function EventosCalendarPage() {
             width: 100% !important;
           }
         }
-      ` }} />
+      `}</style>
 
       {/* BARRA SUPERIOR DE ENCABEZADO Y ACCIONES */}
       <header
@@ -2574,12 +2575,30 @@ export default function EventosCalendarPage() {
                   const fFirst = microcicloDays[0]?.dateStr || "";
                   const fLast = microcicloDays[6]?.dateStr || "";
                   document.title = `Calendario_${clubClean}_${viewMode}_${fFirst}_${fLast}`;
+
+                  // Inyección imperativa directa en <head> para forzar orientación horizontal A4 a nivel de motor de Chrome
+                  let forceStyle = document.getElementById("force-landscape-print") as HTMLStyleElement | null;
+                  if (!forceStyle) {
+                    forceStyle = document.createElement("style");
+                    forceStyle.id = "force-landscape-print";
+                    document.head.appendChild(forceStyle);
+                  }
+                  forceStyle.innerHTML = `
+                    @page {
+                      size: 297mm 210mm !important;
+                      size: landscape !important;
+                      margin: 5mm 6mm !important;
+                    }
+                  `;
+
                   setTimeout(() => {
                     window.print();
                     setTimeout(() => {
                       document.title = prevTitle;
-                    }, 1500);
-                  }, 150);
+                      const injected = document.getElementById("force-landscape-print");
+                      if (injected) injected.remove();
+                    }, 2500);
+                  }, 200);
                 }}
                 style={{ background: "#0284c7", color: "#ffffff", border: "none", borderRadius: "6px", padding: "6px 16px", fontSize: "11px", fontWeight: 900, cursor: "pointer", boxShadow: "0 2px 5px rgba(2,132,199,0.3)" }}
               >

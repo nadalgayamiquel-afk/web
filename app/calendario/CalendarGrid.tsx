@@ -7173,11 +7173,12 @@ export function CalendarGrid({
     <div style={{ fontFamily: "var(--font-sans, system-ui, sans-serif)", color: "#0f172a" }}>
       {/* ESTILOS DE IMPRESIÓN PDF HORIZONTAL PARA ENCAJAR 4 SEMANAS EN 1 SOLA PÁGINA */}
       <style jsx global>{`
+        @page {
+          size: 297mm 210mm;
+          size: landscape;
+          margin: 2mm 3mm;
+        }
         @media print {
-          @page {
-            size: landscape;
-            margin: 2mm 3mm;
-          }
           html, body {
             background: #ffffff !important;
             margin: 0 !important;
