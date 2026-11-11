@@ -62,7 +62,7 @@ export const saveEjercicioVideoToCatalog = (nombreEj: string, url: string) => {
       delete cat[key];
     }
     localStorage.setItem(VIDEOS_CATALOG_KEY, JSON.stringify(cat));
-  } catch {}
+  } catch { }
 };
 
 const DEFAULT_JUGADORES: JugadorGimnasio[] = [
@@ -218,7 +218,7 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
           localStorage.setItem("planificacion_days_v5", JSON.stringify(cleaned));
           localStorage.setItem("planificacion_days_v2", JSON.stringify(cleaned));
           localStorage.setItem("planificacion_days_v1", JSON.stringify(cleaned));
-        } catch {}
+        } catch { }
       }
       const savedBloques = localStorage.getItem('eventos_bloques_map_v5') || localStorage.getItem('eventos_bloques_map_v4');
       if (savedBloques) {
@@ -242,7 +242,7 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
           setTiposConfigMap(map);
         }
       }
-    } catch (e) {}
+    } catch (e) { }
   }, []);
 
   // 2. Sesiones de Gimnasio
@@ -343,13 +343,13 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
           }
         }
       }
-    } catch (e) {}
+    } catch (e) { }
 
     // 3. Asegurar que la sesión confirmada del 10/10 para Expósito y Mascaró esté siempre presente
-    const expMasPlayers = jugadores.filter(j => 
-      j.nombre.toLowerCase().includes("exposito") || 
+    const expMasPlayers = jugadores.filter(j =>
+      j.nombre.toLowerCase().includes("exposito") ||
       (j.apodo && j.apodo.toLowerCase().includes("exposito")) ||
-      j.nombre.toLowerCase().includes("mascaro") || 
+      j.nombre.toLowerCase().includes("mascaro") ||
       (j.apodo && j.apodo.toLowerCase().includes("mascaro")) ||
       j.id === "ab298ab8-69cc-4c04-a572-a795f1c9c29d" ||
       j.id === "09c711ca-94ef-4e87-bb2b-eac760b560a5"
@@ -364,7 +364,7 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
     setSesionesMap(loadedMap);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(loadedMap));
-    } catch (e) {}
+    } catch (e) { }
   }, [allDays, jugadores, initialSesionesMap]);
 
   // 3. Filtros y UI
@@ -448,7 +448,7 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
       try {
         const stored = localStorage.getItem('gimnasio_mostrar_grupo_muscular');
         if (stored !== null) return stored === 'true';
-      } catch {}
+      } catch { }
     }
     return false; // Por defecto desactivado para dar más espacio a Ejercicio
   });
@@ -745,7 +745,7 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
     setSesionesMap(newMap);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(newMap));
-    } catch (e) {}
+    } catch (e) { }
 
     // Guardar enlaces de video de los ejercicios en el catálogo permanente para recordarlos siempre
     modalSesion.ejercicios.forEach(ej => {
@@ -813,7 +813,7 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
     setSesionesMap(newMap);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(newMap));
-    } catch (e) {}
+    } catch (e) { }
 
     // Sincronizar borrado con Supabase y actualizar backup en disco
     deleteFuerzaSesionFromSupabase(jugadorId, fecha, toDelete?.nombreSesion).catch(console.warn);
@@ -838,7 +838,7 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
     setSesionesMap(newMap);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(newMap));
-    } catch (e) {}
+    } catch (e) { }
 
     const rowsToSave: any[] = [];
     jugadores.forEach(jug => {
@@ -925,7 +925,7 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
     setSesionesMap(newMap);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(newMap));
-    } catch (e) {}
+    } catch (e) { }
 
     // Guardar enlaces de video de los ejercicios en el catálogo permanente para recordarlos siempre
     pasted.ejercicios.forEach(ej => {
@@ -997,7 +997,7 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
     setSesionesMap(newMap);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(newMap));
-    } catch (e) {}
+    } catch (e) { }
 
     // Sincronizar destino con Supabase
     const targetJug = jugadores.find(j => j.id === targetJugadorId);
@@ -1305,10 +1305,10 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
 
     // Título / Orientación real de la sesión (prioridad absoluta al título real)
     let orientacion = (sesion?.nombreSesion && sesion.nombreSesion.trim()) ||
-                      (sesion?.categoria && sesion.categoria.trim()) ||
-                      coEvent?.orientacion?.trim() ||
-                      coEvent?.comentario?.trim() ||
-                      'FUERZA';
+      (sesion?.categoria && sesion.categoria.trim()) ||
+      coEvent?.orientacion?.trim() ||
+      coEvent?.comentario?.trim() ||
+      'FUERZA';
     orientacion = orientacion.toUpperCase();
 
     return {
@@ -1331,7 +1331,7 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
     selectedReportJugadorIds.forEach(jId => {
       const jug = jugadores.find(j => j.id === jId);
       if (!jug) return;
-      
+
       const jugSesiones = getSesionesList(getCellKey(jug.id, reportFecha));
       if (jugSesiones && jugSesiones.length > 0) {
         jugSesiones.forEach(s => {
@@ -1867,7 +1867,7 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                 }}
               >
                 <option value="TODOS">👥 Todos ({jugadores.length})</option>
-                {jugadores.slice().sort((a,b) => (a.apodo || a.nombre).localeCompare(b.apodo || b.nombre)).map(j => (
+                {jugadores.slice().sort((a, b) => (a.apodo || a.nombre).localeCompare(b.apodo || b.nombre)).map(j => (
                   <option key={j.id} value={j.id}>
                     {j.dorsal ? '#' + j.dorsal + ' ' : ''}{j.apodo || j.nombre}
                   </option>
@@ -2121,8 +2121,8 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                         background: isToday
                           ? 'linear-gradient(180deg, #1e3a8a 0%, #1e40af 100%)'
                           : isSun
-                          ? '#fef2f2'
-                          : '#f8fafc',
+                            ? '#fef2f2'
+                            : '#f8fafc',
                         borderRight: isToday ? '2px solid #1e3a8a' : '1px solid #e2e8f0',
                         borderLeft: isToday ? '2px solid #1e3a8a' : undefined,
                         borderBottom: isToday ? '2px solid #1e3a8a' : '1px solid #e2e8f0',
@@ -2311,61 +2311,61 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                       </div>
                     </td>
 
-                {diasFiltrados.map(day => {
-                  const cellKey = getCellKey('TEAM', day.fecha);
-                  const teamSesiones = getSesionesList(cellKey);
-                  return (
-                    <td
-                      key={day.id}
-                      onDragOver={e => e.preventDefault()}
-                      onDrop={e => handleDropOnCell('TEAM', day.fecha, e)}
-                      style={{ padding: '2px', verticalAlign: 'middle', borderRight: '1px solid #e2e8f0', borderBottom: '2px solid #94a3b8', background: '#f8fafc' }}
-                    >
-                      {teamSesiones.length > 0 ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', width: '100%' }}>
-                          {teamSesiones.map((ses, sIdx) => (
-                            <MatrixCellSesionItem
-                              key={ses.id || sIdx}
-                              sesion={ses}
-                              sesionNumber={teamSesiones.length > 1 ? sIdx + 1 : undefined}
-                              totalSesiones={teamSesiones.length}
-                              isExpanded={Boolean(isTeamExpanded || expandedSesionIds[ses.id])}
-                              hasClipboard={Boolean(clipboardSesion)}
-                              onEdit={() => handleEditSesion(ses, 'Equipo Completo')}
-                              onDelete={() => handleDeleteSesion('TEAM', day.fecha, ses.id)}
-                              onCopy={e => handleCopiarSesion(ses, e)}
-                              onPaste={e => handlePromptPegarSesion('TEAM', day.fecha, 'Equipo Completo', e)}
-                              onAddAnother={() => handleOpenNuevaSesion('TEAM', day.fecha, 'Equipo Completo')}
-                              onToggleExpand={() => toggleExpandSesion(ses.id)}
-                              onDragStart={e => handleDragStartSesion(ses, cellKey, e)}
-                            />
-                          ))}
-                        </div>
-                      ) : (
-                        <div style={{ display: 'flex', gap: '2px' }}>
-                          <button
-                            onClick={() => handleOpenNuevaSesion('TEAM', day.fecha, 'Equipo Completo')}
-                            style={{ flex: 1, height: '24px', border: '1px dashed #cbd5e1', borderRadius: '4px', background: 'transparent', color: '#94a3b8', fontSize: '11px', cursor: 'pointer' }}
-                          >
-                            +
-                          </button>
-                          {clipboardSesion && (
-                            <button
-                              onClick={e => handlePromptPegarSesion('TEAM', day.fecha, 'Equipo Completo', e)}
-                              title="Pegar sesión"
-                              style={{ height: '24px', padding: '0 4px', border: '1px solid #bfdbfe', borderRadius: '4px', background: '#eff6ff', color: '#1e3a8a', fontSize: '9px', fontWeight: 800, cursor: 'pointer' }}
-                            >
-                              📥
-                            </button>
+                    {diasFiltrados.map(day => {
+                      const cellKey = getCellKey('TEAM', day.fecha);
+                      const teamSesiones = getSesionesList(cellKey);
+                      return (
+                        <td
+                          key={day.id}
+                          onDragOver={e => e.preventDefault()}
+                          onDrop={e => handleDropOnCell('TEAM', day.fecha, e)}
+                          style={{ padding: '2px', verticalAlign: 'middle', borderRight: '1px solid #e2e8f0', borderBottom: '2px solid #94a3b8', background: '#f8fafc' }}
+                        >
+                          {teamSesiones.length > 0 ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', width: '100%' }}>
+                              {teamSesiones.map((ses, sIdx) => (
+                                <MatrixCellSesionItem
+                                  key={ses.id || sIdx}
+                                  sesion={ses}
+                                  sesionNumber={teamSesiones.length > 1 ? sIdx + 1 : undefined}
+                                  totalSesiones={teamSesiones.length}
+                                  isExpanded={Boolean(isTeamExpanded || expandedSesionIds[ses.id])}
+                                  hasClipboard={Boolean(clipboardSesion)}
+                                  onEdit={() => handleEditSesion(ses, 'Equipo Completo')}
+                                  onDelete={() => handleDeleteSesion('TEAM', day.fecha, ses.id)}
+                                  onCopy={e => handleCopiarSesion(ses, e)}
+                                  onPaste={e => handlePromptPegarSesion('TEAM', day.fecha, 'Equipo Completo', e)}
+                                  onAddAnother={() => handleOpenNuevaSesion('TEAM', day.fecha, 'Equipo Completo')}
+                                  onToggleExpand={() => toggleExpandSesion(ses.id)}
+                                  onDragStart={e => handleDragStartSesion(ses, cellKey, e)}
+                                />
+                              ))}
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', gap: '2px' }}>
+                              <button
+                                onClick={() => handleOpenNuevaSesion('TEAM', day.fecha, 'Equipo Completo')}
+                                style={{ flex: 1, height: '24px', border: '1px dashed #cbd5e1', borderRadius: '4px', background: 'transparent', color: '#94a3b8', fontSize: '11px', cursor: 'pointer' }}
+                              >
+                                +
+                              </button>
+                              {clipboardSesion && (
+                                <button
+                                  onClick={e => handlePromptPegarSesion('TEAM', day.fecha, 'Equipo Completo', e)}
+                                  title="Pegar sesión"
+                                  style={{ height: '24px', padding: '0 4px', border: '1px solid #bfdbfe', borderRadius: '4px', background: '#eff6ff', color: '#1e3a8a', fontSize: '9px', fontWeight: 800, cursor: 'pointer' }}
+                                >
+                                  📥
+                                </button>
+                              )}
+                            </div>
                           )}
-                        </div>
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-            );
-          })()}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })()}
 
               {/* FILAS DE JUGADORES (CON FOTO, SIN POSICIÓN, COLUMNA ESTRECHA 135px) */}
               {jugadoresFiltrados.map((jug, idx) => {
@@ -2588,7 +2588,7 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
 
             <div style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div style={{ background: '#f8fafc', padding: '10px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', color: '#334155' }}>
-                Este jugador ya tiene <strong>{pasteDialog.existingCount} {pasteDialog.existingCount === 1 ? 'sesión asignada' : 'sesiones asignadas'}</strong> en este día.<br/>
+                Este jugador ya tiene <strong>{pasteDialog.existingCount} {pasteDialog.existingCount === 1 ? 'sesión asignada' : 'sesiones asignadas'}</strong> en este día.<br />
                 Sesión a pegar: <strong style={{ color: '#1e3a8a' }}>{clipboardSesion.nombreSesion}</strong> ({clipboardSesion.ejercicios.length} ejercicios)
               </div>
 
@@ -2841,7 +2841,7 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                         <button
                           onClick={() => {
                             setMostrarGrupoMuscular(true);
-                            try { localStorage.setItem('gimnasio_mostrar_grupo_muscular', 'true'); } catch {}
+                            try { localStorage.setItem('gimnasio_mostrar_grupo_muscular', 'true'); } catch { }
                             setShowAddVariableDropdown(false);
                           }}
                           style={{ textAlign: 'left', padding: '4px 8px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '4px', fontSize: '11px', fontWeight: 800, cursor: 'pointer', color: '#166534' }}
@@ -2904,7 +2904,7 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                               type="button"
                               onClick={() => {
                                 setMostrarGrupoMuscular(false);
-                                try { localStorage.setItem('gimnasio_mostrar_grupo_muscular', 'false'); } catch {}
+                                try { localStorage.setItem('gimnasio_mostrar_grupo_muscular', 'false'); } catch { }
                               }}
                               style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: '10px', cursor: 'pointer', padding: '0 2px' }}
                               title="Ocultar columna Grupo Muscular"
@@ -3771,251 +3771,251 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                 </div>
               ) : (
                 reportData.individualSheets.map((item, sheetIdx) => (
-                <div
-                  key={item.jugador.id + '_' + (item.sesion.id || sheetIdx)}
-                  className="report-page-break"
-                  style={{
-                    background: '#ffffff',
-                    width: '100%',
-                    maxWidth: '850px',
-                    padding: '24px 32px',
-                    borderRadius: '8px',
-                    boxShadow: '0 4px 15px rgba(0,0,0,0.06)',
-                    boxSizing: 'border-box',
-                    fontFamily: 'system-ui, sans-serif',
-                  }}
-                >
-                  {/* CABECERA TOP: TEXTO/EQUIPO IZQUIERDA - FOTO Y NOMBRE CENTRO - ESCUDO DERECHA */}
-                  <div className="gym-header-top" style={{
-                    display: 'grid',
-                    gridTemplateColumns: '1fr auto 1fr',
-                    alignItems: 'center',
-                    marginBottom: '14px',
-                    gap: '12px',
-                    width: '100%',
-                  }}>
-                    {/* Izquierda: Datos del Club (sin repetir título de la sesión aquí) */}
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center' }}>
-                      <div style={{ fontSize: '13.5px', fontWeight: 900, color: '#0f172a' }}>
-                        {clubConfig.nombreClub} - {clubConfig.categoria || '1er Equipo'}
-                      </div>
-                      <div style={{ fontSize: '11px', fontWeight: 700, color: '#475569', marginTop: '2px' }}>
-                        Preparació Física
-                      </div>
-                    </div>
-
-                    {/* Centro: Foto y Nombre del Jugador PERFECTAMENTE CENTRADO */}
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '0 12px' }}>
-                      {item.jugador.foto_url ? (
-                        <img
-                          src={item.jugador.foto_url}
-                          alt={item.jugador.nombre}
-                          style={{
-                            height: '110px',
-                            maxHeight: '120px',
-                            maxWidth: '160px',
-                            width: 'auto',
-                            objectFit: 'contain',
-                            background: 'transparent',
-                            border: 'none',
-                            boxShadow: 'none',
-                            borderRadius: '4px',
-                            mixBlendMode: 'multiply',
-                          }}
-                        />
-                      ) : (
-                        <div style={{ height: '60px', color: '#1e3a8a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', fontWeight: 900 }}>
-                          {item.jugador.dorsal ? '#' + item.jugador.dorsal : getInitials(item.jugador.nombre)}
+                  <div
+                    key={item.jugador.id + '_' + (item.sesion.id || sheetIdx)}
+                    className="report-page-break"
+                    style={{
+                      background: '#ffffff',
+                      width: '100%',
+                      maxWidth: '850px',
+                      padding: '24px 32px',
+                      borderRadius: '8px',
+                      boxShadow: '0 4px 15px rgba(0,0,0,0.06)',
+                      boxSizing: 'border-box',
+                      fontFamily: 'system-ui, sans-serif',
+                    }}
+                  >
+                    {/* CABECERA TOP: TEXTO/EQUIPO IZQUIERDA - FOTO Y NOMBRE CENTRO - ESCUDO DERECHA */}
+                    <div className="gym-header-top" style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr auto 1fr',
+                      alignItems: 'center',
+                      marginBottom: '14px',
+                      gap: '12px',
+                      width: '100%',
+                    }}>
+                      {/* Izquierda: Datos del Club (sin repetir título de la sesión aquí) */}
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center' }}>
+                        <div style={{ fontSize: '13.5px', fontWeight: 900, color: '#0f172a' }}>
+                          {clubConfig.nombreClub} - {clubConfig.categoria || '1er Equipo'}
                         </div>
-                      )}
-                      <h2 style={{
-                        fontSize: item.jugador.nombre.length > 22 ? '17px' : item.jugador.nombre.length > 16 ? '19px' : '22px',
-                        fontWeight: 900,
-                        color: '#b91c1c',
-                        margin: 0,
-                        letterSpacing: '0.5px',
-                        textTransform: 'uppercase',
-                        textAlign: 'center',
-                        wordBreak: 'break-word',
-                        lineHeight: 1.2,
-                      }}>
-                        {item.jugador.nombre}
-                      </h2>
-                    </div>
+                        <div style={{ fontSize: '11px', fontWeight: 700, color: '#475569', marginTop: '2px' }}>
+                          Preparació Física
+                        </div>
+                      </div>
 
-                    {/* Derecha: Escudo del Club */}
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                        <img
-                          src={clubConfig.escudoUrl}
-                          alt={clubConfig.nombreClub}
-                          style={{ width: '56px', height: '56px', objectFit: 'contain' }}
-                          onError={(e) => {
-                            (e.currentTarget as HTMLImageElement).src = '/ce-europa.png';
-                          }}
-                        />
-                        <div style={{
-                          fontSize: '9.5px',
-                          fontWeight: 800,
-                          color: '#475569',
-                          marginTop: '3px',
+                      {/* Centro: Foto y Nombre del Jugador PERFECTAMENTE CENTRADO */}
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '0 12px' }}>
+                        {item.jugador.foto_url ? (
+                          <img
+                            src={item.jugador.foto_url}
+                            alt={item.jugador.nombre}
+                            style={{
+                              height: '110px',
+                              maxHeight: '120px',
+                              maxWidth: '160px',
+                              width: 'auto',
+                              objectFit: 'contain',
+                              background: 'transparent',
+                              border: 'none',
+                              boxShadow: 'none',
+                              borderRadius: '4px',
+                              mixBlendMode: 'multiply',
+                            }}
+                          />
+                        ) : (
+                          <div style={{ height: '60px', color: '#1e3a8a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', fontWeight: 900 }}>
+                            {item.jugador.dorsal ? '#' + item.jugador.dorsal : getInitials(item.jugador.nombre)}
+                          </div>
+                        )}
+                        <h2 style={{
+                          fontSize: item.jugador.nombre.length > 22 ? '17px' : item.jugador.nombre.length > 16 ? '19px' : '22px',
+                          fontWeight: 900,
+                          color: '#b91c1c',
+                          margin: 0,
                           letterSpacing: '0.5px',
                           textTransform: 'uppercase',
                           textAlign: 'center',
+                          wordBreak: 'break-word',
+                          lineHeight: 1.2,
                         }}>
-                          {clubConfig.nombreClub}
+                          {item.jugador.nombre}
+                        </h2>
+                      </div>
+
+                      {/* Derecha: Escudo del Club */}
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                          <img
+                            src={clubConfig.escudoUrl}
+                            alt={clubConfig.nombreClub}
+                            style={{ width: '56px', height: '56px', objectFit: 'contain' }}
+                            onError={(e) => {
+                              (e.currentTarget as HTMLImageElement).src = '/ce-europa.png';
+                            }}
+                          />
+                          <div style={{
+                            fontSize: '9.5px',
+                            fontWeight: 800,
+                            color: '#475569',
+                            marginTop: '3px',
+                            letterSpacing: '0.5px',
+                            textTransform: 'uppercase',
+                            textAlign: 'center',
+                          }}>
+                            {clubConfig.nombreClub}
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
 
-                  {/* BARRA HORIZONTAL DORADA / AMARILLA DE CONTEXTO */}
-                  {(() => {
-                    const evCo = getEventoCoContextoReporte(item.day, item.jugador.id, item.sesion);
-                    const sTitle = (item.sesion.nombreSesion && item.sesion.nombreSesion.trim()) ||
-                                   (item.sesion.categoria && item.sesion.categoria.trim()) ||
-                                   evCo.orientacion ||
-                                   'FUERZA';
-                    const horaVal = (item.sesion.hora && item.sesion.hora.trim()) || (evCo.hora && evCo.hora.trim()) || '';
-                    const lugarVal = (item.sesion.lugar && item.sesion.lugar.trim()) || evCo.lugar;
-                    const durVal = item.sesion.duracionMin ? String(item.sesion.duracionMin) : evCo.duracion;
+                    {/* BARRA HORIZONTAL DORADA / AMARILLA DE CONTEXTO */}
+                    {(() => {
+                      const evCo = getEventoCoContextoReporte(item.day, item.jugador.id, item.sesion);
+                      const sTitle = (item.sesion.nombreSesion && item.sesion.nombreSesion.trim()) ||
+                        (item.sesion.categoria && item.sesion.categoria.trim()) ||
+                        evCo.orientacion ||
+                        'FUERZA';
+                      const horaVal = (item.sesion.hora && item.sesion.hora.trim()) || (evCo.hora && evCo.hora.trim()) || '';
+                      const lugarVal = (item.sesion.lugar && item.sesion.lugar.trim()) || evCo.lugar;
+                      const durVal = item.sesion.duracionMin ? String(item.sesion.duracionMin) : evCo.duracion;
 
-                    return (
-                      <div className="gym-yellow-bar" style={{
-                        background: '#fef08a',
-                        borderRadius: '4px',
-                        padding: '6px 12px',
-                        display: 'grid',
-                        gridTemplateColumns: '1fr auto 1fr',
-                        alignItems: 'center',
-                        fontWeight: 800,
-                        fontSize: '12px',
-                        color: '#0f172a',
-                        marginBottom: '14px',
-                        border: '1px solid #fde047',
-                        width: '100%',
-                        boxSizing: 'border-box',
-                      }}>
-                        {/* Zona Izquierda: Día, Fecha y Periodo/MD */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-start', whiteSpace: 'nowrap' }}>
-                          <span>{formatFechaCol(item.sesion.fecha).diaSem}</span>
-                          <span>{formatFechaCol(item.sesion.fecha).diaMes}/26</span>
-                          <span style={{ textTransform: 'uppercase', color: '#1e293b' }}>
-                            {resolvePlanificacionMD(item.sesion.fecha, allDays) || item.day?.md || item.sesion.md || 'MD'}
-                          </span>
-                        </div>
-
-                        {/* Zona Central: Título real de la sesión (auto-ajustable a longitud, perfectamente centrado) */}
-                        <div style={{
-                          textAlign: 'center',
-                          fontWeight: 900,
-                          fontSize: sTitle.length > 30 ? '12px' : '13.5px',
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.8px',
+                      return (
+                        <div className="gym-yellow-bar" style={{
+                          background: '#fef08a',
+                          borderRadius: '4px',
+                          padding: '6px 12px',
+                          display: 'grid',
+                          gridTemplateColumns: '1fr auto 1fr',
+                          alignItems: 'center',
+                          fontWeight: 800,
+                          fontSize: '12px',
                           color: '#0f172a',
-                          padding: '0 12px',
-                          whiteSpace: 'nowrap',
-                        }} title={sTitle}>
-                          {sTitle}
-                        </div>
-
-                        {/* Zona Derecha: Hora (solo si existe), Lugar y Duración */}
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', whiteSpace: 'nowrap' }}>
-                          {horaVal ? (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              <span style={{ fontSize: '11px' }}>🕒</span>
-                              <span>{horaVal}</span>
-                            </div>
-                          ) : null}
-                          {lugarVal ? (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              <span style={{ fontSize: '11px' }}>📍</span>
-                              <span style={{ textTransform: 'uppercase' }}>{lugarVal}</span>
-                            </div>
-                          ) : null}
-                          {durVal ? (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              <span style={{ fontSize: '11px' }}>⏱️</span>
-                              <span>{durVal}'</span>
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  {/* COMENTARIO DE LA SESIÓN Y BOTÓN DE VIDEO ENTRE BLOQUE AMARILLO Y TABLA (SIN RECUADRO) */}
-                  {(Boolean(item.sesion.notas?.trim()) || Boolean(hasReportVideo(item.sesion.videoUrl))) && (
-                    <div className="gym-comment-block" style={{
-                      background: 'transparent',
-                      border: 'none',
-                      padding: '2px 0 6px 0',
-                      marginBottom: '8px',
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      justifyContent: 'space-between',
-                      gap: '14px',
-                      lineHeight: 1.4,
-                    }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', flex: 1, minWidth: 0 }}>
-                        {item.sesion.notas ? (
-                          <>
-                            <span style={{
-                              fontSize: '10.5px',
-                              fontWeight: 900,
-                              color: '#1e3a8a',
-                              textTransform: 'uppercase',
-                              letterSpacing: '0.6px',
-                            }}>
-                              Comentario de la sesión:
+                          marginBottom: '14px',
+                          border: '1px solid #fde047',
+                          width: '100%',
+                          boxSizing: 'border-box',
+                        }}>
+                          {/* Zona Izquierda: Día, Fecha y Periodo/MD */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-start', whiteSpace: 'nowrap' }}>
+                            <span>{formatFechaCol(item.sesion.fecha).diaSem}</span>
+                            <span>{formatFechaCol(item.sesion.fecha).diaMes}/26</span>
+                            <span style={{ textTransform: 'uppercase', color: '#1e293b' }}>
+                              {resolvePlanificacionMD(item.sesion.fecha, allDays) || item.day?.md || item.sesion.md || 'MD'}
                             </span>
-                            <div style={{ color: '#000000', fontSize: '11.5px', fontWeight: 500, lineHeight: 1.45 }}>
-                              {item.sesion.notas}
-                            </div>
-                          </>
-                        ) : (
-                          <span style={{ fontWeight: 900, color: '#1e3a8a', textTransform: 'uppercase', fontSize: '10.5px', letterSpacing: '0.6px' }}>
-                            Recursos de la Sesión
-                          </span>
+                          </div>
+
+                          {/* Zona Central: Título real de la sesión (auto-ajustable a longitud, perfectamente centrado) */}
+                          <div style={{
+                            textAlign: 'center',
+                            fontWeight: 900,
+                            fontSize: sTitle.length > 30 ? '12px' : '13.5px',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.8px',
+                            color: '#0f172a',
+                            padding: '0 12px',
+                            whiteSpace: 'nowrap',
+                          }} title={sTitle}>
+                            {sTitle}
+                          </div>
+
+                          {/* Zona Derecha: Hora (solo si existe), Lugar y Duración */}
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', whiteSpace: 'nowrap' }}>
+                            {horaVal ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <span style={{ fontSize: '11px' }}>🕒</span>
+                                <span>{horaVal}</span>
+                              </div>
+                            ) : null}
+                            {lugarVal ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <span style={{ fontSize: '11px' }}>📍</span>
+                                <span style={{ textTransform: 'uppercase' }}>{lugarVal}</span>
+                              </div>
+                            ) : null}
+                            {durVal ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <span style={{ fontSize: '11px' }}>⏱️</span>
+                                <span>{durVal}'</span>
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* COMENTARIO DE LA SESIÓN Y BOTÓN DE VIDEO ENTRE BLOQUE AMARILLO Y TABLA (SIN RECUADRO) */}
+                    {(Boolean(item.sesion.notas?.trim()) || Boolean(hasReportVideo(item.sesion.videoUrl))) && (
+                      <div className="gym-comment-block" style={{
+                        background: 'transparent',
+                        border: 'none',
+                        padding: '2px 0 6px 0',
+                        marginBottom: '8px',
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        justifyContent: 'space-between',
+                        gap: '14px',
+                        lineHeight: 1.4,
+                      }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', flex: 1, minWidth: 0 }}>
+                          {item.sesion.notas ? (
+                            <>
+                              <span style={{
+                                fontSize: '10.5px',
+                                fontWeight: 900,
+                                color: '#1e3a8a',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.6px',
+                              }}>
+                                Comentario de la sesión:
+                              </span>
+                              <div style={{ color: '#000000', fontSize: '11.5px', fontWeight: 500, lineHeight: 1.45 }}>
+                                {item.sesion.notas}
+                              </div>
+                            </>
+                          ) : (
+                            <span style={{ fontWeight: 900, color: '#1e3a8a', textTransform: 'uppercase', fontSize: '10.5px', letterSpacing: '0.6px' }}>
+                              Recursos de la Sesión
+                            </span>
+                          )}
+                        </div>
+
+                        {/* BOTONCITO DE VIDEO CLICKABLE EN EXPORTACIÓN / IMPRESIÓN */}
+                        {hasReportVideo(item.sesion.videoUrl) && (
+                          <a
+                            href={item.sesion.videoUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                              padding: '4px 12px',
+                              borderRadius: '4px',
+                              background: '#dc2626',
+                              color: '#ffffff',
+                              textDecoration: 'none',
+                              fontSize: '11px',
+                              fontWeight: 800,
+                              boxShadow: '0 1px 3px rgba(220, 38, 38, 0.25)',
+                              whiteSpace: 'nowrap',
+                              flexShrink: 0,
+                              cursor: 'pointer',
+                            }}
+                            title="Abrir enlace de video de la sesión"
+                          >
+                            <span style={{ fontSize: '10px' }}>▶</span>
+                            <span>Ver Video</span>
+                          </a>
                         )}
                       </div>
+                    )}
 
-                      {/* BOTONCITO DE VIDEO CLICKABLE EN EXPORTACIÓN / IMPRESIÓN */}
-                      {hasReportVideo(item.sesion.videoUrl) && (
-                        <a
-                          href={item.sesion.videoUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '5px',
-                            padding: '4px 12px',
-                            borderRadius: '4px',
-                            background: '#dc2626',
-                            color: '#ffffff',
-                            textDecoration: 'none',
-                            fontSize: '11px',
-                            fontWeight: 800,
-                            boxShadow: '0 1px 3px rgba(220, 38, 38, 0.25)',
-                            whiteSpace: 'nowrap',
-                            flexShrink: 0,
-                            cursor: 'pointer',
-                          }}
-                          title="Abrir enlace de video de la sesión"
-                        >
-                          <span style={{ fontSize: '10px' }}>▶</span>
-                          <span>Ver Video</span>
-                        </a>
-                      )}
-                    </div>
-                  )}
-
-                  {/* TABLA DE EJERCICIOS DINÁMICA (OMITE COLUMNAS SIN INFORMACIÓN) */}
-                  <ReportExerciseTable sesion={item.sesion} />
-                </div>
-              ))
-            ))}
+                    {/* TABLA DE EJERCICIOS DINÁMICA (OMITE COLUMNAS SIN INFORMACIÓN) */}
+                    <ReportExerciseTable sesion={item.sesion} />
+                  </div>
+                ))
+              ))}
 
             {/* FICHA GRUPAL DE EQUIPO */}
             {(reportTipo === 'grupal' || reportTipo === 'ambos') && reportData.teamSheet && (
@@ -4088,9 +4088,9 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
                 {(() => {
                   const teamEvCo = getEventoCoContextoReporte(reportData.teamSheet.day, undefined, reportData.teamSheet.sesion);
                   const tTitle = (reportData.teamSheet.sesion.nombreSesion && reportData.teamSheet.sesion.nombreSesion.trim()) ||
-                                 (reportData.teamSheet.sesion.categoria && reportData.teamSheet.sesion.categoria.trim()) ||
-                                 teamEvCo.orientacion ||
-                                 'FUERZA';
+                    (reportData.teamSheet.sesion.categoria && reportData.teamSheet.sesion.categoria.trim()) ||
+                    teamEvCo.orientacion ||
+                    'FUERZA';
                   const horaVal = (reportData.teamSheet.sesion.hora && reportData.teamSheet.sesion.hora.trim()) || (teamEvCo.hora && teamEvCo.hora.trim()) || '';
                   const lugarVal = (reportData.teamSheet.sesion.lugar && reportData.teamSheet.sesion.lugar.trim()) || teamEvCo.lugar;
                   const durVal = reportData.teamSheet.sesion.duracionMin ? String(reportData.teamSheet.sesion.duracionMin) : teamEvCo.duracion;

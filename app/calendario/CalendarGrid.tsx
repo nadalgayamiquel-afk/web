@@ -7169,25 +7169,126 @@ export function CalendarGrid({
     return chunks;
   }, [viewMode, filteredDays]);
 
+  // Preparar metadata institucional y de contexto para la cabecera oficial de exportación / impresión
+  const printHeaderInfo = React.useMemo(() => {
+    const club = clubConfig?.nombreClub || activeTeam || "CE EUROPA";
+    const cat = clubConfig?.categoria || "1er Equipo";
+    const temp = clubConfig?.temporadaActiva || "2026/27";
+    const escudo = clubConfig?.escudoUrl || "/ce-europa.png";
+
+    let title = "PLANIFICACIÓN DEPORTIVA";
+    let datesSubtitle = "";
+    const list = filteredDays || [];
+
+    const formatPretty = (iso?: string) => {
+      if (!iso) return "";
+      const dateObj = new Date(iso + "T12:00:00");
+      const dias = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+      const meses = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+      const dSem = dias[dateObj.getDay()];
+      const dNum = dateObj.getDate();
+      const mNom = meses[dateObj.getMonth()];
+      const aNum = dateObj.getFullYear();
+      return `${dSem} ${dNum} ${mNom} ${aNum}`;
+    };
+
+    if (list.length > 0) {
+      const fFirst = list[0].fecha;
+      const fLast = list[list.length - 1].fecha;
+
+      if (viewMode === "microciclo") {
+        const weekNum = calculateDynamicWeekNumber(fFirst, semana1StartDate);
+        title = `PLANIFICACIÓN SEMANAL • MICROCICLO ${weekNum}`;
+        datesSubtitle = `${formatPretty(fFirst)} — ${formatPretty(fLast)}`;
+      } else if (viewMode === "mesociclo") {
+        title = "PLANIFICACIÓN MENSUAL • MESOCICLO (4 SEMANAS)";
+        datesSubtitle = `${formatPretty(fFirst)} — ${formatPretty(fLast)}`;
+      } else {
+        title = `CALENDARIO Y PLANIFICACIÓN GLOBAL • TEMPORADA ${temp}`;
+        datesSubtitle = `${formatPretty(fFirst)} — ${formatPretty(fLast)}`;
+      }
+    }
+
+    let partidos = 0;
+    let entrenos = 0;
+    let descansos = 0;
+
+    list.forEach((d) => {
+      const evCode = (d.evento || "").trim().toUpperCase();
+      if (isMatchCode(evCode)) {
+        partidos++;
+      } else if (evCode === "E" || evCode.includes("ENTREN")) {
+        entrenos++;
+      } else if (evCode === "D" || evCode.includes("DESC")) {
+        descansos++;
+      }
+      for (let s = 1; s <= 6; s++) {
+        const val = ((d as any)[`evento_${s}`] || "").trim().toUpperCase();
+        if (val && isMatchCode(val) && !isMatchCode(evCode)) {
+          partidos++;
+        }
+      }
+    });
+
+    return {
+      club,
+      cat,
+      temp,
+      escudo,
+      title,
+      datesSubtitle,
+      partidos,
+      entrenos,
+      descansos,
+    };
+  }, [clubConfig, activeTeam, filteredDays, viewMode, semana1StartDate]);
+
+  const handleExportPDF = () => {
+    if (typeof window === "undefined") return;
+    const prevTitle = document.title;
+    const clubClean = (clubConfig?.nombreClub || activeTeam || "CE_Europa").replace(/\s+/g, "_");
+    let modeText = "Microciclo";
+    if (viewMode === "microciclo") {
+      const fFirst = filteredDays[0]?.fecha;
+      const wNum = fFirst ? calculateDynamicWeekNumber(fFirst, semana1StartDate) : 1;
+      modeText = `Microciclo_${wNum}`;
+    } else if (viewMode === "mesociclo") {
+      modeText = "Mesociclo";
+    } else {
+      modeText = "Temporada";
+    }
+    const fIni = filteredDays[0]?.fecha || "";
+    const fFin = filteredDays[filteredDays.length - 1]?.fecha || "";
+    document.title = `Planificacion_${clubClean}_${modeText}_${fIni}_${fFin}`;
+    window.print();
+    setTimeout(() => {
+      document.title = prevTitle;
+    }, 1200);
+  };
+
   return (
     <div style={{ fontFamily: "var(--font-sans, system-ui, sans-serif)", color: "#0f172a" }}>
-      {/* ESTILOS DE IMPRESIÓN PDF HORIZONTAL PARA ENCAJAR 4 SEMANAS EN 1 SOLA PÁGINA */}
-      <style jsx global>{`
+      {/* ESTILOS DE IMPRESIÓN PDF HORIZONTAL PARA ENCAJAR CON MÁXIMA CALIDAD PROFESIONAL */}
+      <style dangerouslySetInnerHTML={{ __html: `
         @media print {
           @page {
-            size: landscape;
-            margin: 2mm 3mm;
+            size: landscape !important;
+            margin: 5mm 6mm 5mm 6mm !important;
           }
           html, body {
             background: #ffffff !important;
             margin: 0 !important;
             padding: 0 !important;
+            width: 100% !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
           main {
             padding: 0 !important;
             margin: 0 !important;
             background: #ffffff !important;
             max-width: 100% !important;
+            width: 100% !important;
           }
           .no-print {
             display: none !important;
@@ -7198,41 +7299,89 @@ export function CalendarGrid({
             padding: 0 !important;
             margin: 0 !important;
             width: 100% !important;
+            zoom: 1 !important;
           }
-          /* Compactar distancias y fuentes para encajar 4 semanas en 1 sola página PDF */
+          .calendar-print-header {
+            display: grid !important;
+            grid-template-columns: 1fr auto 1fr !important;
+            background: #0f172a !important;
+            color: #ffffff !important;
+            padding: 8px 14px !important;
+            margin-bottom: 6px !important;
+            border-radius: 6px !important;
+            border: 1px solid #0f172a !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            page-break-inside: avoid !important;
+            page-break-after: avoid !important;
+          }
+          .calendar-print-footer {
+            display: flex !important;
+            margin-top: 6px !important;
+            padding-top: 4px !important;
+            page-break-inside: avoid !important;
+          }
+          /* Ocultar elementos interactivos de edición en impresión */
+          input[type="color"],
+          .drag-fill-handle,
+          [title*="Arrastrar para rellenar"],
+          [title*="Click para asignar escudo"] {
+            display: none !important;
+          }
+          /* Quitar bordes y estilos de formulario a selects e inputs para tipografía pura y limpia */
+          select {
+            -webkit-appearance: none !important;
+            -moz-appearance: none !important;
+            appearance: none !important;
+            border: none !important;
+            background: transparent !important;
+            text-align-last: center !important;
+            text-align: center !important;
+            font-weight: 800 !important;
+          }
+          input[type="text"], input:not([type]) {
+            border: none !important;
+            background: transparent !important;
+            font-weight: 800 !important;
+          }
+          /* Estructura limpia y nítida de la tabla */
+          table {
+            font-size: 8.5px !important;
+            width: 100% !important;
+            min-width: 100% !important;
+            border-collapse: collapse !important;
+          }
+          thead, th, td {
+            position: static !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          tr {
+            page-break-inside: avoid !important;
+          }
+          td, th {
+            padding: 1px 2px !important;
+            font-size: 8.5px !important;
+          }
+          /* Mesociclo apilado */
           .mesociclo-container {
-            gap: 2px !important;
+            gap: 4px !important;
           }
           .mesociclo-week-card {
-            padding: 2px 4px !important;
-            margin-bottom: 0 !important;
+            padding: 3px 6px !important;
+            margin-bottom: 2px !important;
             border-radius: 4px !important;
-            border: 1px solid #e2e8f0 !important;
+            border: 1px solid #cbd5e1 !important;
             box-shadow: none !important;
             page-break-inside: avoid !important;
           }
           .mesociclo-week-title {
-            margin-bottom: 1px !important;
+            margin-bottom: 2px !important;
             font-size: 9.5px !important;
-          }
-          table {
-            font-size: 8.5px !important;
-            width: 100% !important;
-          }
-          tr {
-            height: 16px !important;
-          }
-          td, th {
-            padding: 0px 2px !important;
-            font-size: 8.5px !important;
-          }
-          select, input {
-            font-size: 8px !important;
-            padding: 0 !important;
-            height: auto !important;
+            font-weight: 900 !important;
           }
         }
-      `}</style>
+      ` }} />
 
       {/* 1. SELECTOR DE VISTA DISCRETO Y CONTROLES SUPERIORES EN UNA ÚNICA FILA HORIZONTAL Y COMPACTA */}
       <div
@@ -7495,6 +7644,32 @@ export function CalendarGrid({
                 {saveStatusMsg}
               </span>
             )}
+
+            {/* BOTÓN EXPORTAR PDF / IMPRIMIR OFICIAL */}
+            <button
+              type="button"
+              onClick={handleExportPDF}
+              title="Exportar planificación a PDF profesional (Horizontal A4)"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+                padding: "4px 12px",
+                borderRadius: "6px",
+                background: "linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%)",
+                color: "#ffffff",
+                border: "1px solid #1e3a8a",
+                fontSize: "11px",
+                fontWeight: 800,
+                cursor: "pointer",
+                boxShadow: "0 1px 3px rgba(15, 23, 42, 0.25)",
+                whiteSpace: "nowrap",
+                transition: "all 0.15s ease",
+              }}
+            >
+              <span>🖨️</span>
+              <span>Exportar PDF</span>
+            </button>
           </div>
         </div>
 
@@ -7704,6 +7879,99 @@ export function CalendarGrid({
 
       {/* 2. RENDIMIENTO DE TABLAS (MICROCICLO, MESOCICLO APILADO O PERSONALIZADO) */}
       <div className="print-area" style={{ zoom: `${zoomLevel}%` }}>
+        {/* CABECERA OFICIAL DEL CLUB Y DEL REPORTE (EXPORTACIÓN E IMPRESIÓN PROFESIONAL) */}
+        <div
+          className="calendar-print-header"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr auto 1fr",
+            alignItems: "center",
+            gap: "14px",
+            padding: "10px 16px",
+            marginBottom: "10px",
+            background: "linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%)",
+            borderRadius: "8px",
+            color: "#ffffff",
+            boxShadow: "0 2px 8px rgba(15, 23, 42, 0.12)",
+            border: "1px solid #1e3a8a",
+            boxSizing: "border-box",
+            width: "100%",
+          }}
+        >
+          {/* LADO IZQUIERDO: ESCUDO + DATOS DEL CLUB */}
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", justifyContent: "flex-start" }}>
+            <img
+              src={printHeaderInfo.escudo}
+              alt={printHeaderInfo.club}
+              style={{
+                width: "48px",
+                height: "48px",
+                objectFit: "contain",
+                filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.3))",
+                background: "transparent",
+              }}
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).src = "/ce-europa.png";
+              }}
+            />
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              <div style={{ fontSize: "14px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.5px", color: "#ffffff", lineHeight: 1.2 }}>
+                {printHeaderInfo.club}
+              </div>
+              <div style={{ fontSize: "10.5px", fontWeight: 700, color: "#93c5fd", marginTop: "2px", lineHeight: 1.2 }}>
+                {printHeaderInfo.cat} • Área de Rendimiento y Prep. Física
+              </div>
+              <div style={{ fontSize: "9.5px", fontWeight: 600, color: "#cbd5e1", marginTop: "1px" }}>
+                Temporada {printHeaderInfo.temp}
+              </div>
+            </div>
+          </div>
+
+          {/* CENTRO: TÍTULO DESTACADO Y RANGO DE FECHAS */}
+          <div style={{ textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+            <div style={{
+              fontSize: "15px",
+              fontWeight: 900,
+              textTransform: "uppercase",
+              letterSpacing: "0.8px",
+              color: "#ffffff",
+              lineHeight: 1.2,
+            }}>
+              {printHeaderInfo.title}
+            </div>
+            {printHeaderInfo.datesSubtitle && (
+              <div style={{ fontSize: "11px", fontWeight: 700, color: "#fef08a", marginTop: "3px" }}>
+                📅 {printHeaderInfo.datesSubtitle}
+              </div>
+            )}
+            {/* Badges de resumen: partidos, entrenos, descansos */}
+            <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", marginTop: "5px", fontSize: "9.5px", fontWeight: 800 }}>
+              <span style={{ background: "rgba(255,255,255,0.15)", padding: "2px 7px", borderRadius: "4px", color: "#ffffff", border: "1px solid rgba(255,255,255,0.2)" }}>
+                ⚽ {printHeaderInfo.partidos} {printHeaderInfo.partidos === 1 ? "Partido" : "Partidos"}
+              </span>
+              <span style={{ background: "rgba(255,255,255,0.15)", padding: "2px 7px", borderRadius: "4px", color: "#ffffff", border: "1px solid rgba(255,255,255,0.2)" }}>
+                🏃 {printHeaderInfo.entrenos} {printHeaderInfo.entrenos === 1 ? "Entrenamiento" : "Entrenamientos"}
+              </span>
+              <span style={{ background: "rgba(255,255,255,0.15)", padding: "2px 7px", borderRadius: "4px", color: "#ffffff", border: "1px solid rgba(255,255,255,0.2)" }}>
+                🏖️ {printHeaderInfo.descansos} {printHeaderInfo.descansos === 1 ? "Descanso" : "Descansos"}
+              </span>
+            </div>
+          </div>
+
+          {/* LADO DERECHO: METADATA OFICIAL Y SELLO TOP PLAY */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", justifyContent: "center" }}>
+            <div style={{ fontSize: "11.5px", fontWeight: 900, letterSpacing: "0.5px", color: "#67e8f9", textTransform: "uppercase" }}>
+              TOP PLAY TRAINING
+            </div>
+            <div style={{ fontSize: "9.5px", fontWeight: 700, color: "#cbd5e1", marginTop: "2px" }}>
+              Planificación Oficial
+            </div>
+            <div style={{ fontSize: "9px", fontWeight: 600, color: "#94a3b8", marginTop: "1px" }}>
+              Cuerpo Técnico • Documento Interno
+            </div>
+          </div>
+        </div>
+
         {viewMode === "mesociclo" ? (
           <div className="mesociclo-container" style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
             {mesocicloWeekChunks.map((chunk, wIdx) => {
@@ -7752,6 +8020,30 @@ export function CalendarGrid({
             {renderSingleTableBlock(filteredDays)}
           </div>
         )}
+
+        {/* PIE DE PÁGINA PROFESIONAL EN IMPRESIÓN / EXPORTACIÓN */}
+        <div
+          className="calendar-print-footer"
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            padding: "8px 10px",
+            marginTop: "10px",
+            fontSize: "9.5px",
+            fontWeight: 600,
+            color: "#64748b",
+            borderTop: "1px solid #cbd5e1",
+          }}
+        >
+          <span>
+            © {new Date().getFullYear()} {printHeaderInfo.club} • Área de Rendimiento Deportivo • Top Play Training
+          </span>
+          <span>
+            Documento técnico oficial para uso exclusivo del club y cuerpo técnico
+          </span>
+        </div>
+
       {/* MODAL PARA AÑADIR COMENTARIO */}
       {addComentarioTarget && (
         <div
