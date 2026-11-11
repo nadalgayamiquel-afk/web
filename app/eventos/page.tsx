@@ -1362,23 +1362,28 @@ export default function EventosCalendarPage() {
             margin-top: 1px !important;
           }
           .eventos-card-list {
-            padding: 4px !important;
+            padding: 5px !important;
             display: flex !important;
             flex-direction: column !important;
-            gap: 4px !important;
+            gap: 5px !important;
             flex: 1 !important;
+            height: 100% !important;
             overflow: hidden !important;
             background: #ffffff !important;
             box-sizing: border-box !important;
           }
           .eventos-card-item {
-            padding: 4px 6px !important;
+            flex: 1 !important;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: space-between !important;
+            padding: 6px 8px !important;
             border-width: 1.5px !important;
             border-radius: 5px !important;
             box-shadow: 0 1px 2px rgba(0,0,0,0.04) !important;
             break-inside: avoid !important;
             page-break-inside: avoid !important;
-            margin-bottom: 2px !important;
+            margin-bottom: 0 !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
             box-sizing: border-box !important;
@@ -1391,26 +1396,58 @@ export default function EventosCalendarPage() {
             justify-content: space-between !important;
             align-items: center !important;
           }
+          .eventos-card-item .ev-body {
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: center !important;
+            flex: 1 !important;
+            margin: 2px 0 !important;
+          }
           .eventos-card-item .ev-title {
-            font-size: 9.5px !important;
+            font-size: 10px !important;
             font-weight: 900 !important;
             line-height: 1.25 !important;
-            margin-top: 2px !important;
             color: inherit !important;
           }
           .eventos-card-item .ev-sub {
             font-size: 8.5px !important;
             font-weight: 800 !important;
             line-height: 1.2 !important;
-            margin: 2px 0 !important;
+            margin-top: 2px !important;
             text-align: center !important;
             opacity: 0.95 !important;
+          }
+          .eventos-card-item .ev-footer {
+            display: flex !important;
+            justify-content: space-between !important;
+            align-items: center !important;
+            margin-top: auto !important;
           }
           .eventos-card-item .ev-loc {
             font-size: 8px !important;
             font-weight: 700 !important;
             opacity: 0.9 !important;
-            margin-top: 2px !important;
+          }
+          .eventos-card-item .ev-dur {
+            font-size: 8px !important;
+            font-weight: 700 !important;
+            opacity: 0.85 !important;
+          }
+          .eventos-empty-day {
+            flex: 1 !important;
+            height: 100% !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            text-align: center !important;
+            font-size: 10px !important;
+            font-weight: 800 !important;
+            color: #94a3b8 !important;
+            background: #f8fafc !important;
+            border: 1.5px dashed #cbd5e1 !important;
+            border-radius: 5px !important;
+            margin: 2px 0 !important;
+            letter-spacing: 0.5px !important;
           }
           div[style*="minmax(140px"] {
             grid-template-columns: repeat(7, 1fr) !important;
@@ -2296,6 +2333,9 @@ export default function EventosCalendarPage() {
                               cursor: "pointer",
                               boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
                               transition: "transform 0.1s ease",
+                              display: "flex",
+                              flexDirection: "column",
+                              justifyContent: "space-between",
                             }}
                           >
                             <div className="ev-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "3px" }}>
@@ -2307,38 +2347,64 @@ export default function EventosCalendarPage() {
                               ) : null}
                             </div>
 
-                            <div className="ev-title" style={{ fontSize: "11px", fontWeight: 900, lineHeight: 1.25, marginTop: "3px" }}>
-                              {styleConfig.icon} {ev.nombreCompleto}
+                            <div className="ev-body" style={{ display: "flex", flexDirection: "column", justifyContent: "center", flex: 1, margin: "2px 0" }}>
+                              <div className="ev-title" style={{ fontSize: "11px", fontWeight: 900, lineHeight: 1.25 }}>
+                                {styleConfig.icon} {ev.nombreCompleto}
+                              </div>
+
+                              {subText ? (
+                                <div className="ev-sub" style={{ 
+                                  fontSize: "9.5px", 
+                                  fontWeight: 800, 
+                                  lineHeight: 1.2, 
+                                  marginTop: "3px", 
+                                  textAlign: "center",
+                                  whiteSpace: "nowrap",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  opacity: 0.9,
+                                  background: "rgba(0,0,0,0.04)",
+                                  padding: "2px 4px",
+                                  borderRadius: "3px",
+                                }}>
+                                  {subText}
+                                </div>
+                              ) : null}
                             </div>
 
-                            {subText ? (
-                              <div className="ev-sub" style={{ 
-                                fontSize: "10px", 
-                                fontWeight: 800, 
-                                lineHeight: 1.2, 
-                                margin: "2px 0", 
-                                textAlign: "center",
-                                whiteSpace: "nowrap",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                opacity: 0.9
-                              }}>
-                                {subText}
-                              </div>
-                            ) : null}
-
-                            {ev.lugar ? (
-                              <div className="ev-loc" style={{ fontSize: "9.5px", fontWeight: 700, opacity: 0.9, marginTop: "1px" }}>
-                                📍 {ev.lugar.toUpperCase()}
-                              </div>
-                            ) : null}
+                            <div className="ev-footer" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "auto", paddingTop: "2px" }}>
+                              {ev.lugar ? (
+                                <div className="ev-loc" style={{ fontSize: "9.5px", fontWeight: 700, opacity: 0.9 }}>
+                                  📍 {ev.lugar.toUpperCase()}
+                                </div>
+                              ) : <span />}
+                              {ev.duracionMin ? (
+                                <div className="ev-dur" style={{ fontSize: "9px", fontWeight: 800, opacity: 0.85 }}>
+                                  ⏱️ {ev.duracionMin}m
+                                </div>
+                              ) : null}
+                            </div>
                           </div>
                         );
                       })}
 
                       {dayEvents.length === 0 && (
-                        <div style={{ fontSize: "10.5px", color: "#cbd5e1", textAlign: "center", fontStyle: "italic", marginTop: "20px" }}>
-                          Sin eventos
+                        <div className="eventos-empty-day" style={{
+                          flex: 1,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: "11px",
+                          color: "#94a3b8",
+                          fontWeight: 800,
+                          background: "#f8fafc",
+                          borderRadius: "6px",
+                          border: "1.5px dashed #cbd5e1",
+                          textAlign: "center",
+                          padding: "16px 8px",
+                          letterSpacing: "0.5px",
+                        }}>
+                          DESCANSO / SIN EVENTOS
                         </div>
                       )}
                     </div>
@@ -2627,6 +2693,29 @@ export default function EventosCalendarPage() {
                       size: 297mm 210mm !important;
                       size: landscape !important;
                       margin: 5mm 6mm !important;
+                    }
+                    .eventos-grid-week {
+                      height: 174mm !important;
+                      max-height: 174mm !important;
+                    }
+                    .eventos-day-col {
+                      height: 100% !important;
+                      min-height: 174mm !important;
+                      max-height: 174mm !important;
+                    }
+                    .eventos-card-list {
+                      flex: 1 !important;
+                      height: 100% !important;
+                    }
+                    .eventos-card-item {
+                      flex: 1 !important;
+                      display: flex !important;
+                      flex-direction: column !important;
+                      justify-content: space-between !important;
+                    }
+                    .eventos-empty-day {
+                      flex: 1 !important;
+                      height: 100% !important;
                     }
                   `;
 
