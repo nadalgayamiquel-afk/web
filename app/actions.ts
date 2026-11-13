@@ -1223,22 +1223,12 @@ export async function syncGpsDatabaseWeb() {
   }
 }
 
-export async function syncAllDownloadsGpsFiles() {
+export async function parseAndSaveGpsCsv(csvContent: string, fileName: string = "") {
   try {
-    const fs = require("fs");
-    const path = require("path");
-    const homeDir = process.env.HOME || "/Users/MiquelNadalGaya";
-    const downloadsDir = path.join(homeDir, "Downloads");
-
-    if (!fs.existsSync(downloadsDir)) {
-      return { success: false, error: "Carpeta Downloads no encontrada" };
+    const lines = csvContent.split(/\r?\n/).filter((l: string) => l.trim().length > 0);
+    if (lines.length < 2) {
+      return { success: false, error: "El archivo CSV no contiene filas suficientes" };
     }
-
-    const files = fs.readdirSync(downloadsDir);
-    const candidateFiles = files.filter((f: string) =>
-      f.endsWith(".csv") &&
-      (f.includes("total") || f.includes("HUESCA") || f.includes("entrenamiento") || f.includes("partido"))
-    );
 
     const supabase = getServerSupabase();
     let dbPlayers: any[] = [];
@@ -1323,255 +1313,282 @@ export async function syncAllDownloadsGpsFiles() {
       return isNaN(num) ? def : num;
     };
 
+    const delim = lines[0].includes(";") ? ";" : lines[0].includes("\t") ? "\t" : ",";
+    const header = lines[0].split(delim).map((h: string) => h.trim());
+
+    const rows = lines.slice(1).map((l: string) => {
+      const parts = l.split(delim);
+      const obj: Record<string, string> = {};
+      header.forEach((h: string, i: number) => {
+        obj[h] = parts[i]?.trim() || "";
+      });
+      return obj;
+    });
+
+    const getVal = (rowObj: Record<string, string>, possibleNames: string[]): string => {
+      if (!rowObj) return "";
+      for (const p of possibleNames) {
+        const normP = normalize(p);
+        for (const [k, v] of Object.entries(rowObj)) {
+          if (normalize(k) === normP) {
+            if (v !== undefined && v !== null && v !== "") return String(v).trim();
+          }
+        }
+      }
+      for (const p of possibleNames) {
+        const normP = normalize(p);
+        for (const [k, v] of Object.entries(rowObj)) {
+          const normK = normalize(k);
+          if (normK.startsWith("id ") && !normP.startsWith("id")) continue;
+          if (normK.includes(normP) || normP.includes(normK)) {
+            if (v !== undefined && v !== null && v !== "") return String(v).trim();
+          }
+        }
+      }
+      return "";
+    };
+
+    const sampleRow = rows.find((r: any) => getVal(r, ["date", "fecha", "day", "timestamp"]) || r.date || r.fecha) || rows[0];
+    const rawDate = sampleRow ? (getVal(sampleRow, ["date", "fecha", "day", "timestamp"]) || sampleRow.date || sampleRow.fecha || "") : "";
+    let isoDate = "";
+
+    // 1. Priorizar la fecha explícita del nombre del archivo si existe (ej: _10-11-2026_total -> 2026-11-10)
+    const fileDateM = fileName.match(/_(\d{1,2})[-/](\d{1,2})[-/](\d{4})/) || fileName.match(/(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+    if (fileDateM) {
+      const p1 = parseInt(fileDateM[1], 10);
+      const p2 = parseInt(fileDateM[2], 10);
+      const year = fileDateM[3];
+      if (p2 === 11 || p1 === 11) {
+        const day = p1 === 11 ? p2 : p1;
+        isoDate = `${year}-11-${String(day).padStart(2, "0")}`;
+      } else if (p2 === 10 || p1 === 10) {
+        const day = p1 === 10 && p2 !== 10 ? p2 : p1;
+        isoDate = `${year}-10-${String(day).padStart(2, "0")}`;
+      } else {
+        isoDate = `${year}-${String(p2).padStart(2, "0")}-${String(p1).padStart(2, "0")}`;
+      }
+    } else if (/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+      isoDate = rawDate;
+    } else if (rawDate.includes("/")) {
+      const dParts = rawDate.split("/");
+      if (dParts.length === 3) {
+        const p1 = parseInt(dParts[0], 10);
+        const p2 = parseInt(dParts[1], 10);
+        const p3 = parseInt(dParts[2], 10);
+        const year = p3 < 100 ? 2000 + p3 : p3;
+        if (p1 === 11 && p2 <= 30) {
+          isoDate = `${year}-11-${String(p2).padStart(2, "0")}`;
+        } else if (p2 === 11 && p1 <= 30) {
+          isoDate = `${year}-11-${String(p1).padStart(2, "0")}`;
+        } else if (p1 === 10 && p2 <= 31) {
+          isoDate = `${year}-10-${String(p2).padStart(2, "0")}`;
+        } else if (p2 === 10 && p1 <= 31) {
+          isoDate = `${year}-10-${String(p1).padStart(2, "0")}`;
+        } else {
+          isoDate = `${year}-${String(p2).padStart(2, "0")}-${String(p1).padStart(2, "0")}`;
+        }
+      }
+    }
+
+    if (!isoDate) {
+      return { success: false, error: "No se pudo determinar la fecha del archivo GPS" };
+    }
+
+    const { data: sesionDia } = await supabase
+      .from("sesiones_dia")
+      .select("id, evento_am, md, rival")
+      .eq("fecha", isoDate)
+      .maybeSingle();
+
+    const sesion_dia_id = sesionDia?.id || null;
+    const tipo_sesion = sesionDia?.rival ? "PARTIDO" : (fileName.toLowerCase().includes("partido") ? "PARTIDO" : "ENTRENAMIENTO");
+    const match_day = sesionDia?.md || (tipo_sesion === "PARTIDO" ? "MD" : null);
+
+    const playerRowsMap = new Map<string, { player: any; rows: any[] }>();
+    for (const r of rows) {
+      const pRawName = getVal(r, ["player", "jugador", "deportista", "name", "nombre", "athlete"]) || r.player || r.jugador;
+      if (!pRawName) continue;
+
+      if (isoDate === "2026-10-29" && (pRawName.toLowerCase().includes("teto") || pRawName.toLowerCase().includes("carames"))) {
+        continue;
+      }
+
+      const match = matchPlayer(pRawName);
+      if (!match) continue;
+
+      if (!playerRowsMap.has(match.id)) {
+        playerRowsMap.set(match.id, { player: match, rows: [] });
+      }
+      playerRowsMap.get(match.id)!.rows.push(r);
+    }
+
+    const recordsToInsert: any[] = [];
+    for (const [jugador_id, { rows: pRows }] of playerRowsMap.entries()) {
+      const totalRow = pRows.find((r: any) => {
+        const t = getVal(r, ["task", "tarea", "period", "split", "activity"]) || r.task;
+        return t && t.toLowerCase() === "total";
+      }) || pRows[0];
+      const taskRows = pRows.filter((r: any) => {
+        const t = getVal(r, ["task", "tarea", "period", "split", "activity"]) || r.task;
+        return t && t.toLowerCase() !== "total";
+      });
+
+      const buildMetrics = (r: any) => {
+        const v1 = parseNum(getVal(r, ["15 - 16 km/h (distancia)", "15-16 km/h (distancia)", "15 - 16 km/h", "15-16 km/h", "15 - 16", "15-16", "vrange1", "distance_vrange1", "1 - 8 km/h", "1-8 km/h", "zona 1", "z1"]));
+        const v2 = parseNum(getVal(r, ["16 - 17 km/h (distancia)", "16-17 km/h (distancia)", "16 - 17 km/h", "16-17 km/h", "16 - 17", "16-17", "vrange2", "distance_vrange2", "8 - 17 km/h", "8-17 km/h", "zona 2", "z2"]));
+        const v3 = parseNum(getVal(r, ["vrange3", "distance_vrange3", "17 - 19,8", "17 - 19.8", "17-19,8", "zona 3", "z3"]));
+        const v4 = parseNum(getVal(r, ["vrange4", "distance_vrange4", "19,8 - 21", "19.8 - 21", "19-21", "zona 4", "z4"]));
+        const v5 = parseNum(getVal(r, ["vrange5", "distance_vrange5", "21 - 24", "21-24", "zona 5", "z5"]));
+        const v6 = parseNum(getVal(r, ["vrange6", "distance_vrange6", "+ 24 km/h", "+24 km/h", "+24", "sprint distance", "distancia sprint", "zona 6", "z6"]));
+        const v7 = parseNum(getVal(r, ["vrange7", "distance_vrange7", "+ 28 km/h", "+28 km/h", "+28", "zona 7", "z7"]));
+        const sprints28 = parseNum(getVal(r, ["+28 km/h (num)", "+ 28 km/h (num)", "+28 km/h (nº)", "sprints_28", "sprints28"]));
+
+        let hsr = Math.round(v4 + v5 + v6);
+        const rawHsr = parseNum(getVal(r, ["hsr", "high speed running", "distancia z4", "hsr abs"]));
+        if (rawHsr > 0) hsr = Math.round(rawHsr);
+
+        let dist = Math.round(parseNum(getVal(r, ["total_distance", "total distance", "distance (m)", "distance(m)", "distancia total", "distancia", "distance"])));
+        if (dist === 0 && (v1 + v2 + v3 + v4 + v5 + v6) > 0) {
+          dist = Math.round(v1 + v2 + v3 + v4 + v5 + v6);
+        }
+
+        const speed = parseNum(getVal(r, ["max_speed", "top speed", "max speed", "velocidad maxima", "v max"]));
+        const load = Math.round(parseNum(getVal(r, ["player_load", "player load", "hmld", "load", "carga"])));
+        const sprints = Math.round(parseNum(getVal(r, ["sprints", "num_sprints", "sprint count", "+24 km/h (num)"])));
+        const acc = Math.round(parseNum(getVal(r, ["num_acc", "accs count", "aceleraciones", "acc"])));
+        const dec = Math.round(parseNum(getVal(r, ["num_dec", "decs count", "desaceleraciones", "dec"])));
+        const dur = parseNum(getVal(r, ["time", "duration", "duracion", "volume", "minutos"]));
+
+        const distMin = dur > 0 ? Math.round((dist / dur) * 100) / 100 : 0;
+        const dist21 = Math.round(v5 + v6);
+
+        return {
+          "Distance(m)": dist,
+          "Distancia Total (m)": dist,
+          "Distancia Total": dist,
+          distancia_total: dist,
+          "Distancia / Min": distMin,
+          "m/min": distMin,
+          distancia_min: distMin,
+          "15 - 16 km/h (Distancia)": v1,
+          "16 - 17 km/h (Distancia)": v2,
+          "15-16 km/h (Distancia)": v1,
+          "16-17 km/h (Distancia)": v2,
+          "1 - 8 km/h (Distancia)": v1,
+          "8 - 17 km/h (Distancia)": v2,
+          distance_vrange1: v1,
+          distance_vrange2: v2,
+          "17 - 19,8 km/h (Distancia)": v3,
+          "19,8 - 21 km/h (Distancia)": v4,
+          "21 - 24 km/h (Distancia)": v5,
+          "+ 24 km/h (Distancia)": v6,
+          "Distance +21 (m)": dist21,
+          "Distancia (+21km/h) (m)": dist21,
+          "HSR Abs (m)": hsr,
+          hsr,
+          "MAX Speed(km/h)": speed,
+          max_speed: speed,
+          "Player Load": load,
+          player_load: load,
+          "Sprints Count": sprints,
+          "+24 km/h (Num)": sprints,
+          num_sprints: sprints,
+          "+28 km/h (Distancia)": v7,
+          "+28 km/h (Num)": sprints28,
+          "Accs Count": acc,
+          aceleraciones: acc,
+          "Decs Count": dec,
+          desaceleraciones: dec,
+          "Acc+Dec": acc + dec,
+          "Duration(min)": dur,
+          duracion_min: dur,
+          vrange1: v1,
+          vrange2: v2,
+          vrange3: v3,
+          vrange4: v4,
+          vrange5: v5,
+          vrange6: v6,
+        };
+      };
+
+      const mainMetrics = buildMetrics(totalRow);
+      if (taskRows.length > 0) {
+        (mainMetrics as any).tareas = taskRows.map((tr: any) => ({
+          nombre: (getVal(tr, ["task", "tarea", "period", "split", "activity"]) || tr.task || "Tarea").trim(),
+          ...buildMetrics(tr),
+        }));
+      }
+
+      recordsToInsert.push({
+        jugador_id,
+        fecha: isoDate,
+        sesion_dia_id,
+        tipo_sesion,
+        match_day,
+        tarea: "Total",
+        duracion: mainMetrics["Duration(min)"],
+        metricas: mainMetrics,
+      });
+    }
+
+    if (recordsToInsert.length > 0) {
+      await supabase.from("gps_datos").delete().eq("fecha", isoDate).in("jugador_id", recordsToInsert.map((r: any) => r.jugador_id));
+      const { error: insErr } = await supabase.from("gps_datos").insert(recordsToInsert);
+      if (insErr) {
+        return { success: false, error: insErr.message };
+      }
+    }
+
+    return {
+      success: true,
+      date: isoDate,
+      count: recordsToInsert.length,
+      records: recordsToInsert,
+    };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function syncAllDownloadsGpsFiles() {
+  try {
+    const fs = require("fs");
+    const path = require("path");
+    const homeDir = process.env.HOME || "/Users/MiquelNadalGaya";
+    const downloadsDir = path.join(homeDir, "Downloads");
+
+    if (!fs.existsSync(downloadsDir)) {
+      return { success: false, error: "Carpeta Downloads no encontrada" };
+    }
+
+    const files = fs.readdirSync(downloadsDir);
+    const candidateFiles = files.filter((f: string) =>
+      f.endsWith(".csv") &&
+      (f.includes("total") || f.includes("HUESCA") || f.includes("entrenamiento") || f.includes("partido"))
+    );
+
     const processedDates = new Set<string>();
     let totalInserted = 0;
 
     for (const fileName of candidateFiles) {
       const filePath = path.join(downloadsDir, fileName);
       const csv = fs.readFileSync(filePath, "utf8");
-      const lines = csv.split(/\r?\n/).filter((l: string) => l.trim().length > 0);
-      if (lines.length < 2) continue;
-
-      const delim = lines[0].includes(";") ? ";" : lines[0].includes("\t") ? "\t" : ",";
-      const header = lines[0].split(delim).map((h: string) => h.trim());
-
-      const rows = lines.slice(1).map((l: string) => {
-        const parts = l.split(delim);
-        const obj: Record<string, string> = {};
-        header.forEach((h: string, i: number) => {
-          obj[h] = parts[i]?.trim() || "";
-        });
-        return obj;
-      });
-
-      const getVal = (rowObj: Record<string, string>, possibleNames: string[]): string => {
-        if (!rowObj) return "";
-        // 1. Prioridad: Coincidencia exacta de nombre de columna
-        for (const p of possibleNames) {
-          const normP = normalize(p);
-          for (const [k, v] of Object.entries(rowObj)) {
-            const normK = normalize(k);
-            if (normK === normP) {
-              if (v !== undefined && v !== null && v !== "") return String(v).trim();
-            }
-          }
-        }
-        // 2. Coincidencia parcial (evitando prefijos id_ si no se piden)
-        for (const p of possibleNames) {
-          const normP = normalize(p);
-          for (const [k, v] of Object.entries(rowObj)) {
-            const normK = normalize(k);
-            if (normK.startsWith("id ") && !normP.startsWith("id")) continue;
-            if (normK.includes(normP) || normP.includes(normK)) {
-              if (v !== undefined && v !== null && v !== "") return String(v).trim();
-            }
-          }
-        }
-        return "";
-      };
-
-      const sampleRow = rows.find((r: any) => getVal(r, ["date", "fecha", "day", "timestamp"]) || r.date || r.fecha) || rows[0];
-      const rawDate = sampleRow ? (getVal(sampleRow, ["date", "fecha", "day", "timestamp"]) || sampleRow.date || sampleRow.fecha || "") : "";
-      let isoDate = "";
-      // 1. Priorizar la fecha explícita del nombre del archivo si existe (ej: _8-11-2026_total -> 2026-11-08)
-      const fileDateM = fileName.match(/_(\d{1,2})[-/](\d{1,2})[-/](\d{4})/) || fileName.match(/(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
-      if (fileDateM) {
-        const p1 = parseInt(fileDateM[1], 10);
-        const p2 = parseInt(fileDateM[2], 10);
-        const year = fileDateM[3];
-        if (p2 === 11 || p1 === 11) {
-          const day = p1 === 11 ? p2 : p1;
-          isoDate = `${year}-11-${String(day).padStart(2, "0")}`;
-        } else if (p2 === 10 || p1 === 10) {
-          const day = p1 === 10 && p2 !== 10 ? p2 : p1;
-          isoDate = `${year}-10-${String(day).padStart(2, "0")}`;
-        } else {
-          isoDate = `${year}-${String(p2).padStart(2, "0")}-${String(p1).padStart(2, "0")}`;
-        }
-      } else if (/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
-        isoDate = rawDate;
-      } else if (rawDate.includes("/")) {
-        const dParts = rawDate.split("/");
-        if (dParts.length === 3) {
-          const p1 = parseInt(dParts[0], 10);
-          const p2 = parseInt(dParts[1], 10);
-          const p3 = parseInt(dParts[2], 10);
-          const year = p3 < 100 ? 2000 + p3 : p3;
-          if (p1 === 11 && p2 <= 30) {
-            isoDate = `${year}-11-${String(p2).padStart(2, "0")}`;
-          } else if (p2 === 11 && p1 <= 30) {
-            isoDate = `${year}-11-${String(p1).padStart(2, "0")}`;
-          } else if (p1 === 10 && p2 <= 31) {
-            isoDate = `${year}-10-${String(p2).padStart(2, "0")}`;
-          } else if (p2 === 10 && p1 <= 31) {
-            isoDate = `${year}-10-${String(p1).padStart(2, "0")}`;
-          } else {
-            isoDate = `${year}-${String(p2).padStart(2, "0")}-${String(p1).padStart(2, "0")}`;
-          }
-        }
-      }
-
-      if (!isoDate) continue;
-      processedDates.add(isoDate);
-
-      const { data: sesionDia } = await supabase
-        .from("sesiones_dia")
-        .select("id, evento_am, md, rival")
-        .eq("fecha", isoDate)
-        .maybeSingle();
-
-      const sesion_dia_id = sesionDia?.id || null;
-      const tipo_sesion = sesionDia?.rival ? "PARTIDO" : (fileName.toLowerCase().includes("partido") ? "PARTIDO" : "ENTRENAMIENTO");
-      const match_day = sesionDia?.md || (tipo_sesion === "PARTIDO" ? "MD" : null);
-
-      const playerRowsMap = new Map<string, { player: any; rows: any[] }>();
-      for (const r of rows) {
-        const pRawName = getVal(r, ["player", "jugador", "deportista", "name", "nombre", "athlete"]) || r.player || r.jugador;
-        if (!pRawName) continue;
-
-        // El 29/10/2026 el chaleco/dispositivo registrado como Teto Martín perteneció en realidad a Pol Caramés (no activo)
-        if (isoDate === "2026-10-29" && (pRawName.toLowerCase().includes("teto") || pRawName.toLowerCase().includes("carames"))) {
-          continue;
-        }
-
-        const match = matchPlayer(pRawName);
-
-        if (!match) continue;
-
-        if (!playerRowsMap.has(match.id)) {
-          playerRowsMap.set(match.id, { player: match, rows: [] });
-        }
-        playerRowsMap.get(match.id)!.rows.push(r);
-      }
-
-      const recordsToInsert: any[] = [];
-      for (const [jugador_id, { rows: pRows }] of playerRowsMap.entries()) {
-        const totalRow = pRows.find((r: any) => {
-          const t = getVal(r, ["task", "tarea", "period", "split", "activity"]) || r.task;
-          return t && t.toLowerCase() === "total";
-        }) || pRows[0];
-        const taskRows = pRows.filter((r: any) => {
-          const t = getVal(r, ["task", "tarea", "period", "split", "activity"]) || r.task;
-          return t && t.toLowerCase() !== "total";
-        });
-
-        const buildMetrics = (r: any) => {
-          const v1 = parseNum(getVal(r, ["15 - 16 km/h (distancia)", "15-16 km/h (distancia)", "15 - 16 km/h", "15-16 km/h", "15 - 16", "15-16", "vrange1", "distance_vrange1", "1 - 8 km/h", "1-8 km/h", "zona 1", "z1"]));
-          const v2 = parseNum(getVal(r, ["16 - 17 km/h (distancia)", "16-17 km/h (distancia)", "16 - 17 km/h", "16-17 km/h", "16 - 17", "16-17", "vrange2", "distance_vrange2", "8 - 17 km/h", "8-17 km/h", "zona 2", "z2"]));
-          const v3 = parseNum(getVal(r, ["vrange3", "distance_vrange3", "17 - 19,8", "17 - 19.8", "17-19,8", "zona 3", "z3"]));
-          const v4 = parseNum(getVal(r, ["vrange4", "distance_vrange4", "19,8 - 21", "19.8 - 21", "19-21", "zona 4", "z4"]));
-          const v5 = parseNum(getVal(r, ["vrange5", "distance_vrange5", "21 - 24", "21-24", "zona 5", "z5"]));
-          const v6 = parseNum(getVal(r, ["vrange6", "distance_vrange6", "+ 24 km/h", "+24 km/h", "+24", "sprint distance", "distancia sprint", "zona 6", "z6"]));
-          const v7 = parseNum(getVal(r, ["vrange7", "distance_vrange7", "+ 28 km/h", "+28 km/h", "+28", "zona 7", "z7"]));
-          const sprints28 = parseNum(getVal(r, ["+28 km/h (num)", "+ 28 km/h (num)", "+28 km/h (nº)", "sprints_28", "sprints28"]));
-
-          let hsr = Math.round(v4 + v5 + v6);
-          const rawHsr = parseNum(getVal(r, ["hsr", "high speed running", "distancia z4", "hsr abs"]));
-          if (rawHsr > 0) hsr = Math.round(rawHsr);
-
-          let dist = Math.round(parseNum(getVal(r, ["total_distance", "total distance", "distance (m)", "distance(m)", "distancia total", "distancia", "distance"])));
-          if (dist === 0 && (v1 + v2 + v3 + v4 + v5 + v6) > 0) {
-            dist = Math.round(v1 + v2 + v3 + v4 + v5 + v6);
-          }
-
-          const speed = parseNum(getVal(r, ["max_speed", "top speed", "max speed", "velocidad maxima", "v max"]));
-          const load = Math.round(parseNum(getVal(r, ["player_load", "player load", "hmld", "load", "carga"])));
-          const sprints = Math.round(parseNum(getVal(r, ["sprints", "num_sprints", "sprint count", "+24 km/h (num)"])));
-          const acc = Math.round(parseNum(getVal(r, ["num_acc", "accs count", "aceleraciones", "acc"])));
-          const dec = Math.round(parseNum(getVal(r, ["num_dec", "decs count", "desaceleraciones", "dec"])));
-          const dur = parseNum(getVal(r, ["time", "duration", "duracion", "volume", "minutos"]));
-
-          const distMin = dur > 0 ? Math.round((dist / dur) * 100) / 100 : 0;
-          const dist21 = Math.round(v5 + v6);
-
-          return {
-            "Distance(m)": dist,
-            "Distancia Total (m)": dist,
-            "Distancia Total": dist,
-            distancia_total: dist,
-            "Distancia / Min": distMin,
-            "m/min": distMin,
-            distancia_min: distMin,
-            "15 - 16 km/h (Distancia)": v1,
-            "16 - 17 km/h (Distancia)": v2,
-            "15-16 km/h (Distancia)": v1,
-            "16-17 km/h (Distancia)": v2,
-            "1 - 8 km/h (Distancia)": v1,
-            "8 - 17 km/h (Distancia)": v2,
-            distance_vrange1: v1,
-            distance_vrange2: v2,
-            "17 - 19,8 km/h (Distancia)": v3,
-            "19,8 - 21 km/h (Distancia)": v4,
-            "21 - 24 km/h (Distancia)": v5,
-            "+ 24 km/h (Distancia)": v6,
-            "Distance +21 (m)": dist21,
-            "Distancia (+21km/h) (m)": dist21,
-            "HSR Abs (m)": hsr,
-            hsr,
-            "MAX Speed(km/h)": speed,
-            max_speed: speed,
-            "Player Load": load,
-            player_load: load,
-            "Sprints Count": sprints,
-            "+24 km/h (Num)": sprints,
-            num_sprints: sprints,
-            "+28 km/h (Distancia)": v7,
-            "+28 km/h (Num)": sprints28,
-            "Accs Count": acc,
-            aceleraciones: acc,
-            "Decs Count": dec,
-            desaceleraciones: dec,
-            "Acc+Dec": acc + dec,
-            "Duration(min)": dur,
-            duracion_min: dur,
-            vrange1: v1,
-            vrange2: v2,
-            vrange3: v3,
-            vrange4: v4,
-            vrange5: v5,
-            vrange6: v6,
-          };
-        };
-
-        const mainMetrics = buildMetrics(totalRow);
-        if (taskRows.length > 0) {
-          (mainMetrics as any).tareas = taskRows.map((tr: any) => {
-            let taskName = (getVal(tr, ["task", "tarea", "period", "split", "activity"]) || tr.task || "Tarea").trim();
-            // Mapeo automático de periodos genéricos si es partido contra Zaragoza (23/10/2026)
-            if (isoDate === "2026-10-23" || fileName.toLowerCase().includes("zaragoza")) {
-              const lowerT = taskName.toLowerCase();
-              if (lowerT === "periodo 4") taskName = "ACTIVACIÓN PREPARTIDO";
-              else if (lowerT === "periodo 1") taskName = "PRIMERA PARTE";
-              else if (lowerT === "periodo 2") taskName = "SEGUNDA PARTE";
-              else if (lowerT === "periodo 3") taskName = "CARRERAS";
-            }
-            return {
-              nombre: taskName,
-              ...buildMetrics(tr),
-            };
-          });
-        }
-
-        recordsToInsert.push({
-          jugador_id,
-          fecha: isoDate,
-          sesion_dia_id,
-          tipo_sesion,
-          match_day,
-          tarea: "Total",
-          duracion: mainMetrics["Duration(min)"],
-          metricas: mainMetrics,
-        });
-      }
-
-      if (recordsToInsert.length > 0) {
-        await supabase.from("gps_datos").delete().eq("fecha", isoDate).in("jugador_id", recordsToInsert.map((r: any) => r.jugador_id));
-        const { error: insErr } = await supabase.from("gps_datos").insert(recordsToInsert);
-        if (!insErr) {
-          totalInserted += recordsToInsert.length;
-        }
+      const res = await parseAndSaveGpsCsv(csv, fileName);
+      if (res.success && res.date) {
+        processedDates.add(res.date);
+        totalInserted += res.count || 0;
       }
     }
+
+    // Actualizar archivo de respaldo sincronizado
+    try {
+      const supabase = getServerSupabase();
+      const { data: allGps } = await supabase.from("gps_datos").select("*").order("fecha", { ascending: false });
+      if (allGps && allGps.length > 0) {
+        const syncedPath = path.join(process.cwd(), "public", "gps_datos_synced.json");
+        fs.writeFileSync(syncedPath, JSON.stringify(allGps, null, 2), "utf8");
+      }
+    } catch (e) {}
 
     return {
       success: true,

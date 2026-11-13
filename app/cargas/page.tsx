@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import * as XLSX from "xlsx";
-import { fetchLiveWellnessSheet, getActiveJugadores, getAllJugadoresIncludingArchived, saveGpsDatosBatch, getAllGpsDatos, getEstadoDiarioConFechas, syncAllDownloadsGpsFiles, syncGpsDatabaseWeb, getSesionesDiaRange } from "@/app/actions";
+import { fetchLiveWellnessSheet, getActiveJugadores, getAllJugadoresIncludingArchived, saveGpsDatosBatch, getAllGpsDatos, getEstadoDiarioConFechas, syncAllDownloadsGpsFiles, syncGpsDatabaseWeb, getSesionesDiaRange, parseAndSaveGpsCsv } from "@/app/actions";
 import { getDisponibilidadInfo } from "@/app/lib/disponibilidad";
 import { useClubConfig } from "@/app/lib/useClubConfig";
 import { ExternalDatabaseLinks, DEFAULT_EXTERNAL_LINKS } from "@/app/lib/externalLinks";
@@ -843,132 +843,23 @@ function CargasContent() {
 
     try {
       const text = await file.text();
-      const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
-      if (lines.length < 2) {
-        setGpsUploadStatus({ message: "El archivo CSV no contiene datos suficientes.", isError: true });
+      const res = await parseAndSaveGpsCsv(text, file.name);
+
+      if (!res.success) {
+        setGpsUploadStatus({ message: res.error || "Error al procesar el archivo CSV de GPS.", isError: true });
         setIsGpsUploading(false);
         return;
       }
 
-      const detectDelim = (headerLine: string) => {
-        if (headerLine.includes(";")) return ";";
-        if (headerLine.includes("\t")) return "\t";
-        return ",";
-      };
-      const delim = detectDelim(lines[0]);
-
-      const parseLine = (line: string): string[] => {
-        const result: string[] = [];
-        let start = 0;
-        let inQ = false;
-        for (let i = 0; i < line.length; i++) {
-          if (line[i] === '"') inQ = !inQ;
-          else if (line[i] === delim && !inQ) {
-            let val = line.substring(start, i).trim();
-            if (val.startsWith('"') && val.endsWith('"')) val = val.slice(1, -1);
-            result.push(val);
-            start = i + 1;
-          }
-        }
-        let last = line.substring(start).trim();
-        if (last.startsWith('"') && last.endsWith('"')) last = last.slice(1, -1);
-        result.push(last);
-        return result;
-      };
-
-      const rawHeaders = parseLine(lines[0]);
-      const cleanHeaders = rawHeaders.map((h) =>
-        h.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim()
-      );
-
-      const findColIdx = (terms: string[]) => {
-        return cleanHeaders.findIndex((h) => terms.some((t) => h.includes(t)));
-      };
-
-      const nameIdx = findColIdx(["player", "jugador", "deportista", "name", "nombre", "athlete"]);
-      const dateIdx = findColIdx(["date", "fecha", "timestamp", "marca temporal", "day"]);
-      const distIdx = findColIdx(["total distance", "distancia total", "distance (m)", "dist. (m)", "distance"]);
-      const hsrIdx = findColIdx(["hsr", "high speed running", "dist. > 18", "z4 distance", "distancia alta"]);
-      const sprintDistIdx = findColIdx(["sprint distance", "dist. sprint", "dist. > 24", "z5 distance"]);
-      const sprintCountIdx = findColIdx(["sprint count", "sprints", "nº sprints", "number of sprints"]);
-      const maxSpeedIdx = findColIdx(["top speed", "max speed", "velocidad maxima", "v. max", "max velocity"]);
-      const accIdx = findColIdx(["accelerations", "aceleraciones", "acc count", "acc > 3", "high acc"]);
-      const decIdx = findColIdx(["decelerations", "desaceleraciones", "dec count", "dec < -3", "high dec"]);
-      const loadIdx = findColIdx(["player load", "carga mecanica", "load", "dynamic stress", "au"]);
-      const durationIdx = findColIdx(["duration", "minutos", "time (min)", "volume"]);
-
-      const newRecords: any[] = [];
-
-      lines.slice(1).forEach((line) => {
-        const vals = parseLine(line);
-        if (vals.length === 0 || !vals.some((v) => v.length > 0)) return;
-
-        const rawName = nameIdx !== -1 ? vals[nameIdx] : vals[0];
-        if (!rawName) return;
-
-        const match = findMatchingJugador(rawName, filteredJugadores, filteredJugadores);
-        if (!match) return;
-
-        let rDate = selectedDate;
-        if (dateIdx !== -1 && vals[dateIdx]) {
-          const parsedD = normalizeDateStr(vals[dateIdx]);
-          if (parsedD && /^\d{4}-\d{2}-\d{2}$/.test(parsedD)) {
-            rDate = parsedD;
-          }
-        }
-
-        const parseNum = (idx: number, defVal: number = 0) => {
-          if (idx === -1 || !vals[idx]) return defVal;
-          const raw = vals[idx].trim();
-          // Soporte números europeos con punto de miles y coma decimal (ej: 11.245,438 o 28,476)
-          const clean = raw.replace(/\./g, "").replace(/,/g, ".").replace(/[^0-9.-]/g, "");
-          const num = parseFloat(clean);
-          return isNaN(num) ? defVal : num;
-        };
-
-        const recordItem = {
-          id: `gps_${match.id}_${rDate}`,
-          jugador_id: match.id,
-          nombre_jugador: match.nombre,
-          fecha: rDate,
-          distancia_total: parseNum(distIdx, 6500),
-          distancia_z4: parseNum(hsrIdx, 420),
-          sprints: parseNum(sprintDistIdx, 250),
-          num_sprints: Math.round(parseNum(sprintCountIdx, 12)),
-          max_speed: parseNum(maxSpeedIdx, 27.5),
-          aceleraciones: Math.round(parseNum(accIdx, 16)),
-          desaceleraciones: Math.round(parseNum(decIdx, 16)),
-          player_load: parseNum(loadIdx, 450),
-          duracion_min: parseNum(durationIdx, 90),
-          sesion_nombre: "ENTRENAMIENTO",
-        };
-
-        newRecords.push(recordItem);
-      });
-
-      if (newRecords.length === 0) {
-        setGpsUploadStatus({ message: "No se pudieron vincular jugadores del CSV con los deportistas de la BBDD.", isError: true });
-        setIsGpsUploading(false);
-        return;
+      if (res.date) {
+        setSelectedDate(res.date);
       }
 
-      // Guardar batch en la BBDD Supabase datos_gps
-      await saveGpsDatosBatch(newRecords);
-
-      // Actualizar estado local en memoria
-      setGpsRecords((prev) => {
-        const map = new Map();
-        prev.forEach((r) => map.set(`${r.jugador_id}_${r.fecha}`, r));
-        newRecords.forEach((r) => map.set(`${r.jugador_id}_${r.fecha}`, r));
-        return Array.from(map.values());
-      });
-      try {
-        localStorage.removeItem("gps_datos_map_v1");
-      } catch {}
+      await loadDbGpsRecords();
 
       const now = new Date().toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
       setGpsUploadStatus({
-        message: `✓ ${newRecords.length} registros de GPS adjuntados y guardados en la BBDD GPS (${now})`,
+        message: `✓ ${res.count} registros de GPS guardados y sincronizados para el ${res.date} (${now})`,
         isError: false,
       });
     } catch (err: any) {
