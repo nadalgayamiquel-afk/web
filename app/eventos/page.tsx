@@ -2709,53 +2709,48 @@ export default function EventosCalendarPage() {
                 </div>
               </div>
 
-              {/* CENTRO: PROGRAMACIÓN SEMANAL + SEMANA DEL X AL Y DE MES + PARTIDO CON ESCUDO */}
+              {/* CENTRO: PROGRAMACIÓN SEMANAL + SEMANA DEL X AL Y DE MES */}
               <div style={{ textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                <div style={{ fontSize: "15px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.5px", color: "#000000", lineHeight: 1.15 }}>
+                <div style={{ fontSize: "16px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.5px", color: "#000000", lineHeight: 1.15 }}>
                   PROGRAMACIÓN SEMANAL
                 </div>
-                <div style={{ fontSize: "11.5px", fontWeight: 800, textTransform: "uppercase", color: "#000000", marginTop: "2px", lineHeight: 1.15 }}>
+                <div style={{ fontSize: "12px", fontWeight: 800, textTransform: "uppercase", color: "#000000", marginTop: "3px", lineHeight: 1.15 }}>
                   {semanaTexto}
                 </div>
-                <div style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  marginTop: "3px",
-                  fontSize: "11px",
-                  fontWeight: 800,
-                  color: "#000000",
-                }}>
-                  <span>Partido:</span>
-                  {rivalEscudoUrl && (
+              </div>
+
+              {/* LADO DERECHO: TEMPORADA ARRIBA + EL RIVAL Y SU ESCUDO A LA DERECHA DEL TODO */}
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", justifySelf: "end", minWidth: "130px" }}>
+                <div style={{ fontSize: "9.5px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.5px", color: "#475569", marginBottom: "2px", alignSelf: "flex-end" }}>
+                  TEMPORADA {clubConfig?.temporadaActiva || "2026-27"}
+                </div>
+                <div
+                  style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+                  onClick={() => {
+                    const nuevoRival = window.prompt("Modificar nombre del rival:", partitRivalText);
+                    if (nuevoRival !== null) {
+                      handleQuickUpdateRival(nuevoRival.trim());
+                    }
+                  }}
+                  title="Clic para editar el rival"
+                >
+                  {rivalEscudoUrl ? (
                     <img
                       src={rivalEscudoUrl}
-                      alt={partitRivalText}
-                      style={{ width: "20px", height: "20px", objectFit: "contain", verticalAlign: "middle" }}
+                      alt={partitRivalText || "Rival"}
+                      style={{ height: "36px", width: "36px", objectFit: "contain" }}
                       onError={(e) => {
                         (e.currentTarget as HTMLImageElement).style.display = "none";
                       }}
                     />
+                  ) : (
+                    <div style={{ height: "34px", width: "34px", borderRadius: "50%", background: "#e2e8f0", display: "grid", placeItems: "center", fontSize: "16px" }}>
+                      🛡️
+                    </div>
                   )}
-                  <span
-                    style={{ fontWeight: 900, textTransform: "uppercase", cursor: "pointer", textDecoration: "underline dotted" }}
-                    onClick={() => {
-                      const nuevoRival = window.prompt("Modificar nombre del rival:", partitRivalText);
-                      if (nuevoRival !== null) {
-                        handleQuickUpdateRival(nuevoRival.trim());
-                      }
-                    }}
-                    title="Clic para editar rápidamente el rival"
-                  >
-                    {partitRivalText || "Añadir rival..."} <span className="no-print" style={{ fontSize: "10px" }}>✏️</span>
-                  </span>
-                </div>
-              </div>
-
-              {/* LADO DERECHO: TEMPORADA ARRIBA A LA DERECHA DEL TODO */}
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", justifyContent: "flex-start", height: "100%", alignSelf: "flex-start" }}>
-                <div style={{ fontSize: "10px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.5px", color: "#000000" }}>
-                  TEMPORADA {clubConfig?.temporadaActiva || "2026-27"}
+                  <div style={{ fontSize: "11px", fontWeight: 900, textTransform: "uppercase", color: "#000000", marginTop: "2px", lineHeight: 1.1 }}>
+                    {partitRivalText || "AÑADIR RIVAL"} <span className="no-print" style={{ fontSize: "9px" }}>✏️</span>
+                  </div>
                 </div>
               </div>
             </div>
