@@ -106,6 +106,7 @@ export interface CampoEjercicio {
     tiempoDescansoSeg: number;
     tiempoTotalMin: number;
     ratioWR: string; // ej. "1:1", "2:1", "1:2"
+    pausaIncluida?: boolean; // Indica si el tiempo del ejercicio ya incluye las micro-pausas (común en GPS)
   };
 
   // Metodología & Táctica
@@ -137,6 +138,7 @@ export interface CampoSesionBloqueItem {
   series: number;
   tiempoTrabajoMin: number;
   pausaMin: number;
+  pausaIncluida?: boolean;
   tiempoTotalMin: number;
   orden: number;
 }

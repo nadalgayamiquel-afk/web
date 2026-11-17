@@ -16,9 +16,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 600,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 10,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (311 repeticiones monitorizadas con Catapult/GPS).",
@@ -58,9 +59,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 780,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 13,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (174 repeticiones monitorizadas con Catapult/GPS).",
@@ -100,9 +102,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 960,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 16,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (148 repeticiones monitorizadas con Catapult/GPS).",
@@ -142,9 +145,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 900,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 15,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (124 repeticiones monitorizadas con Catapult/GPS).",
@@ -184,9 +188,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 780,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 13,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (115 repeticiones monitorizadas con Catapult/GPS).",
@@ -226,9 +231,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 1200,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 20,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (112 repeticiones monitorizadas con Catapult/GPS).",
@@ -268,9 +274,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 900,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 15,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (97 repeticiones monitorizadas con Catapult/GPS).",
@@ -310,9 +317,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 960,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 16,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (92 repeticiones monitorizadas con Catapult/GPS).",
@@ -352,9 +360,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 1200,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 20,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (60 repeticiones monitorizadas con Catapult/GPS).",
@@ -394,9 +403,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 1140,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 19,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (60 repeticiones monitorizadas con Catapult/GPS).",
@@ -436,9 +446,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 780,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 13,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (58 repeticiones monitorizadas con Catapult/GPS).",
@@ -478,9 +489,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 840,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 14,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (52 repeticiones monitorizadas con Catapult/GPS).",
@@ -520,9 +532,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 300,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 5,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (45 repeticiones monitorizadas con Catapult/GPS).",
@@ -562,9 +575,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 1440,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 24,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (40 repeticiones monitorizadas con Catapult/GPS).",
@@ -604,9 +618,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 960,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 16,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (39 repeticiones monitorizadas con Catapult/GPS).",
@@ -646,9 +661,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 300,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 5,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (38 repeticiones monitorizadas con Catapult/GPS).",
@@ -688,9 +704,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 1020,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 17,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (38 repeticiones monitorizadas con Catapult/GPS).",
@@ -730,9 +747,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 1380,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 23,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (20 repeticiones monitorizadas con Catapult/GPS).",
@@ -772,9 +790,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 720,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 12,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (20 repeticiones monitorizadas con Catapult/GPS).",
@@ -814,9 +833,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 180,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 3,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (20 repeticiones monitorizadas con Catapult/GPS).",
@@ -856,9 +876,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 960,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 16,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (20 repeticiones monitorizadas con Catapult/GPS).",
@@ -898,9 +919,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 1080,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 18,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (20 repeticiones monitorizadas con Catapult/GPS).",
@@ -940,9 +962,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 120,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 2,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (20 repeticiones monitorizadas con Catapult/GPS).",
@@ -982,9 +1005,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 840,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 14,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (20 repeticiones monitorizadas con Catapult/GPS).",
@@ -1024,9 +1048,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 1080,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 18,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (20 repeticiones monitorizadas con Catapult/GPS).",
@@ -1066,9 +1091,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 1380,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 23,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (19 repeticiones monitorizadas con Catapult/GPS).",
@@ -1108,9 +1134,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 840,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 14,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (19 repeticiones monitorizadas con Catapult/GPS).",
@@ -1150,9 +1177,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 960,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 16,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (19 repeticiones monitorizadas con Catapult/GPS).",
@@ -1192,9 +1220,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 720,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 12,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (19 repeticiones monitorizadas con Catapult/GPS).",
@@ -1234,9 +1263,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 1440,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 24,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (19 repeticiones monitorizadas con Catapult/GPS).",
@@ -1276,9 +1306,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 900,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 15,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (18 repeticiones monitorizadas con Catapult/GPS).",
@@ -1318,9 +1349,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 960,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 16,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (18 repeticiones monitorizadas con Catapult/GPS).",
@@ -1360,9 +1392,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 960,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 16,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (17 repeticiones monitorizadas con Catapult/GPS).",
@@ -1402,9 +1435,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 960,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 16,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (11 repeticiones monitorizadas con Catapult/GPS).",
@@ -1444,9 +1478,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 480,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 8,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (11 repeticiones monitorizadas con Catapult/GPS).",
@@ -1486,9 +1521,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 660,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 11,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (10 repeticiones monitorizadas con Catapult/GPS).",
@@ -1528,9 +1564,10 @@ export const EJERCICIOS_REALES_DB: CampoEjercicio[] = [
       series: 1,
       repsPorSerie: 1,
       tiempoTrabajoSeg: 960,
-      tiempoDescansoSeg: 120,
+      tiempoDescansoSeg: 0,
       tiempoTotalMin: 16,
-      ratioWR: "3:1"
+      ratioWR: "Pausas incluidas en GPS",
+      pausaIncluida: true
     },
     consignas: {
       objetivoPrincipal: "Tarea real registrada en sesiones de campo (8 repeticiones monitorizadas con Catapult/GPS).",

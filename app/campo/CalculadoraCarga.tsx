@@ -30,6 +30,7 @@ export default function CalculadoraCarga({
       series: number;
       minutosTrabajo: number;
       pausaMin: number;
+      pausaIncluida: boolean;
       mMin: number;
       hsrMin: number;
       sprintMin: number;
@@ -40,17 +41,21 @@ export default function CalculadoraCarga({
 
   // Añadir un ejercicio a la calculadora
   const handleAddDrill = (ej: CampoEjercicio) => {
-    const trabajoMin = (ej.estructura.series * ej.estructura.tiempoTrabajoSeg) / 60;
-    const pausaMin = ((ej.estructura.series - 1) * ej.estructura.tiempoDescansoSeg) / 60;
+    const isBbdd = ej.id.startsWith("ej-bbdd-");
+    const pausaIncluida = ej.estructura.pausaIncluida !== undefined ? ej.estructura.pausaIncluida : isBbdd;
+    const durTotal = ej.estructura.tiempoTotalMin || (ej.estructura.tiempoTrabajoSeg / 60) || 10;
+    const trabajoMin = Math.round(durTotal * 10) / 10;
+    const pausaMin = pausaIncluida ? 0 : Math.round((((ej.estructura.series || 1) - 1) * (ej.estructura.tiempoDescansoSeg || 0)) / 60 * 10) / 10;
 
     const newItem = {
       id: `calc_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       ejercicioId: ej.id,
       nombre: ej.nombre,
       categoria: ej.categoria,
-      series: ej.estructura.series,
-      minutosTrabajo: Math.round(trabajoMin * 10) / 10,
-      pausaMin: Math.round(pausaMin * 10) / 10,
+      series: ej.estructura.series || 1,
+      minutosTrabajo: trabajoMin,
+      pausaMin: pausaMin,
+      pausaIncluida: pausaIncluida,
       mMin: ej.perfilGps.mMin,
       hsrMin: ej.perfilGps.hsrMin,
       sprintMin: ej.perfilGps.sprintMin,
@@ -64,7 +69,21 @@ export default function CalculadoraCarga({
   // Modificar minutos de trabajo de un ítem
   const handleUpdateItemTime = (id: string, mins: number) => {
     setSessionDrills((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, minutosTrabajo: Math.max(1, mins) } : item))
+      prev.map((item) => (item.id === id ? { ...item, minutosTrabajo: Math.max(0.5, mins) } : item))
+    );
+  };
+
+  // Modificar pausa adicional de un ítem
+  const handleUpdateItemPausa = (id: string, mins: number) => {
+    setSessionDrills((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, pausaMin: Math.max(0, mins) } : item))
+    );
+  };
+
+  // Alternar si la pausa está incluida dentro del tiempo del bloque
+  const handleTogglePausaIncluida = (id: string) => {
+    setSessionDrills((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, pausaIncluida: !item.pausaIncluida } : item))
     );
   };
 
@@ -86,7 +105,9 @@ export default function CalculadoraCarga({
     sessionDrills.forEach((d) => {
       const w = d.minutosTrabajo;
       duracionTrabajo += w;
-      duracionTotal += w + (d.pausaMin || 0);
+      // Si las pausas ya están incluidas en el tiempo de la tarea, no se añade tiempo fantasma adicional
+      const pausaExtra = d.pausaIncluida ? 0 : (d.pausaMin || 0);
+      duracionTotal += w + pausaExtra;
       distTotal += d.mMin * w;
       hsrTotal += d.hsrMin * w;
       sprintTotal += d.sprintMin * w;
@@ -95,8 +116,8 @@ export default function CalculadoraCarga({
     });
 
     return {
-      duracionTrabajo: Math.round(duracionTrabajo),
-      duracionTotal: Math.round(duracionTotal),
+      duracionTrabajo: Math.round(duracionTrabajo * 10) / 10,
+      duracionTotal: Math.round(duracionTotal * 10) / 10,
       distTotal: Math.round(distTotal),
       hsrTotal: Math.round(hsrTotal),
       sprintTotal: Math.round(sprintTotal),
@@ -371,7 +392,7 @@ export default function CalculadoraCarga({
                   }}
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
                       <span style={{ fontSize: "11px", fontWeight: 900, color: "#64748b" }}>#{idx + 1}</span>
                       <span style={{ fontSize: "12.5px", fontWeight: 800, color: "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                         {drill.nombre}
@@ -379,33 +400,79 @@ export default function CalculadoraCarga({
                       <span style={{ fontSize: "9.5px", fontWeight: 800, color: "#0284c7", background: "#e0f2fe", padding: "1px 5px", borderRadius: "4px" }}>
                         {drill.categoria}
                       </span>
+
+                      {/* Botón interactivo para alternar pausa incluida vs adicional */}
+                      <button
+                        type="button"
+                        onClick={() => handleTogglePausaIncluida(drill.id)}
+                        style={{
+                          background: drill.pausaIncluida ? "#dcfce7" : "#fef3c7",
+                          color: drill.pausaIncluida ? "#166534" : "#92400e",
+                          border: `1px solid ${drill.pausaIncluida ? "#bbf7d0" : "#fde68a"}`,
+                          padding: "1px 6px",
+                          borderRadius: "4px",
+                          fontSize: "9.5px",
+                          fontWeight: 800,
+                          cursor: "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "3px",
+                        }}
+                        title="Clic para cambiar si la pausa está incluida en el tiempo o es adicional"
+                      >
+                        <span>{drill.pausaIncluida ? "⏸️ Pausas incluidas" : "⏱️ Pausa extra:"}</span>
+                        {!drill.pausaIncluida && <span>+{drill.pausaMin}'</span>}
+                      </button>
                     </div>
 
                     <div style={{ display: "flex", gap: "10px", fontSize: "10.5px", color: "#64748b", marginTop: "3px" }}>
-                      <span>Dist: {Math.round(drill.mMin * drill.minutosTrabajo)}m</span>
-                      <span>HSR: {Math.round(drill.hsrMin * drill.minutosTrabajo)}m</span>
-                      <span>Sprint: {Math.round(drill.sprintMin * drill.minutosTrabajo)}m</span>
-                      <span>Acc: {Math.round(drill.accMin * drill.minutosTrabajo)}</span>
+                      <span>Dist: <strong>{Math.round(drill.mMin * drill.minutosTrabajo)}m</strong></span>
+                      <span>HSR: <strong>{Math.round(drill.hsrMin * drill.minutosTrabajo)}m</strong></span>
+                      <span>Sprint: <strong>{Math.round(drill.sprintMin * drill.minutosTrabajo)}m</strong></span>
+                      <span>Acc: <strong>{Math.round(drill.accMin * drill.minutosTrabajo)}</strong></span>
+                      <span>PL: <strong>{Math.round(drill.playerLoadMin * drill.minutosTrabajo)}</strong></span>
                     </div>
                   </div>
 
-                  {/* AJUSTE DE TIEMPO DIRECTO */}
+                  {/* AJUSTE DE TIEMPO Y PAUSA */}
                   <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "3px" }}>
-                      <input
-                        type="number"
-                        min={1}
-                        max={60}
-                        value={drill.minutosTrabajo}
-                        onChange={(e) => handleUpdateItemTime(drill.id, Number(e.target.value))}
-                        style={{ width: "45px", padding: "4px", borderRadius: "5px", border: "1px solid #cbd5e1", fontSize: "12px", fontWeight: 800, textAlign: "center" }}
-                      />
-                      <span style={{ fontSize: "11px", fontWeight: 700, color: "#475569" }}>min</span>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "2px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "3px" }}>
+                        <input
+                          type="number"
+                          min={0.5}
+                          step={0.5}
+                          max={90}
+                          value={drill.minutosTrabajo}
+                          onChange={(e) => handleUpdateItemTime(drill.id, Number(e.target.value))}
+                          style={{ width: "48px", padding: "4px", borderRadius: "5px", border: "1px solid #cbd5e1", fontSize: "12px", fontWeight: 800, textAlign: "center" }}
+                          title="Minutos totales de la tarea"
+                        />
+                        <span style={{ fontSize: "11px", fontWeight: 700, color: "#475569" }}>min</span>
+                      </div>
+
+                      {!drill.pausaIncluida && (
+                        <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
+                          <span style={{ fontSize: "9px", color: "#92400e", fontWeight: 700 }}>Pausa:</span>
+                          <input
+                            type="number"
+                            min={0}
+                            step={0.5}
+                            max={30}
+                            value={drill.pausaMin}
+                            onChange={(e) => handleUpdateItemPausa(drill.id, Number(e.target.value))}
+                            style={{ width: "40px", padding: "2px 4px", borderRadius: "4px", border: "1px solid #fde68a", fontSize: "10px", fontWeight: 800, textAlign: "center", background: "#fffbeb" }}
+                            title="Pausa adicional en minutos"
+                          />
+                          <span style={{ fontSize: "9px", color: "#92400e" }}>m</span>
+                        </div>
+                      )}
                     </div>
 
                     <button
                       type="button"
                       onClick={() => handleRemoveItem(drill.id)}
+                      title="Quitar ejercicio"
                       style={{ background: "#fee2e2", border: "none", color: "#dc2626", borderRadius: "5px", width: "24px", height: "24px", cursor: "pointer", fontWeight: 900, fontSize: "12px" }}
                     >
                       ✕

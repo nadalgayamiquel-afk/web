@@ -46,6 +46,7 @@ export default function EjercicioModal({
   const [repsPorSerie, setRepsPorSerie] = useState<number>(ejercicio?.estructura.repsPorSerie || 1);
   const [tiempoTrabajoSeg, setTiempoTrabajoSeg] = useState<number>(ejercicio?.estructura.tiempoTrabajoSeg || 240); // 4 min
   const [tiempoDescansoSeg, setTiempoDescansoSeg] = useState<number>(ejercicio?.estructura.tiempoDescansoSeg || 90); // 1.5 min
+  const [pausaIncluida, setPausaIncluida] = useState<boolean>(ejercicio?.estructura.pausaIncluida || false);
 
   // Consignas
   const [objetivoPrincipal, setObjetivoPrincipal] = useState(ejercicio?.consignas.objetivoPrincipal || "Conservación y progresión del balón");
@@ -75,10 +76,12 @@ export default function EjercicioModal({
   const m2PorJugador = totalJugadores > 0 ? Math.round(m2Totales / totalJugadores) : m2Totales;
 
   const tiempoTotalTrabajoMin = (series * repsPorSerie * tiempoTrabajoSeg) / 60;
-  const tiempoTotalPausaMin = ((series * repsPorSerie - 1) * tiempoDescansoSeg) / 60;
+  const tiempoTotalPausaMin = pausaIncluida ? 0 : ((series * repsPorSerie - 1) * tiempoDescansoSeg) / 60;
   const tiempoTotalMin = Math.round((tiempoTotalTrabajoMin + tiempoTotalPausaMin) * 10) / 10;
 
-  const ratioWR = tiempoDescansoSeg > 0
+  const ratioWR = pausaIncluida
+    ? "Pausas incluidas"
+    : tiempoDescansoSeg > 0
     ? `${(tiempoTrabajoSeg / tiempoDescansoSeg).toFixed(1)}:1`
     : "1:0";
 
@@ -118,9 +121,10 @@ export default function EjercicioModal({
         series,
         repsPorSerie,
         tiempoTrabajoSeg,
-        tiempoDescansoSeg,
+        tiempoDescansoSeg: pausaIncluida ? 0 : tiempoDescansoSeg,
         tiempoTotalMin,
         ratioWR,
+        pausaIncluida,
       },
       consignas: {
         objetivoPrincipal,
@@ -492,6 +496,19 @@ export default function EjercicioModal({
                     <div style={{ fontSize: "10px", fontWeight: 800, color: "#1e40af", textTransform: "uppercase" }}>Tiempo Total</div>
                     <div style={{ fontSize: "16px", fontWeight: 900, color: "#2563eb" }}>{tiempoTotalMin} min</div>
                   </div>
+                </div>
+
+                <div style={{ marginTop: "10px", background: "#f8fafc", padding: "8px 12px", borderRadius: "8px", border: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: "8px" }}>
+                  <input
+                    type="checkbox"
+                    id="pausaIncluidaCheck"
+                    checked={pausaIncluida}
+                    onChange={(e) => setPausaIncluida(e.target.checked)}
+                    style={{ cursor: "pointer", width: "16px", height: "16px" }}
+                  />
+                  <label htmlFor="pausaIncluidaCheck" style={{ fontSize: "11.5px", fontWeight: 800, color: "#1e293b", cursor: "pointer" }}>
+                    ⏸️ Las pausas / descansos ya están incluidos en la duración de la tarea (habitual en mediciones GPS)
+                  </label>
                 </div>
               </div>
             </div>
