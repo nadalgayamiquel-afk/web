@@ -17,6 +17,8 @@ export default function CalculadoraCarga({
   onExportToSesion,
 }: CalculadoraCargaProps) {
   const [selectedMd, setSelectedMd] = useState<string>("MD-4");
+  const [filterQuery, setFilterQuery] = useState<string>("");
+  const [filterCat, setFilterCat] = useState<string>("todas");
 
   // Lista de ejercicios seleccionados en la calculadora con sus minutos y series
   const [sessionDrills, setSessionDrills] = useState<
@@ -423,63 +425,172 @@ export default function CalculadoraCarga({
             border: "1px solid #e2e8f0",
             padding: "16px",
             boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-            maxHeight: "500px",
+            maxHeight: "600px",
             display: "flex",
             flexDirection: "column",
           }}
         >
           <div style={{ marginBottom: "10px" }}>
-            <h4 style={{ fontSize: "13px", fontWeight: 900, color: "#0f172a", margin: "0 0 2px 0", textTransform: "uppercase" }}>
-              📚 Ejercicios Disponibles ({ejerciciosDB.length})
-            </h4>
-            <p style={{ fontSize: "11px", color: "#64748b", margin: 0 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h4 style={{ fontSize: "13px", fontWeight: 900, color: "#0f172a", margin: 0, textTransform: "uppercase" }}>
+                📚 Ejercicios Disponibles ({ejerciciosDB.length})
+              </h4>
+              <span style={{ fontSize: "10px", fontWeight: 800, color: "#16a34a", background: "#dcfce7", padding: "2px 6px", borderRadius: "999px" }}>
+                📡 BBDD GPS
+              </span>
+            </div>
+            <p style={{ fontSize: "11px", color: "#64748b", margin: "2px 0 8px" }}>
               Haz clic en ➕ para añadir a la sesión calculada.
             </p>
+
+            {/* Input búsqueda */}
+            <div style={{ position: "relative", marginBottom: "8px" }}>
+              <input
+                type="text"
+                value={filterQuery}
+                onChange={(e) => setFilterQuery(e.target.value)}
+                placeholder="🔍 Filtrar por nombre (ej. rondo, jdp, oleadas...)"
+                style={{
+                  width: "100%",
+                  padding: "6px 10px",
+                  borderRadius: "6px",
+                  border: "1px solid #cbd5e1",
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  outline: "none",
+                  boxSizing: "border-box",
+                }}
+              />
+              {filterQuery && (
+                <button
+                  type="button"
+                  onClick={() => setFilterQuery("")}
+                  style={{
+                    position: "absolute",
+                    right: "6px",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    background: "none",
+                    border: "none",
+                    fontSize: "11px",
+                    cursor: "pointer",
+                    color: "#94a3b8",
+                  }}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            {/* Filtros rápidos de categoría */}
+            <div style={{ display: "flex", gap: "4px", overflowX: "auto", paddingBottom: "4px" }}>
+              {[
+                { id: "todas", label: "Todas" },
+                { id: "bbdd", label: "📡 BBDD Real" },
+                { id: "RONDO", label: "Rondos" },
+                { id: "POSESION", label: "JDP" },
+                { id: "SSG_REDUCIDO", label: "Reducidos" },
+                { id: "TRANSICION", label: "Oleadas" },
+                { id: "CALENTAMIENTO", label: "Activación" },
+                { id: "FINALIZACION", label: "Finalización" },
+                { id: "ABP", label: "ABP" },
+                { id: "FISICO_TECNICO", label: "Físico" },
+              ].map((c) => {
+                const isSel = filterCat === c.id;
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => setFilterCat(c.id)}
+                    style={{
+                      padding: "2px 6px",
+                      borderRadius: "4px",
+                      border: "none",
+                      background: isSel ? "#0284c7" : "#f1f5f9",
+                      color: isSel ? "#ffffff" : "#475569",
+                      fontSize: "9.5px",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {c.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "6px" }}>
-            {ejerciciosDB.map((ej) => (
-              <div
-                key={ej.id}
-                style={{
-                  background: "#f8fafc",
-                  border: "1px solid #e2e8f0",
-                  borderRadius: "6px",
-                  padding: "8px 10px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: "6px",
-                }}
-              >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: "11.5px", fontWeight: 800, color: "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {ej.nombre}
-                  </div>
-                  <div style={{ fontSize: "10px", color: "#64748b" }}>
-                    {ej.categoria} · {ej.perfilGps.mMin} m/min · {ej.perfilGps.hsrMin} HSR/min
-                  </div>
-                </div>
+            {ejerciciosDB
+              .filter((ej) => {
+                if (filterCat === "bbdd") {
+                  if (!ej.id.startsWith("ej-bbdd-")) return false;
+                } else if (filterCat !== "todas" && ej.categoria !== filterCat) {
+                  return false;
+                }
+                if (filterQuery.trim()) {
+                  const q = filterQuery.toLowerCase();
+                  return (
+                    ej.nombre.toLowerCase().includes(q) ||
+                    (ej.subcategoria || "").toLowerCase().includes(q) ||
+                    ej.categoria.toLowerCase().includes(q)
+                  );
+                }
+                return true;
+              })
+              .map((ej) => {
+                const isBbdd = ej.id.startsWith("ej-bbdd-");
+                return (
+                  <div
+                    key={ej.id}
+                    style={{
+                      background: isBbdd ? "#f0fdf4" : "#f8fafc",
+                      border: `1px solid ${isBbdd ? "#bbf7d0" : "#e2e8f0"}`,
+                      borderRadius: "6px",
+                      padding: "8px 10px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "6px",
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        <span style={{ fontSize: "11.5px", fontWeight: 800, color: "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {ej.nombre}
+                        </span>
+                        {isBbdd && (
+                          <span style={{ fontSize: "8.5px", fontWeight: 900, color: "#166534", background: "#dcfce7", padding: "1px 4px", borderRadius: "3px" }}>
+                            BBDD
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: "9.5px", color: "#64748b", marginTop: "1px" }}>
+                        {ej.categoria} · <strong>{ej.perfilGps.mMin} m/min</strong> · HSR: {ej.perfilGps.hsrMin} · Acc: {ej.perfilGps.accMin} · PL: {ej.perfilGps.playerLoadMin}
+                      </div>
+                    </div>
 
-                <button
-                  type="button"
-                  onClick={() => handleAddDrill(ej)}
-                  style={{
-                    background: "#0284c7",
-                    color: "#ffffff",
-                    border: "none",
-                    borderRadius: "5px",
-                    padding: "4px 8px",
-                    fontSize: "11px",
-                    fontWeight: 800,
-                    cursor: "pointer",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  ➕ Añadir
-                </button>
-              </div>
-            ))}
+                    <button
+                      type="button"
+                      onClick={() => handleAddDrill(ej)}
+                      style={{
+                        background: "#0284c7",
+                        color: "#ffffff",
+                        border: "none",
+                        borderRadius: "5px",
+                        padding: "5px 9px",
+                        fontSize: "11px",
+                        fontWeight: 800,
+                        cursor: "pointer",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      ➕ Añadir
+                    </button>
+                  </div>
+                );
+              })}
           </div>
         </div>
       </div>

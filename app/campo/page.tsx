@@ -15,6 +15,7 @@ import SesionFichaManager from "./SesionFichaManager";
 import CalculadoraCarga from "./CalculadoraCarga";
 import SesionGpsAnalysis from "./SesionGpsAnalysis";
 import { getActiveJugadores } from "@/app/actions";
+import { EJERCICIOS_REALES_DB } from "./ejercicios-reales-db";
 
 const EJERCICIOS_STORAGE_KEY = "campo_ejercicios_v1";
 const SESIONES_STORAGE_KEY = "campo_sesiones_v1";
@@ -211,6 +212,8 @@ const EJERCICIOS_DEFAULT: CampoEjercicio[] = [
   },
 ];
 
+const ALL_INITIAL_EJERCICIOS: CampoEjercicio[] = [...EJERCICIOS_DEFAULT, ...EJERCICIOS_REALES_DB];
+
 export default function CampoPage() {
   const [activeTab, setActiveTab] = useState<"ejercicios" | "sesion" | "calculadora" | "gps">("ejercicios");
   const [ejercicios, setEjercicios] = useState<CampoEjercicio[]>([]);
@@ -239,14 +242,23 @@ export default function CampoPage() {
       if (storedEj) {
         const parsed = JSON.parse(storedEj);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          setEjercicios(parsed);
+          // Aseguramos que los 37 ejercicios reales de BBDD estén disponibles
+          const existingIds = new Set(parsed.map((e: any) => e.id));
+          const missingBbdd = EJERCICIOS_REALES_DB.filter((e) => !existingIds.has(e.id));
+          if (missingBbdd.length > 0) {
+            const merged = [...parsed, ...missingBbdd];
+            setEjercicios(merged);
+            localStorage.setItem(EJERCICIOS_STORAGE_KEY, JSON.stringify(merged));
+          } else {
+            setEjercicios(parsed);
+          }
         } else {
-          setEjercicios(EJERCICIOS_DEFAULT);
-          localStorage.setItem(EJERCICIOS_STORAGE_KEY, JSON.stringify(EJERCICIOS_DEFAULT));
+          setEjercicios(ALL_INITIAL_EJERCICIOS);
+          localStorage.setItem(EJERCICIOS_STORAGE_KEY, JSON.stringify(ALL_INITIAL_EJERCICIOS));
         }
       } else {
-        setEjercicios(EJERCICIOS_DEFAULT);
-        localStorage.setItem(EJERCICIOS_STORAGE_KEY, JSON.stringify(EJERCICIOS_DEFAULT));
+        setEjercicios(ALL_INITIAL_EJERCICIOS);
+        localStorage.setItem(EJERCICIOS_STORAGE_KEY, JSON.stringify(ALL_INITIAL_EJERCICIOS));
       }
 
       const storedSes = localStorage.getItem(SESIONES_STORAGE_KEY);
@@ -255,7 +267,7 @@ export default function CampoPage() {
       }
     } catch (err) {
       console.error("Error al cargar de localStorage en /campo:", err);
-      setEjercicios(EJERCICIOS_DEFAULT);
+      setEjercicios(ALL_INITIAL_EJERCICIOS);
     }
   }, []);
 
@@ -387,7 +399,11 @@ export default function CampoPage() {
   // Filtrado de ejercicios
   const filteredEjercicios = useMemo(() => {
     return ejercicios.filter((ej) => {
-      if (filterCategoria !== "todas" && ej.categoria !== filterCategoria) return false;
+      if (filterCategoria === "bbdd") {
+        if (!ej.id.startsWith("ej-bbdd-")) return false;
+      } else if (filterCategoria !== "todas" && ej.categoria !== filterCategoria) {
+        return false;
+      }
       if (filterMd !== "todos") {
         const sub = (ej.subcategoria || "").toUpperCase();
         if (!sub.includes(filterMd.toUpperCase())) return false;
@@ -480,8 +496,38 @@ export default function CampoPage() {
           </div>
         </div>
 
-        {/* BOTÓN CREAR EJERCICIO DIRECTO */}
+        {/* BOTONES DE ACCIÓN SUPERIOR */}
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <button
+            type="button"
+            onClick={() => {
+              const currentCustom = ejercicios.filter((e) => !e.id.startsWith("ej-bbdd-") && !e.id.startsWith("ej-def-"));
+              const updated = [...currentCustom, ...ALL_INITIAL_EJERCICIOS];
+              setEjercicios(updated);
+              if (typeof window !== "undefined") {
+                localStorage.setItem(EJERCICIOS_STORAGE_KEY, JSON.stringify(updated));
+              }
+              alert(`¡Sincronizadas ${EJERCICIOS_REALES_DB.length} tareas reales desde la base de datos de dispositivos GPS!`);
+            }}
+            style={{
+              padding: "8px 14px",
+              borderRadius: "8px",
+              border: "1px solid #bbf7d0",
+              background: "#f0fdf4",
+              color: "#166534",
+              fontSize: "12px",
+              fontWeight: 800,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+            }}
+            title="Recargar ejercicios y métricas extraídas directamente de las sesiones GPS reales de la BBDD"
+          >
+            <span>📡</span>
+            <span>Recargar BBDD GPS ({EJERCICIOS_REALES_DB.length})</span>
+          </button>
+
           <button
             type="button"
             onClick={() => {
@@ -646,6 +692,7 @@ export default function CampoPage() {
                   }}
                 >
                   <option value="todas">Todas las categorías ({ejercicios.length})</option>
+                  <option value="bbdd">📡 Solo Ejercicios BBDD GPS ({ejercicios.filter((e) => e.id.startsWith("ej-bbdd-")).length})</option>
                   {CATEGORIAS_LIST.map((cat) => (
                     <option key={cat.id} value={cat.id}>
                       {cat.icon} {cat.label}
