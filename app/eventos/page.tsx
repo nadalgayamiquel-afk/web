@@ -1072,13 +1072,9 @@ export default function EventosCalendarPage() {
     if (cat === "gimnasio" || /GYM|GIMNASIO|FUERZA|COADYUVANTE|COP/i.test(all)) {
       return { bg: "#9bc55b", text: "#000000", border: "#7ea647" };
     }
-    // Entrenamiento
+    // Entrenamiento / Campo (todos con el mismo color naranja unificado)
     if (cat === "entrenamiento" || /ENTRENA|CAMPO|TACTICA|RECUP/i.test(all)) {
-      // Can Dragó un tono más claro como en la plantilla
-      if (/DRAG[OÓ]/i.test(lug + orient + com)) {
-        return { bg: "#fce4d6", text: "#000000", border: "#de9b6b" };
-      }
-      return { bg: "#f4b183", text: "#000000", border: "#de9b6b" }; // Warm peach/orange
+      return { bg: "#f4b183", text: "#000000", border: "#de9b6b" };
     }
     // Readaptación (lila pastel)
     if (cat === "readaptacion" || /READAPT|RED/i.test(all)) {
@@ -1105,11 +1101,12 @@ export default function EventosCalendarPage() {
         subTitle = lug || orient || com || "Aeroport del Prat";
       }
     } else if (/video|vídeo|charla/i.test(name + " " + code) || code.startsWith("VD") || ev.tipoCat === "charla") {
-      let extra = orient || com;
+      let extra = (orient || com).trim();
       if (!extra && /^(?:VD|VIDEO|VÍDEO)\s+(.+)$/i.test(code + " " + name)) {
         extra = (code + " " + name).match(/^(?:VD|VIDEO|VÍDEO)\s+(.+)$/i)?.[1] || "";
       }
-      mainTitle = extra ? `VIDEO ${extra.toUpperCase().trim()}` : "VIDEO";
+      extra = extra.replace(/^(?:VD|VIDEO|VÍDEO)\s*/i, "").trim();
+      mainTitle = extra ? `VIDEO ${extra.toUpperCase()}` : "VIDEO";
     } else if (/gym|gimnasio|fuerza|coadyuvante/i.test(name + " " + code) || code === "GYM") {
       mainTitle = "GYM GRUPAL";
       if (lug) subTitle = lug.toUpperCase();
