@@ -1104,9 +1104,12 @@ export default function EventosCalendarPage() {
       if (/aeroport|aeropuerto|viaje/i.test(lug + " " + orient + " " + com)) {
         subTitle = lug || orient || com || "Aeroport del Prat";
       }
-    } else if (/video|vídeo|charla/i.test(name + " " + code) || code === "VD") {
-      const extra = orient || com;
-      mainTitle = extra ? `VIDEO ${extra.toUpperCase()}` : "VIDEO";
+    } else if (/video|vídeo|charla/i.test(name + " " + code) || code.startsWith("VD") || ev.tipoCat === "charla") {
+      let extra = orient || com;
+      if (!extra && /^(?:VD|VIDEO|VÍDEO)\s+(.+)$/i.test(code + " " + name)) {
+        extra = (code + " " + name).match(/^(?:VD|VIDEO|VÍDEO)\s+(.+)$/i)?.[1] || "";
+      }
+      mainTitle = extra ? `VIDEO ${extra.toUpperCase().trim()}` : "VIDEO";
     } else if (/gym|gimnasio|fuerza|coadyuvante/i.test(name + " " + code) || code === "GYM") {
       mainTitle = "GYM GRUPAL";
       if (lug) subTitle = lug.toUpperCase();
@@ -3990,8 +3993,33 @@ export default function EventosCalendarPage() {
               </div>
 
               <div>
-                <label style={{ fontWeight: 800, display: "block", marginBottom: "3px" }}>Orientación Táctica / Notas de Sesión:</label>
-                <input type="text" value={formOrientacion} onChange={(e) => setFormOrientacion(e.target.value)} placeholder="ej. Salida de presión y 5v5" style={{ width: "100%", padding: "6px", border: "1px solid #cbd5e1", borderRadius: "6px" }} />
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "3px" }}>
+                  <label style={{ fontWeight: 800 }}>Orientación Táctica / Notas de Sesión:</label>
+                  {(formTipoCat === "charla" || /VD|VIDEO/i.test(formCodigo)) && (
+                    <div style={{ display: "flex", gap: "4px" }}>
+                      {["ABP", "RIVAL", "PROPIO", "INDIVIDUAL"].map((tag) => (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => setFormOrientacion(tag)}
+                          style={{
+                            background: formOrientacion.toUpperCase() === tag ? "#1e3a8a" : "#f1f5f9",
+                            color: formOrientacion.toUpperCase() === tag ? "#ffffff" : "#475569",
+                            border: "1px solid #cbd5e1",
+                            borderRadius: "4px",
+                            padding: "1px 5px",
+                            fontSize: "9.5px",
+                            fontWeight: 800,
+                            cursor: "pointer",
+                          }}
+                        >
+                          {tag}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <input type="text" value={formOrientacion} onChange={(e) => setFormOrientacion(e.target.value)} placeholder="ej. ABP, RIVAL, Salida de presión..." style={{ width: "100%", padding: "6px", border: "1px solid #cbd5e1", borderRadius: "6px" }} />
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
