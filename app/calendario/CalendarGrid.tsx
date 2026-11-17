@@ -2253,13 +2253,6 @@ export function CalendarGrid({
         }, 120);
       }
 
-      // Si se asigna un evento de Vídeo (VD, Video, etc.) y no tiene orientación, preguntar por la Orientación (ABP, RIVAL...)
-      if (fieldKey === "tipo" && isVideoCode(value) && !newBlock.orientacion) {
-        setTimeout(() => {
-          openVdConfigModal(dayId, fecha, slotIdx);
-        }, 120);
-      }
-
       currentBlockSnapshot = newBlock;
 
       const updatedMap = {
@@ -2669,46 +2662,6 @@ export function CalendarGrid({
     }
 
     setPaConfigModalData(null);
-  };
-
-  // Modal interactivo para configurar Orientación al poner un evento VD (Vídeo)
-  type VdConfigModalData = {
-    dayId: string;
-    fecha: string;
-    slotIdx: number;
-    orientacion: string;
-  };
-
-  const [vdConfigModalData, setVdConfigModalData] = useState<VdConfigModalData | null>(null);
-
-  const openVdConfigModal = useCallback((dayId: string, fecha: string, slotIdx: number) => {
-    const key = `${dayId}_slot_${slotIdx}`;
-    const keyFecha = `${fecha}_slot_${slotIdx}`;
-    const ev = eventosBloquesMap[key] || eventosBloquesMap[keyFecha];
-
-    setVdConfigModalData({
-      dayId,
-      fecha,
-      slotIdx,
-      orientacion: ev?.orientacion || "ABP",
-    });
-  }, [eventosBloquesMap]);
-
-  const handleSaveVdConfigModal = (selectedOri?: string) => {
-    if (!vdConfigModalData) return;
-    const { dayId, fecha, slotIdx, orientacion } = vdConfigModalData;
-    const finalOri = (selectedOri !== undefined ? selectedOri : orientacion).trim().toUpperCase();
-
-    // Actualizar bloque de evento (tipo VD y orientación)
-    handleEventoBlockUpdate(dayId, fecha, slotIdx, "tipo", "VD");
-    handleEventoBlockUpdate(dayId, fecha, slotIdx, "orientacion", finalOri);
-
-    if (slotIdx < 6) {
-      const eventoKey = `evento_${slotIdx + 1}` as keyof SesionDia;
-      handleCellUpdate(dayId, eventoKey, "VD");
-    }
-
-    setVdConfigModalData(null);
   };
 
   // Obtener eventos activos de un día ordenados por hora y resolver sus códigos asignados (ej. Co1, Co2, Op)
@@ -5064,40 +5017,7 @@ export function CalendarGrid({
                         }}
                       />
 
-                      {isVideoCode(currentVal) && (
-                        <button
-                          type="button"
-                          onMouseDown={(e) => e.stopPropagation()}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openVdConfigModal(d.id, d.fecha, eventoIdx);
-                          }}
-                          title={`Vídeo: ${evBlock?.orientacion ? `VIDEO ${evBlock.orientacion}` : "Vídeo"}. Clic para editar orientación (ABP, RIVAL...).`}
-                          style={{
-                            position: "absolute",
-                            top: "2px",
-                            right: isMatchCode(currentVal) ? "22px" : "2px",
-                            background: "#fef9c3",
-                            border: "1px solid #fde047",
-                            borderRadius: "3px",
-                            fontSize: "9px",
-                            lineHeight: 1,
-                            padding: "1px 2px",
-                            cursor: "pointer",
-                            color: "#854d0e",
-                            zIndex: 10,
-                            boxShadow: "0 1px 2px rgba(0,0,0,0.1)",
-                          }}
-                        >
-                          📹
-                        </button>
-                      )}
 
-                      {evBlock?.orientacion && isVideoCode(currentVal) && (
-                        <div style={{ fontSize: "8.5px", fontWeight: 900, color: "#854d0e", marginTop: "-3px", textTransform: "uppercase", letterSpacing: "0.2px" }}>
-                          {evBlock.orientacion}
-                        </div>
-                      )}
 
                       {isCorner && (
                         <div
@@ -6620,40 +6540,7 @@ export function CalendarGrid({
                                   </button>
                                 )}
 
-                                {isVideoCode(ev.tipo) && (
-                                  <button
-                                    type="button"
-                                    onMouseDown={(e) => e.stopPropagation()}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      openVdConfigModal(d.id, d.fecha, slotIdx);
-                                    }}
-                                    title={`Vídeo: ${ev.orientacion ? `VIDEO ${ev.orientacion}` : "Vídeo"}. Clic para editar orientación (ABP, RIVAL...).`}
-                                    style={{
-                                      position: "absolute",
-                                      top: "2px",
-                                      right: isMatchCode(ev.tipo) ? "22px" : "2px",
-                                      background: "#fef9c3",
-                                      border: "1px solid #fde047",
-                                      borderRadius: "3px",
-                                      fontSize: "9px",
-                                      lineHeight: 1,
-                                      padding: "1px 2px",
-                                      cursor: "pointer",
-                                      color: "#854d0e",
-                                      zIndex: 10,
-                                      boxShadow: "0 1px 2px rgba(0,0,0,0.1)",
-                                    }}
-                                  >
-                                    📹
-                                  </button>
-                                )}
 
-                                {ev.orientacion && isVideoCode(ev.tipo) && (
-                                  <div style={{ fontSize: "8.5px", fontWeight: 900, color: "#854d0e", marginTop: "-3px", textTransform: "uppercase", letterSpacing: "0.2px" }}>
-                                    {ev.orientacion}
-                                  </div>
-                                )}
 
                                 {isCorner && (
                                   <div
@@ -8759,10 +8646,6 @@ export function CalendarGrid({
                   setTimeout(() => {
                     openPaConfigModal(targetDayId, targetFecha, targetSlot);
                   }, 120);
-                } else if (isVideoCode(codeToSave) && !orientToSave) {
-                  setTimeout(() => {
-                    openVdConfigModal(targetDayId, targetFecha, targetSlot);
-                  }, 120);
                 }
               }}
               style={{
@@ -9103,157 +8986,7 @@ export function CalendarGrid({
         </div>
       )}
 
-      {/* MODAL PARA PREGUNTAR POR LA ORIENTACIÓN DEL VÍDEO (ABP, RIVAL, PROPIO, ETC.) */}
-      {vdConfigModalData && (
-        <div
-          className="no-print"
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            width: "100vw",
-            height: "100vh",
-            background: "rgba(15, 23, 42, 0.65)",
-            backdropFilter: "blur(4px)",
-            zIndex: 99999,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "16px",
-          }}
-          onClick={() => setVdConfigModalData(null)}
-        >
-          <div
-            style={{
-              background: "#ffffff",
-              borderRadius: "16px",
-              padding: "24px",
-              width: "100%",
-              maxWidth: "460px",
-              boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.35)",
-              border: "1px solid #cbd5e1",
-              animation: "fadeIn 0.2s ease",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* CABECERA */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px", borderBottom: "1px solid #e2e8f0", paddingBottom: "12px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <span style={{ fontSize: "24px", background: "#fef9c3", border: "1px solid #fde047", padding: "6px 8px", borderRadius: "10px" }}>
-                  📹
-                </span>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 900, color: "#0f172a" }}>
-                    Configurar Vídeo (VD)
-                  </h3>
-                  <p style={{ margin: "2px 0 0", fontSize: "11.5px", color: "#64748b", fontWeight: 700 }}>
-                    {formatDiaCorto(vdConfigModalData.fecha)} · Bloque #{vdConfigModalData.slotIdx + 1}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setVdConfigModalData(null)}
-                style={{ background: "transparent", border: "none", fontSize: "18px", cursor: "pointer", color: "#64748b" }}
-              >
-                ✕
-              </button>
-            </div>
 
-            {/* OPCIONES DE ORIENTACIÓN RÁPIDAS */}
-            <div style={{ marginBottom: "18px" }}>
-              <label style={{ display: "block", fontSize: "12px", fontWeight: 800, color: "#1e293b", marginBottom: "8px" }}>
-                Selecciona la Orientación del Vídeo:
-              </label>
-
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "8px", marginBottom: "12px" }}>
-                {[
-                  { id: "ABP", label: "VIDEO ABP", sub: "Balón parado", icon: "🎯", color: "#b91c1c", bg: "#fef2f2", border: "#fecaca" },
-                  { id: "RIVAL", label: "VIDEO RIVAL", sub: "Análisis rival", icon: "🔍", color: "#1d4ed8", bg: "#eff6ff", border: "#bfdbfe" },
-                  { id: "PROPIO", label: "VIDEO PROPIO", sub: "Modelo propio", icon: "🛡️", color: "#15803d", bg: "#f0fdf4", border: "#bbf7d0" },
-                  { id: "INDIVIDUAL", label: "VIDEO INDIVIDUAL", sub: "Por líneas/jugador", icon: "👤", color: "#6b21a8", bg: "#faf5ff", border: "#e9d5ff" },
-                ].map((item) => {
-                  const isSelected = vdConfigModalData.orientacion.toUpperCase() === item.id;
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => {
-                        handleSaveVdConfigModal(item.id);
-                      }}
-                      style={{
-                        padding: "10px 10px",
-                        borderRadius: "10px",
-                        border: `2px solid ${isSelected ? item.color : item.border}`,
-                        background: isSelected ? item.bg : "#ffffff",
-                        color: item.color,
-                        cursor: "pointer",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "8px",
-                        textAlign: "left",
-                        boxShadow: isSelected ? "0 2px 4px rgba(0,0,0,0.06)" : "none",
-                        transition: "all 0.15s ease",
-                      }}
-                    >
-                      <span style={{ fontSize: "20px" }}>{item.icon}</span>
-                      <div style={{ display: "flex", flexDirection: "column" }}>
-                        <span style={{ fontSize: "12px", fontWeight: 900 }}>{item.label}</span>
-                        <span style={{ fontSize: "10px", color: "#64748b", fontWeight: 600 }}>{item.sub}</span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* CAMPO TEXTO LIBRE */}
-              <div>
-                <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#64748b", marginBottom: "4px" }}>
-                  O escribe otra orientación personalizada:
-                </label>
-                <div style={{ display: "flex", gap: "6px" }}>
-                  <input
-                    type="text"
-                    value={vdConfigModalData.orientacion}
-                    onChange={(e) => setVdConfigModalData({ ...vdConfigModalData, orientacion: e.target.value })}
-                    placeholder="ej. ABP, RIVAL, MODELO DE JUEGO..."
-                    autoFocus
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleSaveVdConfigModal();
-                    }}
-                    style={{
-                      flex: 1,
-                      padding: "8px 12px",
-                      borderRadius: "8px",
-                      border: "1.5px solid #cbd5e1",
-                      fontSize: "12px",
-                      fontWeight: 800,
-                      background: "#ffffff",
-                      outline: "none",
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => handleSaveVdConfigModal()}
-                    style={{
-                      background: "#0284c7",
-                      color: "#ffffff",
-                      border: "none",
-                      borderRadius: "8px",
-                      padding: "8px 16px",
-                      fontSize: "12px",
-                      fontWeight: 900,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Guardar
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* MODAL PARA EDITAR / GUARDAR ESCUDO Y RIVAL EN BBDD */}
       {escudoModalData && (

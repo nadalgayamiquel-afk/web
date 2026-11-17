@@ -254,3 +254,4 @@ export const TARGETS_MICROCICLO_MD: Record<string, {
     color: "#dc2626",
   },
 };
+
