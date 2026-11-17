@@ -75,7 +75,7 @@ const DEFAULT_JUGADORES: JugadorItem[] = [
 
 const DEFAULT_TIPOS_EVENTO_CONFIG: TipoEventoConfig[] = [
   { codigo: "Co", nombre: "Coadyuvante", color: "#713f12", bg: "#fde047", border: "#eab308" },
-  { codigo: "Op", nombre: "Optimizador", color: "#1e3a8a", bg: "#93c5fd", border: "#60a5fa" },
+  { codigo: "Op", nombre: "Campo", color: "#1e3a8a", bg: "#93c5fd", border: "#60a5fa" },
   { codigo: "Pa", nombre: "Partido", color: "#881337", bg: "#fecdd3", border: "#fda4af" },
   { codigo: "PAL", nombre: "Partido Local", color: "#881337", bg: "#fecdd3", border: "#fda4af" },
   { codigo: "PAV", nombre: "Partido Visitante", color: "#881337", bg: "#fecdd3", border: "#fda4af" },
@@ -87,7 +87,7 @@ const DEFAULT_TIPOS_EVENTO_CONFIG: TipoEventoConfig[] = [
   { codigo: "Ot", nombre: "Otros", color: "#1e293b", bg: "#e2e8f0", border: "#cbd5e1" },
   { codigo: "Va", nombre: "Valoraciones", color: "#7c2d12", bg: "#ffedd5", border: "#fed7aa" },
   { codigo: "Cop", nombre: "Coadyuvante Opcional", color: "#ffffff", bg: "#d97706", border: "#b45309" },
-  { codigo: "Oop", nombre: "Optimizador Opcional", color: "#ffffff", bg: "#1e40af", border: "#1e3a8a" },
+  { codigo: "Oop", nombre: "Campo Opcional", color: "#ffffff", bg: "#1e40af", border: "#1e3a8a" },
   { codigo: "PaAm", nombre: "Partido Amistoso", color: "#881337", bg: "#ffe4e6", border: "#fca5a5" },
 ];
 
@@ -145,7 +145,7 @@ function getTipoIcon(codigo: string): string {
   const c = (codigo || "").trim().toUpperCase();
   if (["PA", "PAL", "PAV", "PL", "PV", "PAAM", "PARTIDO"].includes(c)) return "🏆";
   if (["GIM", "GIMNASIO", "FUERZA", "FUE"].includes(c)) return "🏋️";
-  if (["CO", "CO1", "CO2", "OP", "ENTRENAMIENTO"].includes(c)) return "⚽";
+  if (["CO", "CO1", "CO2", "OP", "OOP", "ENTRENAMIENTO"].includes(c)) return "⚽";
   if (["VD", "VID", "CHARLA", "VIDEO"].includes(c)) return "📹";
   if (["RED", "REA", "READAPTACION", "FISIO"].includes(c)) return "🏥";
   if (["VI", "VIA", "VIAJE"].includes(c)) return "🚌";
@@ -157,7 +157,7 @@ function getTipoCategoria(codigo: string): string {
   const c = codigo.trim().toUpperCase();
   if (["PA", "PAL", "PAV", "PL", "PV", "PAAM", "PARTIDO"].includes(c)) return "partido";
   if (["GIM", "GIMNASIO", "FUERZA", "FUE"].includes(c)) return "gimnasio";
-  if (["CO", "CO1", "CO2", "OP", "ENTRENAMIENTO"].includes(c)) return "entrenamiento";
+  if (["CO", "CO1", "CO2", "OP", "OOP", "ENTRENAMIENTO"].includes(c)) return "entrenamiento";
   if (["VD", "VID", "CHARLA", "VIDEO"].includes(c)) return "charla";
   if (["RED", "REA", "READAPTACION", "FISIO"].includes(c)) return "readaptacion";
   if (["VI", "VIA", "VIAJE"].includes(c)) return "viaje";
@@ -170,11 +170,14 @@ function getNombreCompletoEvento(code: string, tiposConfigList: TipoEventoConfig
 
   const matched = tiposConfigList.find((t) => t.codigo.toLowerCase() === cleanCode || cleanCode.startsWith(t.codigo.toLowerCase()));
   if (matched && matched.nombre) {
-    return matched.nombre.replace(/\s*\([^)]*\)/g, "").trim();
+    let name = matched.nombre.replace(/\s*\([^)]*\)/g, "").trim();
+    name = name.replace(/optimizador\s*opcional/gi, "Campo Opcional").replace(/optimizador/gi, "Campo");
+    return name;
   }
 
   if (cleanCode.startsWith("co")) return "Coadyuvante";
-  if (cleanCode.startsWith("op")) return "Optimizador";
+  if (cleanCode === "oop" || cleanCode.startsWith("oop")) return "Campo Opcional";
+  if (cleanCode.startsWith("op")) return "Campo";
   if (cleanCode.startsWith("pa") || cleanCode === "pl" || cleanCode === "pv") return "Partido";
   if (cleanCode.startsWith("gim")) return "Fuerza / Gimnasio";
   if (cleanCode.startsWith("vd") || cleanCode.startsWith("vid")) return "Video";
@@ -220,6 +223,30 @@ export default function EventosCalendarPage() {
   const [selectedFilterTipos, setSelectedFilterTipos] = useState<string[]>([]);
   const [showFilterDropdown, setShowFilterDropdown] = useState<boolean>(false);
   const filterDropdownRef = useRef<HTMLDivElement>(null);
+
+  // FILTRO OCULTAR READAPTACIONES
+  const [hideReadaptaciones, setHideReadaptaciones] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        return localStorage.getItem("hide_readaptaciones") === "true";
+      } catch (e) {
+        return false;
+      }
+    }
+    return false;
+  });
+
+  const handleToggleHideReadaptaciones = () => {
+    setHideReadaptaciones((prev) => {
+      const next = !prev;
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("hide_readaptaciones", String(next));
+        } catch (e) {}
+      }
+      return next;
+    });
+  };
 
   // FILTRO INDIVIDUAL DE JUGADOR
   const [selectedJugadorId, setSelectedJugadorId] = useState<string>("");
@@ -607,7 +634,12 @@ export default function EventosCalendarPage() {
 
       const tipoCat = getTipoCategoria(ev.tipo);
       const codigo = ev.tipo.trim();
-      const nombreCompleto = getNombreCompletoEvento(codigo, tiposConfigList);
+      let nombreCompleto = getNombreCompletoEvento(codigo, tiposConfigList);
+      if (/optimizador\s*opcional/i.test(nombreCompleto)) {
+        nombreCompleto = nombreCompleto.replace(/optimizador\s*opcional/gi, "Campo Opcional");
+      } else if (/optimizador/i.test(nombreCompleto)) {
+        nombreCompleto = nombreCompleto.replace(/optimizador/gi, "Campo");
+      }
       
       const titulo = ev.orientacion
         ? `${nombreCompleto} · ${ev.orientacion}`
@@ -723,6 +755,20 @@ export default function EventosCalendarPage() {
   const filteredEventos = useMemo(() => {
     let list = eventosList;
 
+    // 0. Ocultar readaptaciones si el switch está activado
+    if (hideReadaptaciones) {
+      list = list.filter((ev) => {
+        const cat = (ev.tipoCat || "").toLowerCase();
+        const code = (ev.codigo || "").toLowerCase();
+        const nom = (ev.nombreCompleto || "").toLowerCase();
+        const tit = (ev.titulo || "").toLowerCase();
+        if (cat === "readaptacion") return false;
+        if (code === "red" || code.startsWith("rea")) return false;
+        if (nom.includes("readapt") || tit.includes("readapt")) return false;
+        return true;
+      });
+    }
+
     // 1. Filtrado por tipo de evento (multiselección)
     if (selectedFilterTipos.length > 0 && selectedFilterTipos.length < FILTER_CATEGORIES.length) {
       list = list.filter((ev) => selectedFilterTipos.includes(ev.tipoCat.toLowerCase()));
@@ -755,7 +801,7 @@ export default function EventosCalendarPage() {
     }
 
     return list;
-  }, [eventosList, selectedFilterTipos, selectedJugadorId, playerEventsMap]);
+  }, [eventosList, selectedFilterTipos, selectedJugadorId, playerEventsMap, hideReadaptaciones]);
 
   const handleOpenCreateModal = (dateStr: string) => {
     setFormFecha(dateStr);
@@ -904,6 +950,8 @@ export default function EventosCalendarPage() {
       mainTitle = extra ? `VIDEO ${extra.toUpperCase()}` : "VIDEO";
     } else if (/gym|gimnasio|fuerza|coadyuvante/i.test(name + " " + code) || code === "GYM") {
       mainTitle = "GYM GRUPAL.";
+      if (lug) subTitle = lug.toUpperCase();
+      else if (orient) subTitle = orient.toUpperCase();
     } else if (/partit|partido/i.test(name + " " + code) || /PAL|PAV|PL|PV/.test(code) || ev.tipoCat === "partido") {
       mainTitle = "PARTIT";
       subTitle = com || orient || (lug ? `${lug} vs CE EUROPA` : (partitRivalText ? `${partitRivalText} vs CE EUROPA` : ""));
@@ -914,6 +962,12 @@ export default function EventosCalendarPage() {
       mainTitle = ev.nombreCompleto || ev.codigo;
       if (lug) subTitle = lug.toUpperCase();
       else if (orient) subTitle = orient.toUpperCase();
+    }
+
+    if (/optimizador\s*opcional/i.test(mainTitle)) {
+      mainTitle = mainTitle.replace(/optimizador\s*opcional/gi, "CAMPO OPCIONAL");
+    } else if (/optimizador/i.test(mainTitle)) {
+      mainTitle = mainTitle.replace(/optimizador/gi, "CAMPO");
     }
 
     const time = ev.horaInicio ? ev.horaInicio : "";
@@ -2174,6 +2228,32 @@ export default function EventosCalendarPage() {
             )}
           </div>
 
+          {/* BOTÓN OCULTAR / MOSTRAR READAPTACIONES */}
+          <button
+            type="button"
+            className="no-print"
+            onClick={handleToggleHideReadaptaciones}
+            title={hideReadaptaciones ? "Clic para mostrar eventos de Readaptación" : "Clic para ocultar eventos de Readaptación"}
+            style={{
+              height: "32px",
+              padding: "0 12px",
+              borderRadius: "7px",
+              border: hideReadaptaciones ? "1.5px solid #f59e0b" : "1px solid #cbd5e1",
+              background: hideReadaptaciones ? "#fef3c7" : "#ffffff",
+              color: hideReadaptaciones ? "#b45309" : "#334155",
+              fontSize: "11px",
+              fontWeight: 800,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+              transition: "all 0.15s ease",
+            }}
+          >
+            <span>{hideReadaptaciones ? "👁️ Mostrar Readaptación" : "🙈 Ocultar Readaptación"}</span>
+          </button>
+
           <button
             type="button"
             onClick={() => {
@@ -2952,6 +3032,16 @@ export default function EventosCalendarPage() {
                   Si no escribes comentario, el PDF se exportará limpiamente sin este bloque.
                 </span>
               </div>
+
+              <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontSize: "11px", fontWeight: 700, color: "#1e293b", padding: "4px 0" }}>
+                <input
+                  type="checkbox"
+                  checked={hideReadaptaciones}
+                  onChange={handleToggleHideReadaptaciones}
+                  style={{ width: "16px", height: "16px", accentColor: "#0284c7" }}
+                />
+                <span>Ocultar eventos de Readaptación en este PDF</span>
+              </label>
             </div>
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "16px" }}>
@@ -3090,7 +3180,7 @@ export default function EventosCalendarPage() {
                       }}
                       style={{ width: "100%", padding: "6px", border: "1px solid #cbd5e1", borderRadius: "6px", fontSize: "11px" }}
                     >
-                      <option value="entrenamiento">⚽ Coadyuvante / Optimizador (Co/Op)</option>
+                      <option value="entrenamiento">⚽ Coadyuvante / Campo (Co/Op)</option>
                       <option value="gimnasio">🏋️ Fuerza / Gimnasio (Gim)</option>
                       <option value="partido">🏆 Partido Oficial (Pa/PAL/PAV)</option>
                       <option value="charla">📹 Charla / Vídeo (VD)</option>
@@ -3446,7 +3536,7 @@ export default function EventosCalendarPage() {
                 <div>
                   <label style={{ fontWeight: 800, display: "block", marginBottom: "3px" }}>Categoría General:</label>
                   <select value={formTipoCat} onChange={(e) => { setFormTipoCat(e.target.value); if (e.target.value === "gimnasio") setFormCodigo("Gim"); else if (e.target.value === "partido") setFormCodigo("Pa"); else if (e.target.value === "charla") setFormCodigo("VD"); else setFormCodigo("Co"); }} style={{ width: "100%", padding: "6px", border: "1px solid #cbd5e1", borderRadius: "6px" }}>
-                    <option value="entrenamiento">⚽ Coadyuvante / Optimizador (Co/Op)</option>
+                    <option value="entrenamiento">⚽ Coadyuvante / Campo (Co/Op)</option>
                     <option value="gimnasio">🏋️ Fuerza / Gimnasio (Gim)</option>
                     <option value="partido">🏆 Partido Oficial (Pa/PAL/PAV)</option>
                     <option value="charla">📹 Charla / Vídeo (VD)</option>

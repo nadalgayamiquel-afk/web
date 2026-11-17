@@ -172,7 +172,7 @@ export type JugadorItem = {
 export const DEFAULT_TIPOS_EVENTO_CONFIG: TipoEventoConfig[] = [
   { codigo: "E", nombre: "Entrenamiento (E)", color: "#166534", bg: "#bbf7d0", border: "#86efac" },
   { codigo: "Co", nombre: "Coadyuvante (Co)", color: "#713f12", bg: "#fde047", border: "#eab308" },
-  { codigo: "Op", nombre: "Optimizador (Op)", color: "#1e3a8a", bg: "#93c5fd", border: "#60a5fa" },
+  { codigo: "Op", nombre: "Campo (Op)", color: "#1e3a8a", bg: "#93c5fd", border: "#60a5fa" },
   { codigo: "Pa", nombre: "Partido (Pa)", color: "#881337", bg: "#fecdd3", border: "#fda4af" },
   { codigo: "PAL", nombre: "Partido Local (PAL)", color: "#881337", bg: "#fecdd3", border: "#fda4af" },
   { codigo: "PAV", nombre: "Partido Visitante (PAV)", color: "#881337", bg: "#fecdd3", border: "#fda4af" },
@@ -184,7 +184,7 @@ export const DEFAULT_TIPOS_EVENTO_CONFIG: TipoEventoConfig[] = [
   { codigo: "Ot", nombre: "Otros (Ot)", color: "#1e293b", bg: "#e2e8f0", border: "#cbd5e1" },
   { codigo: "Va", nombre: "Valoraciones (Va)", color: "#7c2d12", bg: "#ffedd5", border: "#fed7aa" },
   { codigo: "Cop", nombre: "Coadyuvante Opcional (Cop)", color: "#ffffff", bg: "#d97706", border: "#b45309" },
-  { codigo: "Oop", nombre: "Optimizador Opcional (Oop)", color: "#ffffff", bg: "#1e40af", border: "#1e3a8a" },
+  { codigo: "Oop", nombre: "Campo Opcional (Oop)", color: "#ffffff", bg: "#1e40af", border: "#1e3a8a" },
   { codigo: "PaAm", nombre: "Partido Amistoso (PaAm)", color: "#881337", bg: "#ffe4e6", border: "#fca5a5" },
 ];
 
