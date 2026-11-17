@@ -205,6 +205,20 @@ function getHoraFinStr(horaInicioStr: string, duracionMin: number): string {
   return `${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`;
 }
 
+function getConvocatoriaTime(timeStr?: string): string {
+  if (!timeStr || !timeStr.includes(":")) return "";
+  const parts = timeStr.trim().split(":");
+  const h = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10);
+  if (isNaN(h)) return "";
+  const mins = isNaN(m) ? 0 : m;
+  let total = h * 60 + mins - 30;
+  if (total < 0) total += 24 * 60;
+  const newH = Math.floor(total / 60);
+  const newM = total % 60;
+  return `${String(newH).padStart(2, "0")}:${String(newM).padStart(2, "0")}`;
+}
+
 const DEFAULT_INITIAL_MAP: Record<string, EventoBloque> = {};
 
 const HOUR_SLOTS = [
@@ -243,6 +257,55 @@ export default function EventosCalendarPage() {
       if (typeof window !== "undefined") {
         try {
           localStorage.setItem("hide_readaptaciones", String(next));
+        } catch (e) {}
+      }
+      return next;
+    });
+  };
+
+  // OPCIÓN DE FILA DE CONVOCATORIA (30 MIN ANTES DEL PRIMER EVENTO)
+  const [showConvocatoriaRow, setShowConvocatoriaRow] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("show_convocatoria_row");
+        return saved !== null ? saved === "true" : true;
+      } catch (e) {
+        return true;
+      }
+    }
+    return true;
+  });
+
+  const handleToggleConvocatoriaRow = () => {
+    setShowConvocatoriaRow((prev) => {
+      const next = !prev;
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("show_convocatoria_row", String(next));
+        } catch (e) {}
+      }
+      return next;
+    });
+  };
+
+  const [customConvocatorias, setCustomConvocatorias] = useState<Record<string, string>>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("custom_convocatorias_v1");
+        return saved ? JSON.parse(saved) : {};
+      } catch (e) {
+        return {};
+      }
+    }
+    return {};
+  });
+
+  const handleSetCustomConvocatoria = (dateStr: string, timeVal: string) => {
+    setCustomConvocatorias((prev) => {
+      const next = { ...prev, [dateStr]: timeVal };
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("custom_convocatorias_v1", JSON.stringify(next));
         } catch (e) {}
       }
       return next;
@@ -1674,6 +1737,18 @@ export default function EventosCalendarPage() {
             print-color-adjust: exact !important;
             box-sizing: border-box !important;
           }
+          .convocatoria-row th, .convocatoria-row td {
+            background: #d9e1f2 !important;
+            border: 1px solid #7f99b8 !important;
+            padding: 2px 2px !important;
+            height: 8mm !important;
+            max-height: 8mm !important;
+            text-align: center !important;
+            vertical-align: middle !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            box-sizing: border-box !important;
+          }
           .programacio-obs {
             margin-top: 5px !important;
             padding: 2px !important;
@@ -2330,6 +2405,32 @@ export default function EventosCalendarPage() {
             <span>{hideReadaptaciones ? "👁️ Mostrar Readaptación" : "🙈 Ocultar Readaptación"}</span>
           </button>
 
+          {/* BOTÓN TOGGLE FILA DE CONVOCATORIA (30 MIN ANTES) */}
+          <button
+            type="button"
+            className="no-print"
+            onClick={handleToggleConvocatoriaRow}
+            title={showConvocatoriaRow ? "Ocultar fila de Convocatoria (30 min antes)" : "Añadir fila de Convocatoria (30 min antes)"}
+            style={{
+              height: "32px",
+              padding: "0 11px",
+              borderRadius: "7px",
+              border: showConvocatoriaRow ? "1.5px solid #0284c7" : "1px solid #cbd5e1",
+              background: showConvocatoriaRow ? "#e0f2fe" : "#ffffff",
+              color: showConvocatoriaRow ? "#0369a1" : "#475569",
+              fontSize: "11px",
+              fontWeight: 800,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "5px",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+              transition: "all 0.15s ease",
+            }}
+          >
+            <span>{showConvocatoriaRow ? "🔔 Convocatoria activa" : "➕ Fila Convocatoria"}</span>
+          </button>
+
           <button
             type="button"
             onClick={() => {
@@ -2794,6 +2895,64 @@ export default function EventosCalendarPage() {
                     );
                   })}
                 </tr>
+
+                {/* FILA DE CONVOCATORIA (ENTRE EL DÍA Y EL PRIMER EVENTO, ALTURA DEL DÍA, CELDA EN GRIS, 30 MIN ANTES) */}
+                {showConvocatoriaRow && (
+                  <tr className="convocatoria-row">
+                    {microcicloDays.map((day, idx) => {
+                      const dayEvents = filteredEventos
+                        .filter((e) => e.fecha === day.dateStr)
+                        .sort(sortDayEvents);
+
+                      // Buscar el primer evento con hora (si ya hay uno manual de convocatoria, se busca la sesión real)
+                      const firstSession =
+                        dayEvents.find((e) => e.horaInicio && !/convocatoria/i.test(e.codigo + " " + e.nombreCompleto)) ||
+                        dayEvents.find((e) => e.horaInicio);
+
+                      const autoTime = firstSession ? getConvocatoriaTime(firstSession.horaInicio) : "";
+                      const displayTime = customConvocatorias[day.dateStr] || autoTime;
+
+                      return (
+                        <th
+                          key={`conv-${idx}`}
+                          onClick={() => {
+                            const val = window.prompt(`Hora de convocatoria para el ${day.dayName} (${day.dateStr}):`, displayTime || "09:30");
+                            if (val !== null) {
+                              handleSetCustomConvocatoria(day.dateStr, val.trim());
+                            }
+                          }}
+                          style={{
+                            background: "#d9e1f2",
+                            border: "1px solid #7f99b8",
+                            padding: "3px 2px",
+                            color: "#000000",
+                            textAlign: "center",
+                            verticalAlign: "middle",
+                            height: "34px",
+                            boxSizing: "border-box",
+                            cursor: "pointer",
+                          }}
+                          title="Clic para personalizar la convocatoria de este día"
+                        >
+                          {displayTime ? (
+                            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", lineHeight: 1.15 }}>
+                              <span style={{ fontSize: "9px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.2px" }}>
+                                CONVOCATORIA
+                              </span>
+                              <span style={{ fontSize: "10px", fontWeight: 800, marginTop: "1px" }}>
+                                {displayTime}
+                              </span>
+                            </div>
+                          ) : (
+                            <div style={{ fontSize: "9px", color: "#64748b", fontStyle: "italic" }}>
+                              -
+                            </div>
+                          )}
+                        </th>
+                      );
+                    })}
+                  </tr>
+                )}
               </thead>
               <tbody>
                 {Array.from({ length: totalRows }).map((_, rIdx) => (
@@ -3163,6 +3322,16 @@ export default function EventosCalendarPage() {
                 />
                 <span>Ocultar eventos de Readaptación en este PDF</span>
               </label>
+
+              <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontSize: "11px", fontWeight: 700, color: "#1e293b", padding: "4px 0" }}>
+                <input
+                  type="checkbox"
+                  checked={showConvocatoriaRow}
+                  onChange={handleToggleConvocatoriaRow}
+                  style={{ width: "16px", height: "16px", accentColor: "#0284c7" }}
+                />
+                <span>Incluir fila de Convocatoria (30 min antes del primer evento)</span>
+              </label>
             </div>
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "16px" }}>
@@ -3212,6 +3381,13 @@ export default function EventosCalendarPage() {
                     .programacio-table td {
                       height: ${totalRows > 4 ? "20mm" : "22mm"} !important;
                       padding: 2px 2px !important;
+                    }
+                    .convocatoria-row th, .convocatoria-row td {
+                      background: #d9e1f2 !important;
+                      border: 1px solid #7f99b8 !important;
+                      padding: 2px 2px !important;
+                      height: 8mm !important;
+                      max-height: 8mm !important;
                     }
                     .programacio-obs {
                       margin-top: 5px !important;
