@@ -1073,7 +1073,7 @@ export default function EventosCalendarPage() {
       return { bg: "#9bc55b", text: "#000000", border: "#7ea647" };
     }
     // Entrenamiento / Campo (todos con el mismo color naranja unificado)
-    if (cat === "entrenamiento" || /ENTRENA|CAMPO|TACTICA|RECUP/i.test(all)) {
+    if (cat === "entrenamiento" || /ENTRENA|CAMPO|TACTICA|RECUP|OPTIMIZADOR|OPT/i.test(all)) {
       return { bg: "#f4b183", text: "#000000", border: "#de9b6b" };
     }
     // Readaptación (lila pastel)
@@ -1105,7 +1105,13 @@ export default function EventosCalendarPage() {
       if (!extra && /^(?:VD|VIDEO|VÍDEO)\s+(.+)$/i.test(code + " " + name)) {
         extra = (code + " " + name).match(/^(?:VD|VIDEO|VÍDEO)\s+(.+)$/i)?.[1] || "";
       }
-      extra = extra.replace(/^(?:VD|VIDEO|VÍDEO)\s*/i, "").trim();
+      // Limpiar prefijos o repeticiones de la palabra VIDEO / VD
+      while (/^(?:VD|VIDEO|VÍDEO)\b[\s:·-]*/i.test(extra)) {
+        extra = extra.replace(/^(?:VD|VIDEO|VÍDEO)\b[\s:·-]*/i, "").trim();
+      }
+      if (/^(?:VD|VIDEO|VÍDEO)$/i.test(extra)) {
+        extra = "";
+      }
 
       // Si no tiene orientación manual, asignar según el orden de vídeos de la semana (1º ABP, 2º RIVAL, 3º PROPIO)
       if (!extra) {
@@ -1127,7 +1133,7 @@ export default function EventosCalendarPage() {
         }
       }
 
-      mainTitle = `VIDEO ${extra.toUpperCase()}`;
+      mainTitle = extra ? `VIDEO ${extra.toUpperCase()}` : "VIDEO";
     } else if (/gym|gimnasio|fuerza|coadyuvante/i.test(name + " " + code) || code === "GYM") {
       mainTitle = "GYM GRUPAL";
       if (lug) subTitle = lug.toUpperCase();
