@@ -4,6 +4,7 @@ import { pruneStaleFutureLocalStorage } from "@/app/lib/cleanStorage";
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useClubConfig } from "@/app/lib/useClubConfig";
+import { findRivalEscudoUrl } from "@/app/lib/rivales";
 import { getActiveJugadores, getEventosBloquesBBDD, saveFullPlanificacionBBDD, saveMinutosJugadorEvento, getMinutosJugadorEventoAll, getPlayerEventsBBDD, savePlayerEventAssignments, saveEventDetailBBDD, getPlayerCommentsBBDD, saveSingleBloqueBBDD } from "../actions";
 
 export type EventoBloque = {
@@ -254,9 +255,30 @@ export default function EventosCalendarPage() {
   const [playerSearchQuery, setPlayerSearchQuery] = useState<string>("");
   const playerDropdownRef = useRef<HTMLDivElement>(null);
 
-  // ESTADO EXPORTACIÓN PDF
+  // ESTADO EXPORTACIÓN PDF Y OBSERVACIONES
   const [showPdfModal, setShowPdfModal] = useState<boolean>(false);
-  const [pdfComment, setPdfComment] = useState<string>("");
+  const [pdfComment, setPdfComment] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        return localStorage.getItem("programacio_obs_v1") || "";
+      } catch (e) {
+        return "";
+      }
+    }
+    return "";
+  });
+
+  // RIVAL EDITABLE DE LA SEMANA
+  const [customRival, setCustomRival] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        return localStorage.getItem("current_week_rival_v1") || "";
+      } catch (e) {
+        return "";
+      }
+    }
+    return "";
+  });
   
   const [activeTeam, setActiveTeam] = useState<string>("CE Europa");
 
@@ -667,12 +689,20 @@ export default function EventosCalendarPage() {
     return list;
   }, [eventosMap, tiposConfigList, dayIdToFecha]);
 
-  // Función ordenadora: prioriza horaInicio cronológica; si no hay hora o es idéntica, ordena por slotIdx (#1, #2, #3...)
+  // Función ordenadora: prioriza horaInicio cronológica estricta por minutos; si no hay hora o es idéntica, ordena por slotIdx (#1, #2, #3...)
   const sortDayEvents = useCallback((a: EventoItem, b: EventoItem) => {
-    const timeA = a.horaInicio?.trim() || "";
-    const timeB = b.horaInicio?.trim() || "";
-    if (timeA && timeB && timeA !== timeB) {
-      return timeA.localeCompare(timeB);
+    const parseMins = (t?: string): number => {
+      if (!t || !t.includes(":")) return 99999;
+      const parts = t.trim().split(":");
+      const h = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10);
+      if (isNaN(h)) return 99999;
+      return h * 60 + (isNaN(m) ? 0 : m);
+    };
+    const minA = parseMins(a.horaInicio);
+    const minB = parseMins(b.horaInicio);
+    if (minA !== minB) {
+      return minA - minB;
     }
     return (a.slotIdx ?? 0) - (b.slotIdx ?? 0);
   }, []);
@@ -817,7 +847,46 @@ export default function EventosCalendarPage() {
     });
   }, [filteredEventos, microcicloDays]);
 
+  const handleQuickUpdateRival = (newRival: string) => {
+    setCustomRival(newRival);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("current_week_rival_v1", newRival);
+        const satStr = microcicloDays[5]?.dateStr;
+        const sunStr = microcicloDays[6]?.dateStr;
+        const mapRaw = localStorage.getItem("rival_evento_map_v1");
+        const map = mapRaw ? JSON.parse(mapRaw) : {};
+        if (satStr) map[satStr] = { ...(map[satStr] || {}), rival: newRival };
+        if (sunStr) map[sunStr] = { ...(map[sunStr] || {}), rival: newRival };
+        localStorage.setItem("rival_evento_map_v1", JSON.stringify(map));
+      } catch (e) {}
+    }
+    if (weekendMatch) {
+      const updatedMap = { ...eventosMap };
+      Object.keys(updatedMap).forEach((k) => {
+        const ev = updatedMap[k];
+        if (ev && (ev.id === weekendMatch.id || (ev.fecha === weekendMatch.fecha && (ev.tipo?.toUpperCase().startsWith("PA") || ev.tipo === "partido")))) {
+          updatedMap[k] = { ...ev, comentario: newRival };
+        }
+      });
+      saveMapToStorage(updatedMap);
+    }
+  };
+
   const partitRivalText = useMemo(() => {
+    if (customRival) return customRival;
+    if (typeof window !== "undefined") {
+      try {
+        const raw = localStorage.getItem("rival_evento_map_v1");
+        if (raw) {
+          const map = JSON.parse(raw);
+          const satDate = microcicloDays[5]?.dateStr;
+          const sunDate = microcicloDays[6]?.dateStr;
+          if (satDate && map[satDate]?.rival) return map[satDate].rival;
+          if (sunDate && map[sunDate]?.rival) return map[sunDate].rival;
+        }
+      } catch (e) {}
+    }
     if (!weekendMatch) return "";
     let text = weekendMatch.comentario || weekendMatch.orientacion || "";
     if (!text && weekendMatch.titulo) {
@@ -825,7 +894,37 @@ export default function EventosCalendarPage() {
       if (clean) text = clean;
     }
     return text || weekendMatch.nombreCompleto || "";
-  }, [weekendMatch]);
+  }, [customRival, weekendMatch, microcicloDays]);
+
+  const rivalEscudoUrl = useMemo(() => {
+    if (!partitRivalText) return "";
+    return findRivalEscudoUrl(partitRivalText);
+  }, [partitRivalText]);
+
+  const semanaTexto = useMemo(() => {
+    if (!microcicloDays || microcicloDays.length < 7) return "";
+    const first = microcicloDays[0];
+    const last = microcicloDays[6];
+
+    const d1 = new Date(first.dateStr + "T12:00:00");
+    const d2 = new Date(last.dateStr + "T12:00:00");
+
+    const diaIni = d1.getDate();
+    const diaFin = d2.getDate();
+
+    const mesesEsp = [
+      "enero", "febrero", "marzo", "abril", "mayo", "junio",
+      "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"
+    ];
+
+    const mesIni = mesesEsp[d1.getMonth()];
+    const mesFin = mesesEsp[d2.getMonth()];
+
+    if (d1.getMonth() === d2.getMonth()) {
+      return `SEMANA DEL ${diaIni} AL ${diaFin} DE ${mesIni.toUpperCase()}`;
+    }
+    return `SEMANA DEL ${diaIni} DE ${mesIni.toUpperCase()} AL ${diaFin} DE ${mesFin.toUpperCase()}`;
+  }, [microcicloDays]);
 
   const microcicloNum = useMemo(() => {
     const dFirst = new Date((microcicloDays[0]?.dateStr || selectedDateStr) + "T12:00:00");
@@ -847,42 +946,17 @@ export default function EventosCalendarPage() {
     return Math.max(4, maxS);
   }, [filteredEventos, microcicloDays]);
 
+  // Coloca los eventos estrictamente ordenados cronológicamente por hora en las filas de la tabla
   const getDaySlots = useCallback((dayEvents: EventoItem[], numRows: number) => {
+    const sorted = [...dayEvents].sort(sortDayEvents);
     const slots: (EventoItem | undefined)[] = new Array(numRows).fill(undefined);
-    const remaining: EventoItem[] = [];
-
-    dayEvents.forEach((ev) => {
-      let preferredSlot = -1;
-      const name = (ev.nombreCompleto + " " + ev.codigo).toUpperCase();
-
-      if (/convocatoria/i.test(name) && !/aeroport|aeropuerto|viaje/i.test(name + ev.lugar)) {
-        preferredSlot = 0;
-      } else if (/video|vídeo|charla/i.test(name) || /aeroport|aeropuerto|viaje/i.test(name + ev.lugar)) {
-        preferredSlot = 1;
-      } else if (/gym|gimnasio|fuerza|coadyuvante/i.test(name)) {
-        preferredSlot = 2;
-      } else if (/entrena|partit|partido|campo|pal|pav|pl|pv/i.test(name)) {
-        preferredSlot = 3;
-      } else if (ev.slotIdx !== undefined && ev.slotIdx >= 0 && ev.slotIdx < numRows) {
-        preferredSlot = ev.slotIdx;
-      }
-
-      if (preferredSlot >= 0 && preferredSlot < numRows && !slots[preferredSlot]) {
-        slots[preferredSlot] = ev;
-      } else {
-        remaining.push(ev);
+    sorted.forEach((ev, idx) => {
+      if (idx < numRows) {
+        slots[idx] = ev;
       }
     });
-
-    remaining.forEach((ev) => {
-      const firstEmpty = slots.findIndex((x) => x === undefined);
-      if (firstEmpty !== -1) {
-        slots[firstEmpty] = ev;
-      }
-    });
-
     return slots;
-  }, []);
+  }, [sortDayEvents]);
 
   const getScheduleCellColor = useCallback((ev: EventoItem) => {
     const code = (ev.codigo || "").toUpperCase();
@@ -953,10 +1027,10 @@ export default function EventosCalendarPage() {
       if (lug) subTitle = lug.toUpperCase();
       else if (orient) subTitle = orient.toUpperCase();
     } else if (/partit|partido/i.test(name + " " + code) || /PAL|PAV|PL|PV/.test(code) || ev.tipoCat === "partido") {
-      mainTitle = "PARTIT";
+      mainTitle = "PARTIDO";
       subTitle = com || orient || (lug ? `${lug} vs CE EUROPA` : (partitRivalText ? `${partitRivalText} vs CE EUROPA` : ""));
     } else if (/entrena/i.test(name + " " + code)) {
-      mainTitle = "ENTRENAMENT";
+      mainTitle = "ENTRENAMIENTO";
       if (lug) subTitle = lug.toUpperCase();
     } else {
       mainTitle = ev.nombreCompleto || ev.codigo;
@@ -1554,11 +1628,8 @@ export default function EventosCalendarPage() {
           }
           .programacio-wrapper {
             width: 100% !important;
-            height: 194mm !important;
-            max-height: 194mm !important;
-            display: flex !important;
-            flex-direction: column !important;
-            justify-content: space-between !important;
+            height: auto !important;
+            max-height: 190mm !important;
             page-break-inside: avoid !important;
             break-inside: avoid !important;
             box-sizing: border-box !important;
@@ -1566,7 +1637,7 @@ export default function EventosCalendarPage() {
           .programacio-header {
             background: #b4c6e7 !important;
             border: 1px solid #7f99b8 !important;
-            padding: 5px 12px !important;
+            padding: 4px 10px !important;
             margin-bottom: 2px !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
@@ -1578,30 +1649,35 @@ export default function EventosCalendarPage() {
             border-collapse: collapse !important;
             table-layout: fixed !important;
             border: 1px solid #7f99b8 !important;
-            flex: 1 !important;
             box-sizing: border-box !important;
           }
           .programacio-table th {
             background: #b4c6e7 !important;
             border: 1px solid #7f99b8 !important;
-            padding: 6px 2px !important;
-            font-size: 11px !important;
+            padding: 4px 2px !important;
+            font-size: 10.5px !important;
             font-weight: 900 !important;
             color: #000000 !important;
             text-align: center !important;
-            height: 9mm !important;
+            height: 8mm !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
             box-sizing: border-box !important;
           }
           .programacio-table td {
             border: 1px solid #7f99b8 !important;
-            padding: 4px 2px !important;
-            height: 33mm !important;
+            padding: 2px 2px !important;
+            height: 22mm !important;
             vertical-align: middle !important;
             text-align: center !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
+            box-sizing: border-box !important;
+          }
+          .programacio-obs {
+            margin-top: 5px !important;
+            padding: 2px !important;
+            page-break-inside: avoid !important;
             box-sizing: border-box !important;
           }
           .programacio-obs {
@@ -2601,57 +2677,87 @@ export default function EventosCalendarPage() {
         {viewMode === "microciclo" && (
           <div className="programacio-wrapper" style={{ width: "100%", overflowX: "auto" }}>
             {/* CABECERA OFICIAL TIPO EXCEL (PROGRAMACIÓ SETMANAL) */}
+            {/* CABECERA OFICIAL TIPO EXCEL (PROGRAMACIÓN SEMANAL) */}
             <div
               className="programacio-header"
               style={{
                 background: "#b4c6e7",
                 border: "1px solid #7f99b8",
-                padding: "8px 12px",
+                padding: "6px 12px",
                 marginBottom: "3px",
-                display: "flex",
+                display: "grid",
+                gridTemplateColumns: "150px 1fr 150px",
                 alignItems: "center",
-                justifyContent: "space-between",
                 boxSizing: "border-box",
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", width: "90px" }}>
+              {/* LADO IZQUIERDO: ESCUDO ARRIBA + NOMBRE CLUB Y EQUIPO DEBAJO */}
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center" }}>
                 <img
                   src={clubConfig?.escudoUrl || "/ce-europa.png"}
-                  alt="CE Europa"
-                  style={{ height: "44px", width: "44px", objectFit: "contain" }}
+                  alt={clubConfig?.nombreClub || "Club"}
+                  style={{ height: "36px", width: "36px", objectFit: "contain" }}
                   onError={(e) => {
                     (e.currentTarget as HTMLImageElement).src = "/ce-europa.png";
                   }}
                 />
+                <div style={{ fontSize: "11px", fontWeight: 900, textTransform: "uppercase", color: "#000000", marginTop: "2px", lineHeight: 1.1 }}>
+                  {clubConfig?.nombreClub || activeTeam || "CE EUROPA"}
+                </div>
+                <div style={{ fontSize: "9px", fontWeight: 700, color: "#1e293b", textTransform: "uppercase", marginTop: "1px", lineHeight: 1.1 }}>
+                  {clubConfig?.categoria || "1er Equipo"}
+                </div>
               </div>
 
-              <div style={{ flex: 1, textAlign: "center" }}>
-                <div style={{ fontSize: "16px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.5px", color: "#000000", lineHeight: 1.2 }}>
-                  PROGRAMACIÓ SETMANAL
+              {/* CENTRO: PROGRAMACIÓN SEMANAL + SEMANA DEL X AL Y DE MES + PARTIDO CON ESCUDO */}
+              <div style={{ textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ fontSize: "15px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.5px", color: "#000000", lineHeight: 1.15 }}>
+                  PROGRAMACIÓN SEMANAL
                 </div>
-                <div style={{ fontSize: "13px", fontWeight: 900, textTransform: "uppercase", color: "#000000", marginTop: "2px", lineHeight: 1.2 }}>
-                  MCR {microcicloNum} - SETMANA {microcicloDays[5]?.dayNum ? `${String(microcicloDays[5]?.dayNum).padStart(2, "0")}/${microcicloDays[5]?.dateStr.split("-")[1]}` : ""}
+                <div style={{ fontSize: "11.5px", fontWeight: 800, textTransform: "uppercase", color: "#000000", marginTop: "2px", lineHeight: 1.15 }}>
+                  {semanaTexto}
                 </div>
                 <div style={{
-                  display: "flex",
-                  justifyContent: "space-between",
+                  display: "inline-flex",
                   alignItems: "center",
+                  gap: "6px",
                   marginTop: "3px",
-                  padding: "0 6px",
                   fontSize: "11px",
                   fontWeight: 800,
                   color: "#000000",
                 }}>
-                  <span>
-                    {clubConfig?.nombreClub || activeTeam || "Club Esportiu Europa"} - {clubConfig?.categoria || "1RFEF"} - TEMPORADA {clubConfig?.temporadaActiva || "2026-27"}.
-                  </span>
-                  <span>
-                    Partit: {partitRivalText || "-"}
+                  <span>Partido:</span>
+                  {rivalEscudoUrl && (
+                    <img
+                      src={rivalEscudoUrl}
+                      alt={partitRivalText}
+                      style={{ width: "20px", height: "20px", objectFit: "contain", verticalAlign: "middle" }}
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).style.display = "none";
+                      }}
+                    />
+                  )}
+                  <span
+                    style={{ fontWeight: 900, textTransform: "uppercase", cursor: "pointer", textDecoration: "underline dotted" }}
+                    onClick={() => {
+                      const nuevoRival = window.prompt("Modificar nombre del rival:", partitRivalText);
+                      if (nuevoRival !== null) {
+                        handleQuickUpdateRival(nuevoRival.trim());
+                      }
+                    }}
+                    title="Clic para editar rápidamente el rival"
+                  >
+                    {partitRivalText || "Añadir rival..."} <span className="no-print" style={{ fontSize: "10px" }}>✏️</span>
                   </span>
                 </div>
               </div>
 
-              <div style={{ width: "90px" }} />
+              {/* LADO DERECHO: TEMPORADA ARRIBA A LA DERECHA DEL TODO */}
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", justifyContent: "flex-start", height: "100%", alignSelf: "flex-start" }}>
+                <div style={{ fontSize: "10px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.5px", color: "#000000" }}>
+                  TEMPORADA {clubConfig?.temporadaActiva || "2026-27"}
+                </div>
+              </div>
             </div>
 
             {/* TABLA MATRIZ 7 COLUMNAS x 4+ FILAS DE SLOTS */}
@@ -2668,32 +2774,30 @@ export default function EventosCalendarPage() {
             >
               <thead>
                 <tr>
-                  {[
-                    "DILLUNS",
-                    "DIMARTS",
-                    "DIMECRES",
-                    "DIJOUS",
-                    "DIVENDRES",
-                    `DISSABTE (${microcicloDays[5]?.dayNum ? `${String(microcicloDays[5]?.dayNum).padStart(2, "0")}/${microcicloDays[5]?.dateStr.split("-")[1]}` : ""})`,
-                    "DIUMENGE",
-                  ].map((headerText, idx) => (
-                    <th
-                      key={idx}
-                      style={{
-                        background: "#b4c6e7",
-                        border: "1px solid #7f99b8",
-                        padding: "7px 2px",
-                        fontSize: "11px",
-                        fontWeight: 900,
-                        color: "#000000",
-                        textAlign: "center",
-                        width: "14.285%",
-                        boxSizing: "border-box",
-                      }}
-                    >
-                      {headerText}
-                    </th>
-                  ))}
+                  {microcicloDays.map((day, idx) => {
+                    const diaMes = `${String(day.dayNum).padStart(2, "0")}/${day.dateStr.split("-")[1]}`;
+                    return (
+                      <th
+                        key={idx}
+                        style={{
+                          background: "#b4c6e7",
+                          border: "1px solid #7f99b8",
+                          padding: "5px 2px",
+                          color: "#000000",
+                          textAlign: "center",
+                          width: "14.285%",
+                          boxSizing: "border-box",
+                        }}
+                      >
+                        <div style={{ fontSize: "11px", fontWeight: 900, textTransform: "uppercase", lineHeight: 1.15 }}>
+                          {day.dayName}
+                        </div>
+                        <div style={{ fontSize: "9.5px", fontWeight: 700, color: "#475569", marginTop: "2px", lineHeight: 1.1 }}>
+                          {diaMes}
+                        </div>
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody>
@@ -2716,8 +2820,8 @@ export default function EventosCalendarPage() {
                               border: "1px solid #7f99b8",
                               background: colors.bg,
                               color: colors.text,
-                              height: totalRows > 4 ? "60px" : "75px",
-                              padding: "4px 2px",
+                              height: totalRows > 4 ? "52px" : "62px",
+                              padding: "3px 2px",
                               cursor: "pointer",
                               verticalAlign: "middle",
                               textAlign: "center",
@@ -2737,8 +2841,8 @@ export default function EventosCalendarPage() {
                           style={{
                             border: "1px solid #b4c6e7",
                             background: "#ffffff",
-                            height: totalRows > 4 ? "60px" : "75px",
-                            padding: "4px 2px",
+                            height: totalRows > 4 ? "52px" : "62px",
+                            padding: "3px 2px",
                             cursor: "pointer",
                             verticalAlign: "middle",
                             textAlign: "center",
@@ -2757,31 +2861,53 @@ export default function EventosCalendarPage() {
             <div
               className="programacio-obs"
               style={{
-                marginTop: "10px",
+                marginTop: "6px",
                 padding: "4px 2px",
                 color: "#000000",
                 boxSizing: "border-box",
               }}
             >
-              <div style={{ fontSize: "12px", fontWeight: 900, color: "#000000" }}>
-                Observaciones:
-              </div>
-              {pdfComment.trim() !== "" ? (
-                <div
-                  style={{
-                    fontSize: "11px",
-                    fontWeight: 600,
-                    marginTop: "4px",
-                    lineHeight: 1.35,
-                    whiteSpace: "pre-wrap",
-                    color: "#000000",
-                  }}
-                >
-                  {pdfComment}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div style={{ fontSize: "11.5px", fontWeight: 900, color: "#000000" }}>
+                  Observaciones:
                 </div>
-              ) : (
-                <div style={{ minHeight: "32px" }} />
-              )}
+                <button
+                  type="button"
+                  className="no-print"
+                  onClick={() => {
+                    const newObs = window.prompt("Editar observaciones de la semana:", pdfComment);
+                    if (newObs !== null) {
+                      setPdfComment(newObs);
+                      try { localStorage.setItem("programacio_obs_v1", newObs); } catch(e) {}
+                    }
+                  }}
+                  style={{ background: "none", border: "none", color: "#0284c7", fontSize: "11px", fontWeight: 800, cursor: "pointer" }}
+                >
+                  ✏️ Editar observaciones
+                </button>
+              </div>
+              <div
+                onClick={() => {
+                  const newObs = window.prompt("Editar observaciones de la semana:", pdfComment);
+                  if (newObs !== null) {
+                    setPdfComment(newObs);
+                    try { localStorage.setItem("programacio_obs_v1", newObs); } catch(e) {}
+                  }
+                }}
+                style={{
+                  fontSize: "10.5px",
+                  fontWeight: 600,
+                  marginTop: "3px",
+                  lineHeight: 1.3,
+                  whiteSpace: "pre-wrap",
+                  color: "#000000",
+                  cursor: "pointer",
+                  minHeight: "22px",
+                }}
+                title="Clic para editar observaciones"
+              >
+                {pdfComment.trim() || <span className="no-print" style={{ color: "#94a3b8", fontStyle: "italic" }}>Clic aquí para escribir observaciones de la semana...</span>}
+              </div>
             </div>
           </div>
         )}
@@ -3077,14 +3203,24 @@ export default function EventosCalendarPage() {
                     }
                     .programacio-wrapper {
                       width: 100% !important;
-                      height: 194mm !important;
-                      max-height: 194mm !important;
-                      display: flex !important;
-                      flex-direction: column !important;
-                      justify-content: space-between !important;
+                      height: auto !important;
+                      max-height: 190mm !important;
+                    }
+                    .programacio-header {
+                      padding: 4px 10px !important;
+                      margin-bottom: 2px !important;
+                    }
+                    .programacio-table th {
+                      height: 8mm !important;
+                      padding: 3px 2px !important;
                     }
                     .programacio-table td {
-                      height: ${totalRows > 4 ? "26mm" : "33mm"} !important;
+                      height: ${totalRows > 4 ? "20mm" : "22mm"} !important;
+                      padding: 2px 2px !important;
+                    }
+                    .programacio-obs {
+                      margin-top: 5px !important;
+                      padding: 2px !important;
                     }
                     .eventos-grid-week {
                       height: 174mm !important;
@@ -3146,7 +3282,7 @@ export default function EventosCalendarPage() {
               flexDirection: "column",
             }}
           >
-            {/* CABECERA UNIFICADA DEL MODAL */}
+            {/* CABECERA UNIFICADA DEL MODAL CON BOTÓN DE GUARDADO RÁPIDO */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #e2e8f0", paddingBottom: "10px", marginBottom: "14px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                 <span style={{ fontSize: "16px" }}>📝</span>
@@ -3154,7 +3290,25 @@ export default function EventosCalendarPage() {
                   Detalles del Evento · {selectedEventDetail.nombreCompleto} ({editCodigo})
                 </span>
               </div>
-              <button type="button" onClick={() => setSelectedEventDetail(null)} style={{ border: "none", background: "none", fontSize: "16px", cursor: "pointer", fontWeight: 900, color: "#64748b" }}>✕</button>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <button
+                  type="submit"
+                  style={{
+                    background: "#16a34a",
+                    color: "#ffffff",
+                    border: "none",
+                    borderRadius: "6px",
+                    padding: "5px 12px",
+                    fontSize: "11px",
+                    fontWeight: 900,
+                    cursor: "pointer",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+                  }}
+                >
+                  💾 Guardar
+                </button>
+                <button type="button" onClick={() => setSelectedEventDetail(null)} style={{ border: "none", background: "none", fontSize: "16px", cursor: "pointer", fontWeight: 900, color: "#64748b" }}>✕</button>
+              </div>
             </div>
 
             {/* CUERPO UNIFICADO DE SCROLL CON LAS 3 SECCIONES EN ORDEN */}
@@ -3527,8 +3681,13 @@ export default function EventosCalendarPage() {
         <div className="no-print" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 1000, display: "grid", placeItems: "center", padding: "16px" }}>
           <form onSubmit={handleCreateSubmit} style={{ background: "#ffffff", borderRadius: "12px", padding: "20px", maxWidth: "460px", width: "100%", boxShadow: "0 20px 25px -5px rgba(0,0,0,0.2)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #e2e8f0", paddingBottom: "8px", marginBottom: "12px" }}>
-              <span style={{ fontSize: "12px", fontWeight: 900, color: "#16a34a", textTransform: "uppercase" }}>➕ Nuevo Evento (Sincronizado)</span>
-              <button type="button" onClick={() => setShowCreateModal(false)} style={{ border: "none", background: "none", fontSize: "14px", cursor: "pointer", fontWeight: 900 }}>✕</button>
+              <span style={{ fontSize: "12px", fontWeight: 900, color: "#16a34a", textTransform: "uppercase" }}>➕ Nuevo Evento</span>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <button type="submit" style={{ background: "#16a34a", color: "#ffffff", border: "none", borderRadius: "5px", padding: "4px 10px", fontSize: "11px", fontWeight: 900, cursor: "pointer" }}>
+                  Guardar
+                </button>
+                <button type="button" onClick={() => setShowCreateModal(false)} style={{ border: "none", background: "none", fontSize: "14px", cursor: "pointer", fontWeight: 900 }}>✕</button>
+              </div>
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: "10px", fontSize: "11px" }}>
