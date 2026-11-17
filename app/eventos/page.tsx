@@ -1106,7 +1106,28 @@ export default function EventosCalendarPage() {
         extra = (code + " " + name).match(/^(?:VD|VIDEO|VÍDEO)\s+(.+)$/i)?.[1] || "";
       }
       extra = extra.replace(/^(?:VD|VIDEO|VÍDEO)\s*/i, "").trim();
-      mainTitle = extra ? `VIDEO ${extra.toUpperCase()}` : "VIDEO";
+
+      // Si no tiene orientación manual, asignar según el orden de vídeos de la semana (1º ABP, 2º RIVAL, 3º PROPIO)
+      if (!extra) {
+        const weekDateStrs = new Set(microcicloDays.map((d) => d.dateStr));
+        const allWeekVideos = filteredEventos
+          .filter((e) => weekDateStrs.has(e.fecha) && (/video|vídeo|charla/i.test(e.codigo + " " + e.nombreCompleto) || e.codigo.startsWith("VD") || e.tipoCat === "charla"))
+          .sort((a, b) => {
+            if (a.fecha !== b.fecha) return a.fecha.localeCompare(b.fecha);
+            return (a.horaInicio || "").localeCompare(b.horaInicio || "");
+          });
+
+        const videoIdx = allWeekVideos.findIndex((e) => e.id === ev.id || (e.fecha === ev.fecha && e.horaInicio === ev.horaInicio));
+        if (videoIdx === 0) {
+          extra = "ABP";
+        } else if (videoIdx === 1) {
+          extra = "RIVAL";
+        } else {
+          extra = "PROPIO";
+        }
+      }
+
+      mainTitle = `VIDEO ${extra.toUpperCase()}`;
     } else if (/gym|gimnasio|fuerza|coadyuvante/i.test(name + " " + code) || code === "GYM") {
       mainTitle = "GYM GRUPAL";
       if (lug) subTitle = lug.toUpperCase();
@@ -1188,7 +1209,19 @@ export default function EventosCalendarPage() {
     setEditHora(ev.horaInicio);
     setEditDuracion(ev.duracionMin);
     setEditLugar(ev.lugar);
-    setEditOrientacion(ev.orientacion || "");
+    let initialOri = ev.orientacion || "";
+    if (!initialOri && (/video|vídeo|charla/i.test(ev.codigo + " " + ev.nombreCompleto) || ev.codigo.startsWith("VD") || ev.tipoCat === "charla")) {
+      const weekDateStrs = new Set(microcicloDays.map((d) => d.dateStr));
+      const allWeekVideos = filteredEventos
+        .filter((e) => weekDateStrs.has(e.fecha) && (/video|vídeo|charla/i.test(e.codigo + " " + e.nombreCompleto) || e.codigo.startsWith("VD") || e.tipoCat === "charla"))
+        .sort((a, b) => {
+          if (a.fecha !== b.fecha) return a.fecha.localeCompare(b.fecha);
+          return (a.horaInicio || "").localeCompare(b.horaInicio || "");
+        });
+      const videoIdx = allWeekVideos.findIndex((e) => e.id === ev.id || (e.fecha === ev.fecha && e.horaInicio === ev.horaInicio));
+      initialOri = videoIdx === 0 ? "ABP" : videoIdx === 1 ? "RIVAL" : "PROPIO";
+    }
+    setEditOrientacion(initialOri);
     setEditCarga(ev.carga || "");
     let teamCommTxt = ev.comentario || "";
     if (!teamCommTxt && typeof window !== "undefined") {
@@ -3629,8 +3662,33 @@ export default function EventosCalendarPage() {
                 </div>
 
                 <div>
-                  <label style={{ fontWeight: 800, display: "block", marginBottom: "3px", fontSize: "11px" }}>Orientación Táctica / Nombre de Sesión:</label>
-                  <input type="text" value={editOrientacion} onChange={(e) => setEditOrientacion(e.target.value)} placeholder="ej. Salida de presión y 5v5" style={{ width: "100%", padding: "6px", border: "1px solid #cbd5e1", borderRadius: "6px", fontSize: "11px" }} />
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "3px" }}>
+                    <label style={{ fontWeight: 800, fontSize: "11px" }}>Orientación Táctica / Nombre de Sesión:</label>
+                    {(editTipoCat === "charla" || /VD|VIDEO/i.test(editCodigo)) && (
+                      <div style={{ display: "flex", gap: "4px" }}>
+                        {["ABP", "RIVAL", "PROPIO", "INDIVIDUAL"].map((tag) => (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => setEditOrientacion(tag)}
+                            style={{
+                              background: editOrientacion.toUpperCase() === tag ? "#1e3a8a" : "#f1f5f9",
+                              color: editOrientacion.toUpperCase() === tag ? "#ffffff" : "#475569",
+                              border: "1px solid #cbd5e1",
+                              borderRadius: "4px",
+                              padding: "2px 6px",
+                              fontSize: "10px",
+                              fontWeight: 800,
+                              cursor: "pointer",
+                            }}
+                          >
+                            {tag}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <input type="text" value={editOrientacion} onChange={(e) => setEditOrientacion(e.target.value)} placeholder="ej. ABP, RIVAL, Salida de presión y 5v5" style={{ width: "100%", padding: "6px", border: "1px solid #cbd5e1", borderRadius: "6px", fontSize: "11px" }} />
                 </div>
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
