@@ -205,16 +205,16 @@ function getHoraFinStr(horaInicioStr: string, duracionMin: number): string {
   return `${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`;
 }
 
-function getConvocatoriaTime(timeStr?: string): string {
+function getConvocatoriaTime(timeStr?: string, offsetMins: number = 30): string {
   if (!timeStr || !timeStr.includes(":")) return "";
   const parts = timeStr.trim().split(":");
   const h = parseInt(parts[0], 10);
   const m = parseInt(parts[1], 10);
   if (isNaN(h)) return "";
   const mins = isNaN(m) ? 0 : m;
-  let total = h * 60 + mins - 30;
-  if (total < 0) total += 24 * 60;
-  const newH = Math.floor(total / 60);
+  let total = h * 60 + mins - (offsetMins ?? 30);
+  while (total < 0) total += 24 * 60;
+  const newH = Math.floor(total / 60) % 24;
   const newM = total % 60;
   return `${String(newH).padStart(2, "0")}:${String(newM).padStart(2, "0")}`;
 }
@@ -286,6 +286,28 @@ export default function EventosCalendarPage() {
       }
       return next;
     });
+  };
+
+  // MINUTOS DE ANTELACIÓN DE LA CONVOCATORIA (POR DEFECTO 30 MIN, CONFIGURABLE A 15, 20, O CUALQUIER VALOR)
+  const [convocatoriaOffsetMins, setConvocatoriaOffsetMins] = useState<number>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("convocatoria_offset_mins");
+        return saved ? Number(saved) || 30 : 30;
+      } catch (e) {
+        return 30;
+      }
+    }
+    return 30;
+  });
+
+  const handleChangeConvocatoriaOffset = (mins: number) => {
+    setConvocatoriaOffsetMins(mins);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("convocatoria_offset_mins", String(mins));
+      } catch (e) {}
+    }
   };
 
   const [customConvocatorias, setCustomConvocatorias] = useState<Record<string, string>>(() => {
@@ -2405,31 +2427,84 @@ export default function EventosCalendarPage() {
             <span>{hideReadaptaciones ? "👁️ Mostrar Readaptación" : "🙈 Ocultar Readaptación"}</span>
           </button>
 
-          {/* BOTÓN TOGGLE FILA DE CONVOCATORIA (30 MIN ANTES) */}
-          <button
-            type="button"
+          {/* BOTÓN TOGGLE FILA DE CONVOCATORIA CON SELECTOR DE MINUTOS DE ANTELACIÓN */}
+          <div
             className="no-print"
-            onClick={handleToggleConvocatoriaRow}
-            title={showConvocatoriaRow ? "Ocultar fila de Convocatoria (30 min antes)" : "Añadir fila de Convocatoria (30 min antes)"}
             style={{
-              height: "32px",
-              padding: "0 11px",
-              borderRadius: "7px",
-              border: showConvocatoriaRow ? "1.5px solid #0284c7" : "1px solid #cbd5e1",
-              background: showConvocatoriaRow ? "#e0f2fe" : "#ffffff",
-              color: showConvocatoriaRow ? "#0369a1" : "#475569",
-              fontSize: "11px",
-              fontWeight: 800,
-              cursor: "pointer",
               display: "flex",
               alignItems: "center",
-              gap: "5px",
+              height: "32px",
+              borderRadius: "7px",
+              border: showConvocatoriaRow ? "1.5px solid #0284c7" : "1px solid #cbd5e1",
+              background: showConvocatoriaRow ? "#f0f9ff" : "#ffffff",
               boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-              transition: "all 0.15s ease",
+              overflow: "hidden",
             }}
           >
-            <span>{showConvocatoriaRow ? "🔔 Convocatoria activa" : "➕ Fila Convocatoria"}</span>
-          </button>
+            <button
+              type="button"
+              onClick={handleToggleConvocatoriaRow}
+              title={showConvocatoriaRow ? "Clic para ocultar fila de Convocatoria" : "Clic para activar fila de Convocatoria"}
+              style={{
+                border: "none",
+                background: "transparent",
+                color: showConvocatoriaRow ? "#0369a1" : "#475569",
+                fontSize: "11px",
+                fontWeight: 800,
+                cursor: "pointer",
+                padding: "0 9px",
+                height: "100%",
+                display: "flex",
+                alignItems: "center",
+                gap: "5px",
+              }}
+            >
+              <span>{showConvocatoriaRow ? "🔔 Convocatoria" : "➕ Convocatoria"}</span>
+            </button>
+
+            {showConvocatoriaRow && (
+              <div style={{ display: "flex", alignItems: "center", borderLeft: "1px solid #bae6fd", padding: "0 6px", height: "100%", background: "#e0f2fe" }}>
+                <select
+                  value={convocatoriaOffsetMins}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === "custom") {
+                      const promptVal = window.prompt("Minutos de antelación para la convocatoria antes del primer evento (ej. 15, 20, 25, 30, 45):", String(convocatoriaOffsetMins));
+                      if (promptVal !== null) {
+                        const num = parseInt(promptVal, 10);
+                        if (!isNaN(num) && num >= 0) {
+                          handleChangeConvocatoriaOffset(num);
+                        }
+                      }
+                    } else {
+                      handleChangeConvocatoriaOffset(Number(val));
+                    }
+                  }}
+                  title="Cambiar minutos de antelación por defecto"
+                  style={{
+                    border: "none",
+                    background: "transparent",
+                    color: "#0369a1",
+                    fontSize: "10.5px",
+                    fontWeight: 900,
+                    cursor: "pointer",
+                    outline: "none",
+                    padding: "2px 0",
+                  }}
+                >
+                  <option value={15}>-15 min</option>
+                  <option value={20}>-20 min</option>
+                  <option value={30}>-30 min (defecto)</option>
+                  <option value={45}>-45 min</option>
+                  <option value={60}>-60 min (1h)</option>
+                  {![15, 20, 30, 45, 60].includes(convocatoriaOffsetMins) && (
+                    <option value={convocatoriaOffsetMins}>-{convocatoriaOffsetMins} min</option>
+                  )}
+                  <option value="custom">✏️ Otro...</option>
+                </select>
+              </div>
+            )}
+          </div>
 
           <button
             type="button"
@@ -2909,7 +2984,7 @@ export default function EventosCalendarPage() {
                         dayEvents.find((e) => e.horaInicio && !/convocatoria/i.test(e.codigo + " " + e.nombreCompleto)) ||
                         dayEvents.find((e) => e.horaInicio);
 
-                      const autoTime = firstSession ? getConvocatoriaTime(firstSession.horaInicio) : "";
+                      const autoTime = firstSession ? getConvocatoriaTime(firstSession.horaInicio, convocatoriaOffsetMins) : "";
                       const displayTime = customConvocatorias[day.dateStr] || autoTime;
 
                       return (
@@ -3323,15 +3398,46 @@ export default function EventosCalendarPage() {
                 <span>Ocultar eventos de Readaptación en este PDF</span>
               </label>
 
-              <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontSize: "11px", fontWeight: 700, color: "#1e293b", padding: "4px 0" }}>
-                <input
-                  type="checkbox"
-                  checked={showConvocatoriaRow}
-                  onChange={handleToggleConvocatoriaRow}
-                  style={{ width: "16px", height: "16px", accentColor: "#0284c7" }}
-                />
-                <span>Incluir fila de Convocatoria (30 min antes del primer evento)</span>
-              </label>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 0", gap: "8px" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontSize: "11px", fontWeight: 700, color: "#1e293b" }}>
+                  <input
+                    type="checkbox"
+                    checked={showConvocatoriaRow}
+                    onChange={handleToggleConvocatoriaRow}
+                    style={{ width: "16px", height: "16px", accentColor: "#0284c7" }}
+                  />
+                  <span>Fila de Convocatoria automática</span>
+                </label>
+
+                {showConvocatoriaRow && (
+                  <select
+                    value={convocatoriaOffsetMins}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === "custom") {
+                        const promptVal = window.prompt("Minutos de antelación:", String(convocatoriaOffsetMins));
+                        if (promptVal !== null) {
+                          const num = parseInt(promptVal, 10);
+                          if (!isNaN(num) && num >= 0) handleChangeConvocatoriaOffset(num);
+                        }
+                      } else {
+                        handleChangeConvocatoriaOffset(Number(val));
+                      }
+                    }}
+                    style={{ fontSize: "11px", padding: "3px 6px", borderRadius: "5px", border: "1px solid #cbd5e1", fontWeight: 800, color: "#0369a1" }}
+                  >
+                    <option value={15}>15 min antes</option>
+                    <option value={20}>20 min antes</option>
+                    <option value={30}>30 min antes</option>
+                    <option value={45}>45 min antes</option>
+                    <option value={60}>60 min antes</option>
+                    {![15, 20, 30, 45, 60].includes(convocatoriaOffsetMins) && (
+                      <option value={convocatoriaOffsetMins}>{convocatoriaOffsetMins} min antes</option>
+                    )}
+                    <option value="custom">Otro...</option>
+                  </select>
+                )}
+              </div>
             </div>
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "16px" }}>
