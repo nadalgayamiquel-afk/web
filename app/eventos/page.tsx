@@ -1108,7 +1108,7 @@ export default function EventosCalendarPage() {
       const extra = orient || com;
       mainTitle = extra ? `VIDEO ${extra.toUpperCase()}` : "VIDEO";
     } else if (/gym|gimnasio|fuerza|coadyuvante/i.test(name + " " + code) || code === "GYM") {
-      mainTitle = "GYM GRUPAL.";
+      mainTitle = "GYM GRUPAL";
       if (lug) subTitle = lug.toUpperCase();
       else if (orient) subTitle = orient.toUpperCase();
     } else if (/partit|partido/i.test(name + " " + code) || /PAL|PAV|PL|PV/.test(code) || ev.tipoCat === "partido") {
@@ -1737,7 +1737,6 @@ export default function EventosCalendarPage() {
             box-sizing: border-box !important;
           }
           .programacio-table th {
-            background: #b4c6e7 !important;
             border: 1px solid #7f99b8 !important;
             padding: 4px 2px !important;
             font-size: 10.5px !important;
@@ -1748,6 +1747,9 @@ export default function EventosCalendarPage() {
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
             box-sizing: border-box !important;
+          }
+          .programacio-day-th {
+            background: #8ea9db !important;
           }
           .programacio-table td {
             border: 1px solid #7f99b8 !important;
@@ -2950,8 +2952,9 @@ export default function EventosCalendarPage() {
                     return (
                       <th
                         key={idx}
+                        className="programacio-day-th"
                         style={{
-                          background: "#b4c6e7",
+                          background: "#8ea9db",
                           border: "1px solid #7f99b8",
                           padding: "5px 2px",
                           color: "#000000",
@@ -2963,7 +2966,7 @@ export default function EventosCalendarPage() {
                         <div style={{ fontSize: "11px", fontWeight: 900, textTransform: "uppercase", lineHeight: 1.15 }}>
                           {day.dayName}
                         </div>
-                        <div style={{ fontSize: "9.5px", fontWeight: 700, color: "#475569", marginTop: "2px", lineHeight: 1.1 }}>
+                        <div style={{ fontSize: "9.5px", fontWeight: 700, color: "#1e293b", marginTop: "2px", lineHeight: 1.1 }}>
                           {diaMes}
                         </div>
                       </th>
