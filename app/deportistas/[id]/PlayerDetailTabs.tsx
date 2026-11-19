@@ -1065,68 +1065,98 @@ export function getPlayerSpeedTestRecords(
 
   if (!pRecords || pRecords.length === 0) return [];
 
-  const sprintTestRecords: SpeedTestRecord[] = [];
-  const otherSessionRecords: SpeedTestRecord[] = [];
+  const sprintCandidates: SpeedTestRecord[] = [];
+  const otherCandidates: SpeedTestRecord[] = [];
 
   pRecords.forEach((r: any) => {
     const m = r.metricas || {};
-    const totalVel = Number(m["Vel Max"] || m.vel_max || m.max_speed || m["MAX Speed(km/h)"] || 0);
+    const sesionLabel = r.tipo_sesion || r.match_day || "Sesión";
 
-    let hasSprintTask = false;
-    let sprintTaskVel = 0;
-    let sprintTaskName = "";
-
-    if (Array.isArray(m.tareas)) {
+    if (Array.isArray(m.tareas) && m.tareas.length > 0) {
       m.tareas.forEach((t: any) => {
         const tName = String(t.nombre || t.tarea || "").trim();
+        const v = Number(t["Vel Max"] || t["MAX Speed(km/h)"] || t.vel_max || 0);
+        if (v <= 0) return;
+
         if (tName.toUpperCase().includes("SPRINT")) {
-          const v = Number(t["Vel Max"] || t["MAX Speed(km/h)"] || t.vel_max || 0);
-          if (v > sprintTaskVel) {
-            sprintTaskVel = v;
-            sprintTaskName = tName;
-            hasSprintTask = true;
-          }
+          sprintCandidates.push({
+            fecha: r.fecha,
+            velMax: Math.round(v * 100) / 100,
+            tipo: `Test Sprint (${tName})`,
+            origen: "tarea_sprint",
+            sesion: sesionLabel,
+          });
+        } else {
+          otherCandidates.push({
+            fecha: r.fecha,
+            velMax: Math.round(v * 100) / 100,
+            tipo: tName || `Tarea (${sesionLabel})`,
+            origen: "sesion_max",
+            sesion: sesionLabel,
+          });
         }
       });
-    }
-
-    if (hasSprintTask && sprintTaskVel > 0) {
-      sprintTestRecords.push({
-        fecha: r.fecha,
-        velMax: Math.round(sprintTaskVel * 100) / 100,
-        tipo: `Test Sprint (${sprintTaskName})`,
-        origen: "tarea_sprint",
-        sesion: r.tipo_sesion || r.match_day || "Sesión",
-      });
-    } else if (totalVel > 0) {
-      otherSessionRecords.push({
-        fecha: r.fecha,
-        velMax: Math.round(totalVel * 100) / 100,
-        tipo: `Vel Máx (${r.tipo_sesion || r.match_day || "Sesión"})`,
-        origen: "sesion_max",
-        sesion: r.tipo_sesion || r.match_day || "Sesión",
-      });
+    } else {
+      const totalVel = Number(m["Vel Max"] || m.vel_max || m.max_speed || m["MAX Speed(km/h)"] || 0);
+      if (totalVel > 0) {
+        const taskName = String(r.tarea || "").trim();
+        if (taskName.toUpperCase().includes("SPRINT")) {
+          sprintCandidates.push({
+            fecha: r.fecha,
+            velMax: Math.round(totalVel * 100) / 100,
+            tipo: `Test Sprint (${taskName || "Sprint"})`,
+            origen: "tarea_sprint",
+            sesion: sesionLabel,
+          });
+        } else {
+          otherCandidates.push({
+            fecha: r.fecha,
+            velMax: Math.round(totalVel * 100) / 100,
+            tipo: taskName ? taskName : `Vel Máx (${sesionLabel})`,
+            origen: "sesion_max",
+            sesion: sesionLabel,
+          });
+        }
+      }
     }
   });
 
-  const byDate = new Map<string, SpeedTestRecord>();
-  sprintTestRecords.forEach((s) => {
-    const existing = byDate.get(s.fecha);
+  // 1. Obtener las 2 tareas de sprint (agrupadas por fecha tomando la mejor marca)
+  const sprintByDate = new Map<string, SpeedTestRecord>();
+  sprintCandidates.forEach((s) => {
+    const existing = sprintByDate.get(s.fecha);
     if (!existing || s.velMax > existing.velMax) {
-      byDate.set(s.fecha, s);
+      sprintByDate.set(s.fecha, s);
     }
   });
 
-  otherSessionRecords.sort((a, b) => b.velMax - a.velMax);
+  const sprintRecords = Array.from(sprintByDate.values())
+    .sort((a, b) => a.fecha.localeCompare(b.fecha))
+    .slice(-2);
 
-  for (const other of otherSessionRecords) {
-    if (!byDate.has(other.fecha)) {
-      byDate.set(other.fecha, other);
-      if (byDate.size >= 3) break;
+  // 2. Obtener las 2 velocidades más altas en otras tareas
+  otherCandidates.sort((a, b) => b.velMax - a.velMax);
+
+  const topOtherRecords: SpeedTestRecord[] = [];
+  const seenOtherKeys = new Set<string>();
+
+  for (const item of otherCandidates) {
+    const key = `${item.fecha}_${item.tipo}_${item.velMax}`;
+    if (!seenOtherKeys.has(key)) {
+      seenOtherKeys.add(key);
+      topOtherRecords.push(item);
+      if (topOtherRecords.length >= 2) break;
     }
   }
 
-  return Array.from(byDate.values()).sort((a, b) => a.fecha.localeCompare(b.fecha));
+  // 3. Unir las 2 tareas de sprint y las 2 velocidades más altas en otras tareas
+  const combined = [...sprintRecords, ...topOtherRecords];
+
+  return combined.sort((a, b) => {
+    const dateComp = a.fecha.localeCompare(b.fecha);
+    if (dateComp !== 0) return dateComp;
+    return b.velMax - a.velMax;
+  });
 }
 
 export default function PlayerDetailTabs({
@@ -1836,6 +1866,16 @@ export default function PlayerDetailTabs({
   }, [jugador, localGpsRecords]);
 
   const speedChartData = useMemo(() => {
+    const dateCounts: Record<string, number> = {};
+    speedTestRecords.forEach((r) => {
+      let d = r.fecha;
+      try {
+        const parts = r.fecha.split("-");
+        if (parts.length === 3) d = `${parts[2]}/${parts[1]}`;
+      } catch {}
+      dateCounts[d] = (dateCounts[d] || 0) + 1;
+    });
+
     return speedTestRecords.map((r) => {
       let dateLabel = r.fecha;
       try {
@@ -1844,6 +1884,12 @@ export default function PlayerDetailTabs({
           dateLabel = `${parts[2]}/${parts[1]}`;
         }
       } catch {}
+
+      if (dateCounts[dateLabel] > 1) {
+        const tag = r.origen === "tarea_sprint" ? "Sprint" : (r.tipo.length > 8 ? r.tipo.slice(0, 8) : r.tipo);
+        dateLabel = `${dateLabel} (${tag})`;
+      }
+
       return {
         fecha: r.fecha,
         dateLabel,
@@ -1853,6 +1899,16 @@ export default function PlayerDetailTabs({
         sesion: r.sesion,
       };
     });
+  }, [speedTestRecords]);
+
+  const speedYDomain = useMemo(() => {
+    if (!speedTestRecords || speedTestRecords.length === 0) return [25, 36];
+    const vals = speedTestRecords.map((r) => r.velMax);
+    const minVal = Math.min(...vals);
+    const maxVal = Math.max(...vals);
+    const floorMin = Math.max(0, Math.floor(minVal - 1));
+    const ceilMax = Math.ceil(maxVal + 1);
+    return [floorMin, ceilMax];
   }, [speedTestRecords]);
 
   const speedStats = useMemo(() => {
@@ -5072,7 +5128,7 @@ export default function PlayerDetailTabs({
                   </h3>
                 </div>
                 <p style={{ fontSize: "11.5px", color: "#64748b", margin: "2px 0 0" }}>
-                  Progresión cronológica de la velocidad máxima registrada en tareas de sprint y sesiones oficiales de competición.
+                  Progresión cronológica considerando las dos tareas de test de sprint y las dos velocidades máximas registradas en otras tareas.
                 </p>
               </div>
 
@@ -5108,8 +5164,7 @@ export default function PlayerDetailTabs({
                       padding={{ left: 50, right: 50 }}
                     />
                     <YAxis
-                      domain={[27, 36]}
-                      ticks={[27, 28, 29, 30, 31, 32, 33, 34, 35, 36]}
+                      domain={speedYDomain}
                       stroke="#2563eb"
                       fontSize={11}
                       fontWeight={600}
@@ -5200,7 +5255,7 @@ export default function PlayerDetailTabs({
                               color: isSprint ? "#15803d" : "#1e40af",
                               border: `1px solid ${isSprint ? "#bbf7d0" : "#bfdbfe"}`
                             }}>
-                              {row.tipo}
+                              {isSprint ? `🏃 ${row.tipo}` : `⚡ Tarea: ${row.tipo}`}
                             </span>
                             <span style={{ fontSize: "10.5px", color: "#64748b", marginLeft: "6px" }}>({row.sesion})</span>
                           </td>
