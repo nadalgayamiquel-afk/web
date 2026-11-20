@@ -61,7 +61,11 @@ export default async function CalendarioPage() {
   }
 
   // ─── RESILIENT DATA FALLBACK & COMPREHENSIVE MERGE ───
-  // 1. Días: Usar planificacion completa con rivales, eventos, cargas, volúmenes
+  // 1. Bloques: Combinar BBDD con los bloques del backup maestro como fallback
+  const masterBloques = getMasterEventosBloquesMap();
+  bloques = { ...masterBloques, ...(bloques || {}) };
+
+  // 2. Días: Usar planificacion de BBDD / Supabase y sincronizar evento_1..6 desde bloques reales
   const masterPlanDays = getMasterPlanificacionDays();
   const masterDaysMap = new Map<string, any>();
   masterPlanDays.forEach((d: any) => { if (d.fecha) masterDaysMap.set(d.fecha, d); });
@@ -71,24 +75,30 @@ export default async function CalendarioPage() {
   } else {
     days = days.map((d: any) => {
       const m = masterDaysMap.get(d.fecha);
-      if (!m) return d;
+      const b0 = bloques[`${d.id}_slot_0`] || bloques[`${d.fecha}_slot_0`];
+      const b1 = bloques[`${d.id}_slot_1`] || bloques[`${d.fecha}_slot_1`];
+      const b2 = bloques[`${d.id}_slot_2`] || bloques[`${d.fecha}_slot_2`];
+      const b3 = bloques[`${d.id}_slot_3`] || bloques[`${d.fecha}_slot_3`];
+      const b4 = bloques[`${d.id}_slot_4`] || bloques[`${d.fecha}_slot_4`];
+      const b5 = bloques[`${d.id}_slot_5`] || bloques[`${d.fecha}_slot_5`];
+
       return {
         ...d,
-        rival: d.rival || m.rival || "",
-        evento: d.evento || m.evento || m.evento_am || null,
-        evento_am: d.evento_am || m.evento_am || m.evento || null,
-        evento_1: d.evento_1 ?? m.evento_1 ?? null,
-        evento_2: d.evento_2 ?? m.evento_2 ?? null,
-        evento_3: d.evento_3 ?? m.evento_3 ?? null,
-        evento_4: d.evento_4 ?? m.evento_4 ?? null,
-        evento_5: d.evento_5 ?? m.evento_5 ?? null,
-        evento_6: d.evento_6 ?? m.evento_6 ?? null,
-        md: d.md || m.md || null,
-        carga: d.carga ?? m.carga ?? null,
-        volumen: d.volumen ?? m.volumen ?? null,
-        intensidad: d.intensidad ?? m.intensidad ?? null,
-        comentario_microciclo: d.comentario_microciclo || m.comentario_microciclo || null,
-        resultado_partido: d.resultado_partido || m.resultado_partido || "",
+        rival: d.rival || m?.rival || "",
+        evento: d.evento || d.evento_am || m?.evento || m?.evento_am || null,
+        evento_am: d.evento_am || d.evento || m?.evento_am || m?.evento || null,
+        evento_1: b0?.tipo !== undefined ? b0.tipo : (d.evento_1 ?? m?.evento_1 ?? null),
+        evento_2: b1?.tipo !== undefined ? b1.tipo : (d.evento_2 ?? m?.evento_2 ?? null),
+        evento_3: b2?.tipo !== undefined ? b2.tipo : (d.evento_3 ?? m?.evento_3 ?? null),
+        evento_4: b3?.tipo !== undefined ? b3.tipo : (d.evento_4 ?? m?.evento_4 ?? null),
+        evento_5: b4?.tipo !== undefined ? b4.tipo : (d.evento_5 ?? m?.evento_5 ?? null),
+        evento_6: b5?.tipo !== undefined ? b5.tipo : (d.evento_6 ?? m?.evento_6 ?? null),
+        md: d.md || m?.md || null,
+        carga: d.carga ?? m?.carga ?? null,
+        volumen: d.volumen ?? m?.volumen ?? null,
+        intensidad: d.intensidad ?? m?.intensidad ?? null,
+        comentario_microciclo: d.comentario_microciclo || m?.comentario_microciclo || null,
+        resultado_partido: d.resultado_partido || m?.resultado_partido || "",
       };
     }) as SesionDia[];
   }
@@ -112,13 +122,9 @@ export default async function CalendarioPage() {
     estados = getMasterBackupTable("estado_diario_jugador");
   }
 
-  // 2. Bloques: Combinar BBDD con los bloques del backup maestro (118 bloques con horarios, tareas, lugares)
-  const masterBloques = getMasterEventosBloquesMap();
-  bloques = { ...masterBloques, ...(bloques || {}) };
-
-  // 3. Asignaciones de jugadores a eventos: Combinar con las 16.626 asignaciones del backup maestro
+  // 3. Asignaciones de jugadores a eventos: Base de datos Supabase tiene prioridad absoluta
   const masterAssignments = getMasterPlayerEventsMap();
-  bbddAssignments = { ...masterAssignments, ...bbddAssignments };
+  bbddAssignments = { ...masterAssignments };
 
   const idToFecha = new Map<string, string>();
   (days as any[]).forEach((d: any) => {
@@ -126,18 +132,13 @@ export default async function CalendarioPage() {
   });
 
   (estados as any[]).forEach((e: any) => {
-    if (!e.evento_asignado || !e.jugador_id) return;
+    if (!e.jugador_id || !e.sesion_dia_id) return;
     const fecha = idToFecha.get(e.sesion_dia_id);
+    const assignedVal = (e.evento_asignado || "").trim();
     if (fecha) {
-      if (!bbddAssignments[`${e.jugador_id}_${fecha}`]) {
-        bbddAssignments[`${e.jugador_id}_${fecha}`] = e.evento_asignado;
-      }
+      bbddAssignments[`${e.jugador_id}_${fecha}`] = assignedVal;
     }
-    if (e.sesion_dia_id) {
-      if (!bbddAssignments[`${e.jugador_id}_${e.sesion_dia_id}`]) {
-        bbddAssignments[`${e.jugador_id}_${e.sesion_dia_id}`] = e.evento_asignado;
-      }
-    }
+    bbddAssignments[`${e.jugador_id}_${e.sesion_dia_id}`] = assignedVal;
   });
 
   // 4. Comentarios y disponibilidades maestras

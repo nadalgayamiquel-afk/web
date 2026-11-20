@@ -3152,8 +3152,8 @@ export function CalendarGrid({
         saveClubConfig(clubConfig).catch((e) => console.error("Error auto-guardando clubConfig:", e));
       }
 
-      // En visión microciclo o mesociclo, guardar el ámbito activo (rápido y eficiente en < 0.5s)
-      const daysToSave = (filteredDays && filteredDays.length > 0) ? filteredDays : days;
+      // Guardar días y bloques activos en BBDD de forma completa y consistente
+      const daysToSave = days && days.length > 0 ? days : filteredDays;
       const targetDates = new Set(daysToSave.map(d => d.fecha).filter(Boolean));
       const targetIds = new Set(daysToSave.map(d => d.id).filter(Boolean));
 
@@ -3782,6 +3782,18 @@ export function CalendarGrid({
             } catch (e) {}
           }
           return next;
+        });
+
+        // Persistir bloques arrastrados directamente a BBDD Supabase
+        Object.values(updatedBlocksUpdates).forEach((blk) => {
+          if (blk && blk.day_id && blk.slot !== undefined) {
+            saveSingleBloqueBBDD({
+              dayId: blk.day_id,
+              fecha: blk.fecha,
+              slot: blk.slot,
+              block: blk,
+            }).catch(console.error);
+          }
         });
       }
 
@@ -7094,13 +7106,17 @@ export function CalendarGrid({
                             const cellKeyFecha = `${p.id}_${d.fecha}`;
                             const pApodo = (p.apodo || "").toUpperCase().trim();
                             const pNombre = (p.nombre || "").toUpperCase().trim();
-                            const rawVal = (
-                              playerEventsMap[cellKeyFecha] ||
-                              playerEventsMap[cellKey] ||
-                              (pApodo ? playerEventsMap[`${pApodo}_${d.fecha}`] : "") ||
-                              (pNombre ? playerEventsMap[`${pNombre}_${d.fecha}`] : "") ||
-                              ""
-                            ).trim();
+                            let rawVal = "";
+                            if (playerEventsMap[cellKeyFecha] !== undefined) {
+                              rawVal = playerEventsMap[cellKeyFecha];
+                            } else if (playerEventsMap[cellKey] !== undefined) {
+                              rawVal = playerEventsMap[cellKey];
+                            } else if (pApodo && playerEventsMap[`${pApodo}_${d.fecha}`] !== undefined) {
+                              rawVal = playerEventsMap[`${pApodo}_${d.fecha}`];
+                            } else if (pNombre && playerEventsMap[`${pNombre}_${d.fecha}`] !== undefined) {
+                              rawVal = playerEventsMap[`${pNombre}_${d.fecha}`];
+                            }
+                            rawVal = (rawVal || "").trim();
 
                             const isInRange = dIdx !== -1 && rIdx !== -1 && isCellInRange(rIdx, dIdx);
                             const isInFill = dIdx !== -1 && rIdx !== -1 && isCellInFillPreview(rIdx, dIdx);
@@ -7140,6 +7156,8 @@ export function CalendarGrid({
                                         [cellKey]: newVal,
                                         [cellKeyFecha]: newVal,
                                       };
+                                      if (pApodo) next[`${pApodo}_${d.fecha}`] = newVal;
+                                      if (pNombre) next[`${pNombre}_${d.fecha}`] = newVal;
                                       if (typeof window !== "undefined") {
                                         try {
                                           localStorage.setItem("player_events_map_v1", JSON.stringify(next));

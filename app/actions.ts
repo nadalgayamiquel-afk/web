@@ -1900,9 +1900,9 @@ export async function updateSesionDia(id: string, datos: Record<string, any>) {
   const payload: Record<string, any> = {};
   Object.keys(datos).forEach((k) => {
     if (datos[k] !== undefined) {
-      if (k === "evento" || k === "evento_am" || k === "evento_general" || k === "evento_principal" || k === "evento_1") {
+      if (k === "evento" || k === "evento_am" || k === "evento_general" || k === "evento_principal") {
         payload["evento_am"] = datos[k] || null;
-      } else if (k === "evento_pm" || k === "evento_2") {
+      } else if (k === "evento_pm") {
         payload["evento_pm"] = datos[k] || null;
       } else if (k === "comentario" || k === "comentario_microciclo" || k === "comentario_fisico" || k === "comentario_tecnico") {
         payload["comentario_microciclo"] = datos[k] || null;
@@ -1915,6 +1915,10 @@ export async function updateSesionDia(id: string, datos: Record<string, any>) {
       }
     }
   });
+
+  if (Object.keys(payload).length === 0) {
+    return { success: true };
+  }
 
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
   let query = supabase.from("sesiones_dia").update(payload);
@@ -2001,8 +2005,8 @@ export async function saveFullPlanificacionBBDD(sessionsPayload: any[], comments
       carga: cleanNumericValue(s.carga),
       volumen: cleanNumericValue(s.volumen),
       intensidad: cleanNumericValue(s.intensidad),
-      evento_am: s.evento_am ?? s.evento ?? s.evento_principal ?? s.evento_1 ?? null,
-      evento_pm: s.evento_pm ?? s.evento_2 ?? null,
+      evento_am: s.evento_am ?? s.evento ?? s.evento_principal ?? null,
+      evento_pm: s.evento_pm ?? null,
       comentario_microciclo: s.comentario_microciclo ?? s.comentario ?? null,
     };
   });
@@ -2296,6 +2300,20 @@ export async function saveFullPlanificacionBBDD(sessionsPayload: any[], comments
     }
   }
 
+  // 4c. Limpiar asignaciones explícitamente borradas en estado_diario_jugador
+  if (emptyEstadoRows.length > 0) {
+    const clearRows = emptyEstadoRows
+      .filter((r) => validPlayerIds.has(r.jugador_id))
+      .map((r) => ({
+        jugador_id: String(r.jugador_id),
+        sesion_dia_id: String(r.sesion_dia_id),
+        evento_asignado: null,
+      }));
+    if (clearRows.length > 0) {
+      await supabase.from("estado_diario_jugador").upsert(clearRows, { onConflict: "jugador_id,sesion_dia_id" });
+    }
+  }
+
   // 5. Guardar bloques de eventos específicos en la nueva tabla (sesiones_dia_bloques)
   if (eventosBloquesMap) {
     const bloquesRows: any[] = [];
@@ -2337,6 +2355,12 @@ export async function saveFullPlanificacionBBDD(sessionsPayload: any[], comments
       }
     });
 
+    if (bloquesToDelete.length > 0) {
+      for (const b of bloquesToDelete) {
+        await supabase.from("sesiones_dia_bloques").delete().match({ day_id: b.day_id, slot: b.slot });
+      }
+    }
+
     // Deduplicar bloques por si el frontend envía el mismo evento con la key antigua (day_...) y la key nueva (uuid...)
     const uniqueBloquesMap = new Map<string, any>();
     bloquesRows.forEach((row) => {
@@ -2361,15 +2385,10 @@ export async function saveFullPlanificacionBBDD(sessionsPayload: any[], comments
             dayUpdates.set(b.day_id, { id: b.day_id });
           }
           const dayRow = dayUpdates.get(b.day_id);
-// sync to evento_am / evento_pm
-          if (b.slot === 0 && b.tipo) dayRow.evento_am = b.tipo;
-          if (b.slot === 1 && b.tipo) dayRow.evento_pm = b.tipo;
 
           if (b.carga && !isNaN(Number(b.carga))) dayRow.carga = Number(b.carga);
           if (b.duracion && !isNaN(Number(b.duracion))) dayRow.volumen = Number(b.duracion);
           if (b.comentario) dayRow.comentario_microciclo = b.comentario;
-          // Preserve genuine rival; do not overwrite with venue
-          if (b.rival) dayRow.rival = b.rival;
         });
 
         const dayRowsToUpdate = Array.from(dayUpdates.values());
@@ -2500,32 +2519,48 @@ export async function saveFullPlanificacionBBDD(sessionsPayload: any[], comments
 export async function getPlayerEventsBBDD(): Promise<Record<string, string>> {
   try {
     const supabase = getServerSupabase();
-    const [{ data: sesiones }, { data: estados }] = await Promise.all([
+    
+    // Fetch sessions and count of estado_diario_jugador
+    const [{ data: sesiones }, { count: totalEstados }] = await Promise.all([
       supabase.from("sesiones_dia").select("id, fecha"),
-      supabase.from("estado_diario_jugador").select("jugador_id, sesion_dia_id, evento_asignado"),
+      supabase.from("estado_diario_jugador").select("*", { count: "exact", head: true }),
     ]);
+
+    const PAGE_SIZE = 1000;
+    const numPages = Math.ceil((totalEstados || 0) / PAGE_SIZE);
+    const promises = [];
+    for (let i = 0; i < Math.max(numPages, 1); i++) {
+      promises.push(
+        supabase
+          .from("estado_diario_jugador")
+          .select("jugador_id, sesion_dia_id, evento_asignado")
+          .range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1)
+      );
+    }
+    const results = await Promise.all(promises);
+    const estados: any[] = [];
+    for (const r of results) {
+      if (r.data) estados.push(...r.data);
+    }
 
     const idToFecha = new Map<string, string>();
     (sesiones || []).forEach((s: any) => {
       if (s.id && s.fecha) idToFecha.set(s.id, s.fecha);
     });
 
-    const playerAssignments: Record<string, string> = {};
-    (estados || []).forEach((e: any) => {
-      if (!e.evento_asignado || !e.jugador_id) return;
+    const finalAssignments: Record<string, string> = { ...getMasterPlayerEventsMap() };
+
+    estados.forEach((e: any) => {
+      if (!e.jugador_id || !e.sesion_dia_id) return;
       const fecha = idToFecha.get(e.sesion_dia_id);
+      const val = (e.evento_asignado || "").trim();
       if (fecha) {
-        playerAssignments[`${e.jugador_id}_${fecha}`] = e.evento_asignado;
+        finalAssignments[`${e.jugador_id}_${fecha}`] = val;
       }
-      if (e.sesion_dia_id) {
-        playerAssignments[`${e.jugador_id}_${e.sesion_dia_id}`] = e.evento_asignado;
-      }
+      finalAssignments[`${e.jugador_id}_${e.sesion_dia_id}`] = val;
     });
 
-    if (Object.keys(playerAssignments).length === 0) {
-      return getMasterPlayerEventsMap();
-    }
-    return { ...getMasterPlayerEventsMap(), ...playerAssignments };
+    return finalAssignments;
   } catch (err: any) {
     console.error("Error getPlayerEventsBBDD:", err);
     return getMasterPlayerEventsMap();
@@ -4684,24 +4719,15 @@ export async function saveSingleBloqueBBDD(params: {
     }
   }
 
-  // Also sync slot info into sesiones_dia (only specific slots evento_1..6, never touch evento_am which is Evento General)
+  // Also sync slot info into sesiones_dia (carga, volumen, etc. Never touch evento_am which is Evento General)
   const sessionUpdates: Record<string, any> = {};
   const slot = params.slot;
-  const tipo = params.block.tipo !== undefined ? (params.block.tipo || null) : (existing?.tipo || null);
-// sync to evento_am / evento_pm
-    if (slot === 0 && tipo) sessionUpdates.evento_am = tipo;
-    if (slot === 1 && tipo) sessionUpdates.evento_pm = tipo;
 
   const cargaVal = params.block.carga !== undefined ? params.block.carga : existing?.carga;
   if (cargaVal && !isNaN(Number(cargaVal))) sessionUpdates.carga = Number(cargaVal);
 
   const durVal = params.block.duracion !== undefined ? params.block.duracion : existing?.duracion;
   if (durVal && !isNaN(Number(durVal))) sessionUpdates.volumen = Number(durVal);
-
-  const lugarVal = params.block.lugar !== undefined ? params.block.lugar : existing?.lugar;
-  if (lugarVal && (String(tipo).toLowerCase().includes("pa") || String(tipo).toLowerCase().includes("partido"))) {
-    sessionUpdates.rival = lugarVal;
-  }
 
   if (Object.keys(sessionUpdates).length > 0) {
     await supabase.from("sesiones_dia").update(sessionUpdates).eq("id", realDayId);
