@@ -447,21 +447,23 @@ export function isRecordSimuladoActive(
   if (!rec) return false;
   const rawTasks = rec.metricas?.tareas || rec.tareas;
   if (Array.isArray(rawTasks) && rawTasks.length > 0) {
-    if (allTasks && allTasks.length > 0 && (!selectedTasks || selectedTasks.length === 0)) {
+    if (!selectedTasks || selectedTasks.length === 0) {
       return false;
     }
-    return rawTasks.some((t: any) => {
-      if (!isTaskSimulada(t)) return false;
-      if (allTasks && allTasks.length > 0) {
-        const taskName = (t.nombre || t.name || t.tarea || t.task || "").trim().normalize("NFC").toLowerCase();
-        return selectedTasks.some((sel) => sel.trim().normalize("NFC").toLowerCase() === taskName);
-      }
-      return true;
+    // Si no hay tareas totales especificadas o todas están seleccionadas, comprobar si alguna tarea del registro es simulada
+    if (!allTasks || allTasks.length === 0 || (allTasks.length > 0 && selectedTasks.length >= allTasks.length)) {
+      return rawTasks.some(isTaskSimulada);
+    }
+    // Si hay un subconjunto de tareas seleccionadas, verificar si alguna de las tareas ACTIVAS de este jugador es simulada
+    const activeTasksForPlayer = rawTasks.filter((t: any) => {
+      const taskName = (t.nombre || t.name || t.tarea || t.task || "").trim().normalize("NFC").toLowerCase();
+      return selectedTasks.some((sel) => sel.trim().normalize("NFC").toLowerCase() === taskName);
     });
+    return activeTasksForPlayer.some(isTaskSimulada);
   }
 
   if (isRecordSimulado(rec)) {
-    if (allTasks && allTasks.length > 0 && (!selectedTasks || selectedTasks.length === 0)) {
+    if (!selectedTasks || selectedTasks.length === 0) {
       return false;
     }
     return true;

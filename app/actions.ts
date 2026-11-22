@@ -2164,7 +2164,12 @@ export async function saveFullPlanificacionBBDD(sessionsPayload: any[], comments
       const rawSesionId = parts.slice(1).join("_");
       const rowKey = getRowKey(jugadorId, rawSesionId);
       if (rowKey) {
-        estadoRowsMap.get(rowKey).evento_asignado = playerEventsMap[key];
+        const val = playerEventsMap[key];
+        if (val !== undefined && val !== null) {
+          const row = estadoRowsMap.get(rowKey);
+          row.evento_asignado = val.trim() || null;
+          row.hasExplicitEventAssignment = true;
+        }
       }
     });
   }
@@ -2277,9 +2282,13 @@ export async function saveFullPlanificacionBBDD(sessionsPayload: any[], comments
         comentario_wellness: rawRow.comentario_wellness || null,
         comentario_psicologico: rawRow.comentario_psicologico || null,
         comentario_tecnico: rawRow.comentario_tecnico || null,
-        evento_asignado: rawRow.evento_asignado || null,
         minutos: rawRow.minutos ? Number(rawRow.minutos) : null,
       };
+      // CRÍTICO: Solo incluir 'evento_asignado' si fue explícitamente asignado/modificado en este guardado.
+      // Si la fila proviene solo de asistencia o wellness, no enviamos evento_asignado para no borrarlo en Supabase.
+      if (rawRow.hasExplicitEventAssignment) {
+        cleanRow.evento_asignado = rawRow.evento_asignado || null;
+      }
       estadoRows.push(cleanRow);
     }
   });
@@ -2291,26 +2300,33 @@ export async function saveFullPlanificacionBBDD(sessionsPayload: any[], comments
 
   // 4b. Guardado optimizado ultra rápido en lote para estado_diario_jugador
   if (validEstadoRows.length > 0) {
-    const { error: upsertError } = await supabase
-      .from("estado_diario_jugador")
-      .upsert(validEstadoRows, { onConflict: "jugador_id,sesion_dia_id" });
+    const rowsWithAssign = validEstadoRows.filter((r) => r.evento_asignado !== undefined);
+    const rowsWithoutAssign = validEstadoRows
+      .filter((r) => r.evento_asignado === undefined)
+      .map(({ evento_asignado, ...rest }) => rest);
 
-    if (upsertError) {
-      console.error("Error upsert estado_diario_jugador:", upsertError.message);
+    if (rowsWithAssign.length > 0) {
+      for (let i = 0; i < rowsWithAssign.length; i += 200) {
+        const chunk = rowsWithAssign.slice(i, i + 200);
+        const { error: upsertError } = await supabase
+          .from("estado_diario_jugador")
+          .upsert(chunk, { onConflict: "jugador_id,sesion_dia_id" });
+        if (upsertError) {
+          console.error("Error upsert estado_diario_jugador with assign:", upsertError.message);
+        }
+      }
     }
-  }
 
-  // 4c. Limpiar asignaciones explícitamente borradas en estado_diario_jugador
-  if (emptyEstadoRows.length > 0) {
-    const clearRows = emptyEstadoRows
-      .filter((r) => validPlayerIds.has(r.jugador_id))
-      .map((r) => ({
-        jugador_id: String(r.jugador_id),
-        sesion_dia_id: String(r.sesion_dia_id),
-        evento_asignado: null,
-      }));
-    if (clearRows.length > 0) {
-      await supabase.from("estado_diario_jugador").upsert(clearRows, { onConflict: "jugador_id,sesion_dia_id" });
+    if (rowsWithoutAssign.length > 0) {
+      for (let i = 0; i < rowsWithoutAssign.length; i += 200) {
+        const chunk = rowsWithoutAssign.slice(i, i + 200);
+        const { error: upsertError } = await supabase
+          .from("estado_diario_jugador")
+          .upsert(chunk, { onConflict: "jugador_id,sesion_dia_id" });
+        if (upsertError) {
+          console.error("Error upsert estado_diario_jugador without assign:", upsertError.message);
+        }
+      }
     }
   }
 
@@ -2554,10 +2570,12 @@ export async function getPlayerEventsBBDD(): Promise<Record<string, string>> {
       if (!e.jugador_id || !e.sesion_dia_id) return;
       const fecha = idToFecha.get(e.sesion_dia_id);
       const val = (e.evento_asignado || "").trim();
-      if (fecha) {
-        finalAssignments[`${e.jugador_id}_${fecha}`] = val;
+      if (val) {
+        if (fecha) {
+          finalAssignments[`${e.jugador_id}_${fecha}`] = val;
+        }
+        finalAssignments[`${e.jugador_id}_${e.sesion_dia_id}`] = val;
       }
-      finalAssignments[`${e.jugador_id}_${e.sesion_dia_id}`] = val;
     });
 
     return finalAssignments;
@@ -2582,17 +2600,27 @@ export async function savePlayerEventAssignments(
 
     const fechaToId = new Map((sesiones || []).map((s: any) => [s.fecha, s.id]));
 
-    const { data: dbJugadores } = await supabase.from("jugadores").select("id");
+    const { data: dbJugadores } = await supabase.from("jugadores").select("id, apodo, nombre");
     const validPlayerIds = new Set((dbJugadores || []).map((j: any) => j.id));
+    const nameToId = new Map<string, string>();
+    (dbJugadores || []).forEach((j: any) => {
+      if (j.apodo) nameToId.set(j.apodo.toUpperCase().trim(), j.id);
+      if (j.nombre) nameToId.set(j.nombre.toUpperCase().trim(), j.id);
+    });
 
     const dedupMap = new Map<string, any>();
     for (const r of assignmentRows) {
-      if (!r.jugador_id || !validPlayerIds.has(r.jugador_id)) continue;
+      let jId = r.jugador_id;
+      if (!validPlayerIds.has(jId)) {
+        const found = nameToId.get(String(jId).toUpperCase().trim());
+        if (found) jId = found;
+        else continue;
+      }
       let sesionId = fechaToId.get(r.fecha);
       if (!sesionId) {
         const { data: newS } = await supabase
           .from("sesiones_dia")
-          .insert({ fecha: r.fecha, equipo: "CE EUROPA" })
+          .insert({ fecha: r.fecha, equipo: "CE EUROPA", temporada: "2026/27" })
           .select("id")
           .single();
         if (newS) {
@@ -2601,8 +2629,8 @@ export async function savePlayerEventAssignments(
         }
       }
       if (sesionId) {
-        dedupMap.set(`${r.jugador_id}_${sesionId}`, {
-          jugador_id: r.jugador_id,
+        dedupMap.set(`${jId}_${sesionId}`, {
+          jugador_id: jId,
           sesion_dia_id: sesionId,
           evento_asignado: r.evento_asignado || null,
         });
@@ -2611,11 +2639,14 @@ export async function savePlayerEventAssignments(
 
     const rowsToUpsert = Array.from(dedupMap.values());
     if (rowsToUpsert.length > 0) {
-      const { error } = await supabase
-        .from("estado_diario_jugador")
-        .upsert(rowsToUpsert, { onConflict: "jugador_id,sesion_dia_id" });
-      if (error) {
-        console.error("Error upserting player assignments:", error.message);
+      for (let i = 0; i < rowsToUpsert.length; i += 200) {
+        const chunk = rowsToUpsert.slice(i, i + 200);
+        const { error } = await supabase
+          .from("estado_diario_jugador")
+          .upsert(chunk, { onConflict: "jugador_id,sesion_dia_id" });
+        if (error) {
+          console.error("Error upserting player assignments chunk:", error.message);
+        }
       }
     }
 
@@ -4766,10 +4797,17 @@ export async function updatePlayerEventAssignmentBBDD(params: {
     }
   }
 
+  let realJugadorId = params.jugadorId;
+  const isPlayerUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(realJugadorId);
+  if (!isPlayerUuid) {
+    const { data: j } = await supabase.from("jugadores").select("id").or(`apodo.ilike.${realJugadorId},nombre.ilike.${realJugadorId}`).maybeSingle();
+    if (j?.id) realJugadorId = j.id;
+  }
+
   const { data: existing } = await supabase
     .from("estado_diario_jugador")
     .select("id")
-    .eq("jugador_id", params.jugadorId)
+    .eq("jugador_id", realJugadorId)
     .eq("sesion_dia_id", realDayId)
     .maybeSingle();
 
@@ -4781,7 +4819,7 @@ export async function updatePlayerEventAssignmentBBDD(params: {
   } else {
     if (params.eventoAsignado) {
       await supabase.from("estado_diario_jugador").insert({
-        jugador_id: params.jugadorId,
+        jugador_id: realJugadorId,
         sesion_dia_id: realDayId,
         evento_asignado: params.eventoAsignado,
         disponibilidad: "D",

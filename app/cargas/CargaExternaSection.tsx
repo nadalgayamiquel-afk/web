@@ -17,7 +17,8 @@ import {
   addDeletedMicrocycleId,
   resetDeletedMicrocycles,
 } from "../lib/microciclos";
-import { computeCompetitiveProfiles, isMatchHalfTask, isFirstHalfTask, isSecondHalfTask, isRateOrPeak } from "../lib/competitiveProfile";
+import { computeCompetitiveProfiles, isMatchHalfTask, isFirstHalfTask, isSecondHalfTask, isRateOrPeak, formatProfileMatchDate, CompetitiveProfilePlayer } from "../lib/competitiveProfile";
+import EditCompetitiveProfileModal from "../components/EditCompetitiveProfileModal";
 import {
   useFavoriteGpsVariables,
   calculateGpsMetricValue,
@@ -826,6 +827,32 @@ export default function CargaExternaSection({
     }
     return {};
   });
+
+  const [customPlayerMatches, setCustomPlayerMatches] = useState<Record<string, string[]>>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("gps_competitive_profile_custom_matches");
+        if (stored) return JSON.parse(stored);
+      } catch (e) {}
+    }
+    return {};
+  });
+
+  const [editingProfilePlayer, setEditingProfilePlayer] = useState<any | null>(null);
+  const [hoveredMethodPlayerId, setHoveredMethodPlayerId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleUpdate = () => {
+      if (typeof window !== "undefined") {
+        try {
+          const stored = localStorage.getItem("gps_competitive_profile_custom_matches");
+          if (stored) setCustomPlayerMatches(JSON.parse(stored));
+        } catch (e) {}
+      }
+    };
+    window.addEventListener("gps_competitive_profile_matches_updated", handleUpdate);
+    return () => window.removeEventListener("gps_competitive_profile_matches_updated", handleUpdate);
+  }, []);
 
   // Lista de métricas favoritas activas (excluyendo Duration(min))
   const availableFavVariables = useMemo(() => {
@@ -2788,8 +2815,9 @@ export default function CargaExternaSection({
       customOverrides,
       availableFavVariables,
       derivedVariables,
+      customPlayerMatches,
     });
-  }, [gpsRecords, jugadores, customOverrides, availableFavVariables, derivedVariables]);
+  }, [gpsRecords, jugadores, customOverrides, availableFavVariables, derivedVariables, customPlayerMatches]);
 
   const filteredProfileJugadores = useMemo(() => {
     return jugadores.filter((j) => {
@@ -5794,18 +5822,39 @@ export default function CargaExternaSection({
                 </thead>
                 <tbody>
                   {filteredProfileJugadores.map((j, idx) => {
-                    const p = competitiveProfiles.get(j.id) || {
-                      values: {} as Record<string, any>,
-                      category: "copiado_posicion" as const,
+                    const defaultProfile: CompetitiveProfilePlayer = {
+                      jugadorId: j.id,
+                      nombre: j.nombre || "",
+                      apodo: j.apodo || "",
+                      dorsal: String(j.dorsal || ""),
+                      posicion: j.posicion || "",
+                      category: "copiado_posicion",
                       isReal: false,
+                      isCustomMatches: false,
+                      customMatchesCount: 0,
                       shortBadgeText: "Pos.**",
                       badgeText: "Posición **",
+                      methodDescription: "Copiado de posición (sin partidos)",
                       detailText: "Sin partidos",
                       asterisk: "**",
                       matchesCount: 0,
                       fullMatchesCount: 0,
+                      halfMatchesCount: 0,
+                      minutesMatch: 0,
+                      analyzedMatches: [],
+                      usedMatchesList: [],
+                      allAvailableMatches: [],
+                      values: {},
+                      explanations: {},
                       dist: 0,
+                      mMin: 0,
+                      hsr: 0,
+                      sprint: 0,
+                      accDec: 0,
+                      load: 0,
+                      maxSpeed: 0,
                     };
+                    const p: CompetitiveProfilePlayer = competitiveProfiles.get(j.id) || defaultProfile;
 
                     let badgeBg = "#f1f5f9";
                     let badgeColor = "#334155";
@@ -5849,8 +5898,12 @@ export default function CargaExternaSection({
                           </div>
                         </td>
 
-                        {/* Método (Ultra discreto y compacto) */}
-                        <td style={{ padding: "4px 2px", textAlign: "center", width: "38px" }}>
+                        {/* Método (Ultra discreto y compacto con Popover Hover) */}
+                        <td
+                          style={{ padding: "4px 2px", textAlign: "center", width: "38px", position: "relative" }}
+                          onMouseEnter={() => setHoveredMethodPlayerId(j.id)}
+                          onMouseLeave={() => setHoveredMethodPlayerId(null)}
+                        >
                           <span
                             style={{
                               display: "inline-block",
@@ -5861,11 +5914,108 @@ export default function CargaExternaSection({
                               fontSize: "8.5px",
                               fontWeight: 800,
                               whiteSpace: "nowrap",
+                              cursor: "pointer",
+                              border: p.isCustomMatches ? "1px dashed #0284c7" : "none",
                             }}
-                            title={p.detailText}
                           >
-                            {p.shortBadgeText || "—"}
+                            {p.shortBadgeText || "—"}{p.isCustomMatches ? "*" : ""}
                           </span>
+
+                          {/* Hover Popover detallado con los partidos utilizados */}
+                          {hoveredMethodPlayerId === j.id && (
+                            <div
+                              style={{
+                                position: "absolute",
+                                top: "100%",
+                                left: "50%",
+                                transform: "translateX(-50%)",
+                                marginTop: "4px",
+                                zIndex: 9999,
+                                background: "#0f172a",
+                                color: "#ffffff",
+                                borderRadius: "8px",
+                                padding: "10px 12px",
+                                boxShadow: "0 10px 25px -5px rgba(0,0,0,0.4), 0 8px 10px -6px rgba(0,0,0,0.3)",
+                                border: "1px solid #334155",
+                                minWidth: "260px",
+                                maxWidth: "340px",
+                                textAlign: "left",
+                                fontSize: "11px",
+                                lineHeight: "1.4",
+                                pointerEvents: "none",
+                              }}
+                            >
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px", borderBottom: "1px solid #334155", paddingBottom: "4px" }}>
+                                <strong style={{ color: "#38bdf8", fontSize: "11.5px" }}>
+                                  {j.apodo || j.nombre}
+                                </strong>
+                                <span style={{ fontSize: "9px", padding: "1px 5px", borderRadius: "3px", background: badgeBg, color: badgeColor, fontWeight: 800 }}>
+                                  {p.shortBadgeText} {p.isCustomMatches ? "(Personalizado)" : ""}
+                                </span>
+                              </div>
+
+                              <div style={{ fontSize: "10px", color: "#94a3b8", marginBottom: "6px" }}>
+                                {p.methodDescription}
+                              </div>
+
+                              {p.usedMatchesList && p.usedMatchesList.length > 0 ? (
+                                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                                  <div style={{ fontSize: "10px", fontWeight: 700, color: "#cbd5e1" }}>
+                                    Partidos incluidos ({p.usedMatchesList.length}):
+                                  </div>
+                                  {p.usedMatchesList.map((m: any, idx: number) => (
+                                    <div
+                                      key={idx}
+                                      style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "space-between",
+                                        background: "rgba(255,255,255,0.06)",
+                                        padding: "3px 6px",
+                                        borderRadius: "4px",
+                                        fontSize: "10px",
+                                      }}
+                                    >
+                                      <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                                        <span style={{ color: "#38bdf8", fontWeight: 700 }}>
+                                          📅 {formatProfileMatchDate(m.fecha)}
+                                        </span>
+                                        <span style={{ color: "#94a3b8", fontSize: "9px" }}>
+                                          ({m.tipo || `${Math.round(m.minutos)}'`})
+                                        </span>
+                                      </div>
+                                      <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "9.5px" }}>
+                                        <span style={{ color: "#f8fafc", fontWeight: 600 }}>{Math.round(m.dist || 0)}m</span>
+                                        {m.velMax > 0 && (
+                                          <span style={{ color: "#34d399", fontWeight: 600 }}>{m.velMax.toFixed(1)}k/h</span>
+                                        )}
+                                        {p.usedMatchesList && p.usedMatchesList.length > 1 && idx === 0 && (
+                                          <span style={{ background: "#0284c7", color: "#fff", fontSize: "8px", fontWeight: 800, padding: "0 3px", borderRadius: "2px" }}>
+                                            MÁX
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                  {p.usedMatchesList && p.usedMatchesList.length > 1 && (
+                                    <div style={{ fontSize: "9.5px", color: "#60a5fa", marginTop: "3px", fontStyle: "italic", textAlign: "right" }}>
+                                      Fórmula: (Máx + Promedio restantes) / 2
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <div style={{ fontSize: "10px", color: "#f87171" }}>
+                                  Sin partidos computados ({p.category})
+                                </div>
+                              )}
+
+                              {p.isCustomMatches && (
+                                <div style={{ fontSize: "9px", color: "#fbbf24", marginTop: "4px", borderTop: "1px dashed #475569", paddingTop: "3px" }}>
+                                  ⭐ Partidos seleccionados manualmente
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </td>
 
                         {/* Partidos (Ultra discreto y compacto) */}
@@ -5988,35 +6138,30 @@ export default function CargaExternaSection({
                           );
                         })()}
 
-                        {/* Acciones */}
+                        {/* Acciones: Editar Selección de Partidos del Perfil Competitivo */}
                         <td style={{ padding: "6px 6px", textAlign: "center" }}>
                           <button
                             type="button"
-                            onClick={() => {
-                              const currentDist = p.dist;
-                              const input = window.prompt(`Editar DT para ${j.apodo || j.nombre} (m):`, String(currentDist));
-                              if (input && !isNaN(Number(input))) {
-                                const newDist = Number(input);
-                                const updated = { ...customOverrides, [j.id]: { ...(customOverrides[j.id] || {}), "Distance(m)": newDist, dist: newDist } };
-                                setCustomOverrides(updated);
-                                if (typeof window !== "undefined") {
-                                  localStorage.setItem("gps_competitive_profile_overrides", JSON.stringify(updated));
-                                }
-                              }
-                            }}
+                            onClick={() => setEditingProfilePlayer(j)}
                             style={{
-                              padding: "1px 4px",
-                              borderRadius: "3px",
-                              border: "1px solid #cbd5e1",
-                              background: "#f8fafc",
-                              fontSize: "10px",
-                              fontWeight: 600,
+                              padding: "2px 6px",
+                              borderRadius: "4px",
+                              border: p.isCustomMatches ? "1.5px solid #0284c7" : "1px solid #cbd5e1",
+                              background: p.isCustomMatches ? "#e0f2fe" : "#f8fafc",
+                              fontSize: "11px",
+                              fontWeight: 700,
                               cursor: "pointer",
-                              color: "#475569",
+                              color: p.isCustomMatches ? "#0369a1" : "#475569",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "2px",
                             }}
-                            title="Ajuste manual"
+                            title={p.isCustomMatches ? "Editar partidos seleccionados manualmente (*)" : "Seleccionar qué partidos componen el perfil competitivo"}
                           >
-                            ✏️
+                            <span>✏️</span>
+                            {p.isCustomMatches && (
+                              <span style={{ fontSize: "9px", fontWeight: 900, color: "#0284c7" }}>*</span>
+                            )}
                           </button>
                         </td>
                       </tr>
@@ -10091,6 +10236,40 @@ export default function CargaExternaSection({
             </div>
           </div>
         </div>
+      )}
+      {/* Modal de Edición de Partidos del Perfil Competitivo */}
+      {editingProfilePlayer && (
+        <EditCompetitiveProfileModal
+          isOpen={Boolean(editingProfilePlayer)}
+          onClose={() => setEditingProfilePlayer(null)}
+          jugador={editingProfilePlayer}
+          currentProfile={competitiveProfiles.get(editingProfilePlayer.id)}
+          gpsRecords={gpsRecords}
+          allJugadores={jugadores}
+          derivedVariables={derivedVariables}
+          currentCustomDates={customPlayerMatches[editingProfilePlayer.id]}
+          onSave={(selectedDates) => {
+            const next = { ...customPlayerMatches, [editingProfilePlayer.id]: selectedDates };
+            setCustomPlayerMatches(next);
+            if (typeof window !== "undefined") {
+              try {
+                localStorage.setItem("gps_competitive_profile_custom_matches", JSON.stringify(next));
+                window.dispatchEvent(new CustomEvent("gps_competitive_profile_matches_updated", { detail: next }));
+              } catch (e) {}
+            }
+          }}
+          onResetAuto={() => {
+            const next = { ...customPlayerMatches };
+            delete next[editingProfilePlayer.id];
+            setCustomPlayerMatches(next);
+            if (typeof window !== "undefined") {
+              try {
+                localStorage.setItem("gps_competitive_profile_custom_matches", JSON.stringify(next));
+                window.dispatchEvent(new CustomEvent("gps_competitive_profile_matches_updated", { detail: next }));
+              } catch (e) {}
+            }
+          }}
+        />
       )}
     </div>
   );

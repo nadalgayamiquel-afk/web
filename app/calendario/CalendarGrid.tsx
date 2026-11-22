@@ -1806,13 +1806,22 @@ export function CalendarGrid({
         .then((dbAssignments) => {
           if (dbAssignments && Object.keys(dbAssignments).length > 0) {
             setPlayerEventsMap((prev) => {
-              const next = { ...prev, ...dbAssignments };
-              if (typeof window !== "undefined") {
+              const next = { ...prev };
+              let changed = false;
+              Object.entries(dbAssignments).forEach(([k, v]) => {
+                if (v && typeof v === "string" && v.trim() !== "") {
+                  if (next[k] !== v) {
+                    next[k] = v;
+                    changed = true;
+                  }
+                }
+              });
+              if (changed && typeof window !== "undefined") {
                 try {
                   localStorage.setItem("player_events_map_v1", JSON.stringify(next));
                 } catch (e) {}
               }
-              return next;
+              return changed ? next : prev;
             });
           }
         })
@@ -3911,6 +3920,8 @@ export function CalendarGrid({
 
         const updatedPlayerMap: Record<string, string> = {};
         const playerUpdatesList: { jId: string; dId: string; val: string }[] = [];
+        const updatedPlayerEventsUpdates: Record<string, string> = {};
+        const playerEventUpdatesList: Array<{ jugador_id: string; fecha: string; evento_asignado: string | null }> = [];
 
         rawRows.forEach((rowLine, rOffset) => {
           const targetR = startR + rOffset;
@@ -3928,11 +3939,10 @@ export function CalendarGrid({
 
             if (rowKey.startsWith("player_event_")) {
               const jId = rowKey.replace("player_event_", "");
-              setPlayerEventsMap((prev) => ({
-                ...prev,
-                [`${jId}_${day.id}`]: rawVal.trim(),
-                [`${jId}_${day.fecha}`]: rawVal.trim(),
-              }));
+              const cleanEvent = rawVal.trim();
+              updatedPlayerEventsUpdates[`${jId}_${day.id}`] = cleanEvent;
+              updatedPlayerEventsUpdates[`${jId}_${day.fecha}`] = cleanEvent;
+              playerEventUpdatesList.push({ jugador_id: jId, fecha: day.fecha, evento_asignado: cleanEvent || null });
             } else if (rowKey.startsWith("player_")) {
               const jId = rowKey.replace("player_", "");
               updatedPlayerMap[`${jId}_${day.id}`] = cleanVal;
@@ -3943,6 +3953,21 @@ export function CalendarGrid({
             }
           });
         });
+
+        if (playerEventUpdatesList.length > 0) {
+          setPlayerEventsMap((prev) => {
+            const next = { ...prev, ...updatedPlayerEventsUpdates };
+            if (typeof window !== "undefined") {
+              try {
+                localStorage.setItem("player_events_map_v1", JSON.stringify(next));
+                window.dispatchEvent(new Event("player_events_updated"));
+                window.dispatchEvent(new Event("storage"));
+              } catch (e) {}
+            }
+            return next;
+          });
+          savePlayerEventAssignments(playerEventUpdatesList).catch(console.error);
+        }
 
         if (Object.keys(updatedPlayerMap).length > 0) {
           setEstadosMap((prev) => ({ ...prev, ...updatedPlayerMap }));
@@ -3962,6 +3987,9 @@ export function CalendarGrid({
           e.preventDefault();
           const updatedPlayerMap: Record<string, string> = {};
           const playerUpdatesList: { jId: string; dId: string }[] = [];
+          const updatedPlayerEventsUpdates: Record<string, string> = {};
+          const playerEventUpdatesList: Array<{ jugador_id: string; fecha: string; evento_asignado: string | null }> = [];
+
           for (let r = minR; r <= maxR; r++) {
             const rowKey = allInteractiveRows[r];
             if (!rowKey) continue;
@@ -3970,7 +3998,9 @@ export function CalendarGrid({
               if (!day) continue;
               if (rowKey.startsWith("player_event_")) {
                 const jId = rowKey.replace("player_event_", "");
-                setPlayerEventsMap((prev) => ({ ...prev, [`${jId}_${day.id}`]: "", [`${jId}_${day.fecha}`]: "" }));
+                updatedPlayerEventsUpdates[`${jId}_${day.id}`] = "";
+                updatedPlayerEventsUpdates[`${jId}_${day.fecha}`] = "";
+                playerEventUpdatesList.push({ jugador_id: jId, fecha: day.fecha, evento_asignado: null });
               } else if (rowKey.startsWith("player_")) {
                 const jId = rowKey.replace("player_", "");
                 updatedPlayerMap[`${jId}_${day.id}`] = "";
@@ -3985,6 +4015,22 @@ export function CalendarGrid({
               }
             }
           }
+
+          if (playerEventUpdatesList.length > 0) {
+            setPlayerEventsMap((prev) => {
+              const next = { ...prev, ...updatedPlayerEventsUpdates };
+              if (typeof window !== "undefined") {
+                try {
+                  localStorage.setItem("player_events_map_v1", JSON.stringify(next));
+                  window.dispatchEvent(new Event("player_events_updated"));
+                  window.dispatchEvent(new Event("storage"));
+                } catch (e) {}
+              }
+              return next;
+            });
+            savePlayerEventAssignments(playerEventUpdatesList).catch(console.error);
+          }
+
           if (Object.keys(updatedPlayerMap).length > 0) {
             setEstadosMap((prev) => ({ ...prev, ...updatedPlayerMap }));
             playerUpdatesList.forEach(({ jId, dId }) => {

@@ -135,10 +135,12 @@ export default async function CalendarioPage() {
     if (!e.jugador_id || !e.sesion_dia_id) return;
     const fecha = idToFecha.get(e.sesion_dia_id);
     const assignedVal = (e.evento_asignado || "").trim();
-    if (fecha) {
-      bbddAssignments[`${e.jugador_id}_${fecha}`] = assignedVal;
+    if (assignedVal) {
+      if (fecha) {
+        bbddAssignments[`${e.jugador_id}_${fecha}`] = assignedVal;
+      }
+      bbddAssignments[`${e.jugador_id}_${e.sesion_dia_id}`] = assignedVal;
     }
-    bbddAssignments[`${e.jugador_id}_${e.sesion_dia_id}`] = assignedVal;
   });
 
   // 4. Comentarios y disponibilidades maestras

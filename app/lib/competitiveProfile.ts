@@ -13,6 +13,9 @@ export interface AnalyzedMatch {
   minutos: number;
   dist: number;
   parts: AnalyzedMatchPart[];
+  rival?: string;
+  tipo_sesion?: string;
+  rawRecord?: any;
 }
 
 export interface MetricMatchPart {
@@ -65,10 +68,23 @@ export interface CompetitiveProfilePlayer {
   posicion: string;
   category: "real_varios" | "real_uno" | "estimado_45" | "copiado_posicion" | "sin_perfil";
   isReal: boolean;
+  isCustomMatches?: boolean;
+  customMatchesCount?: number;
   badgeText: string;
   shortBadgeText: string;
   asterisk: string;
   detailText: string;
+  methodDescription?: string;
+  usedMatchesList?: Array<{
+    fecha: string;
+    minutos: number;
+    desc: string;
+    isFull: boolean;
+    dist?: number;
+    velMax?: number;
+    tipo?: string;
+  }>;
+  allAvailableMatches?: AnalyzedMatch[];
   matchesCount: number;
   fullMatchesCount: number;
   halfMatchesCount: number;
@@ -142,6 +158,85 @@ export function isSecondHalfTask(taskName?: string): boolean {
 
 export function isMatchHalfTask(taskName?: string): boolean {
   return isFirstHalfTask(taskName) || isSecondHalfTask(taskName);
+}
+
+export function isFullMatchTask(taskName?: string): boolean {
+  if (!taskName) return false;
+  const n = String(taskName).trim().toUpperCase();
+  if (
+    n.includes("PREPARTIDO") ||
+    n.includes("CALENTAMIENTO") ||
+    n.includes("ACTIVACI") ||
+    n.includes("CARRERAS") ||
+    n.includes("BTB") ||
+    n.includes("REDUCIDO") ||
+    n.includes("MEDIO") ||
+    n.includes("JDP") ||
+    n.includes("POSICION") ||
+    n.includes("RONDO") ||
+    n.includes("CONDICIONADO")
+  ) {
+    return false;
+  }
+  return (
+    n === "PARTIDO" ||
+    n === "PARTIT" ||
+    n === "MATCH" ||
+    n === "PARTIDO COMPLETO" ||
+    n === "PARTIT COMPLET" ||
+    n === "COMPETICION" ||
+    n === "COMPETICIÓN"
+  );
+}
+
+export function formatProfileMatchDate(d: string): string {
+  if (!d) return "—";
+  const parts = d.split("-");
+  if (parts.length === 3) {
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  }
+  return d;
+}
+
+export function getAllTeamMatches(gpsRecords: any[]): Array<{ fecha: string; label: string; count: number }> {
+  const map = new Map<string, { fecha: string; label: string; count: number }>();
+  (gpsRecords || []).forEach((r) => {
+    if (!r.fecha) return;
+    if (isRecordSimulado(r)) return;
+    const isMatch =
+      String(r.tipo_sesion || r.metricas?.tipo_sesion || "").toUpperCase().includes("PARTIDO") ||
+      String(r.match_day || r.metricas?.match_day || "").toUpperCase() === "MD" ||
+      r.es_partido === true;
+
+    const tareas = r.metricas?.tareas;
+    let hasMatchTasks = false;
+    if (tareas && typeof tareas === "object") {
+      const rawList = Array.isArray(tareas) ? tareas : Object.values(tareas);
+      hasMatchTasks = rawList.some((t: any) =>
+        isMatchHalfTask(t?.nombre || t?.name || t?.tarea || t?.Split_Name) ||
+        isFullMatchTask(t?.nombre || t?.name || t?.tarea || t?.Split_Name)
+      );
+    }
+
+    if (isMatch || hasMatchTasks) {
+      if (!map.has(r.fecha)) {
+        const rival =
+          r.metricas?.rival ||
+          r.rival ||
+          (r.tarea && r.tarea.toLowerCase() !== "total" ? r.tarea : null) ||
+          r.tipo_sesion ||
+          "Partido";
+        map.set(r.fecha, {
+          fecha: r.fecha,
+          label: `${formatProfileMatchDate(r.fecha)}${rival ? ` (${rival})` : ""}`,
+          count: 0,
+        });
+      }
+      map.get(r.fecha)!.count++;
+    }
+  });
+
+  return Array.from(map.values()).sort((a, b) => b.fecha.localeCompare(a.fecha));
 }
 
 export function isRateOrPeak(key: string): boolean {
@@ -230,12 +325,14 @@ export function computeCompetitiveProfiles({
   customOverrides = {},
   availableFavVariables,
   derivedVariables = [],
+  customPlayerMatches = {},
 }: {
   gpsRecords: any[];
   jugadores: any[];
   customOverrides?: Record<string, any>;
   availableFavVariables?: any[];
   derivedVariables?: any[];
+  customPlayerMatches?: Record<string, string[]>;
 }): Map<string, CompetitiveProfilePlayer> {
   // Construir mapa de todas las variables posibles para que cualquier variable elegida tenga cálculo y explicación completa
   const allVarsMap = new Map<string, any>();
@@ -256,7 +353,7 @@ export function computeCompetitiveProfiles({
   const playerMatchesMap = new Map<string, AnalyzedMatch[]>();
 
   realGps.forEach((r) => {
-    if (!r.jugador_id) return;
+    if (!r.jugador_id || !r.fecha) return;
     const isMatch =
       String(r.tipo_sesion || r.metricas?.tipo_sesion || "").toUpperCase().includes("PARTIDO") ||
       String(r.match_day || r.metricas?.match_day || "").toUpperCase() === "MD" ||
@@ -267,74 +364,110 @@ export function computeCompetitiveProfiles({
 
     if (tareas && typeof tareas === "object") {
       const rawList = Array.isArray(tareas) ? tareas : Object.values(tareas);
-      matchParts = rawList.filter((t: any) => isMatchHalfTask(t?.nombre || t?.name || t?.tarea || t?.Split_Name));
+      matchParts = rawList.filter((t: any) => {
+        const tName = t?.nombre || t?.name || t?.tarea || t?.Split_Name;
+        return isMatchHalfTask(tName) || isFullMatchTask(tName);
+      });
     }
 
-    // Si no tiene array de tareas desglosadas pero es un partido registrado completo
-    if (matchParts.length === 0 && isMatch) {
-      const dur = Number(r.duracion || r.metricas?.["Duration(min)"] || r.minutos_totales || 90);
-      const dist = calculateGpsMetricValue(r, "Distance(m)", derivedVariables);
-      if (dist > 0) {
-        if (!playerMatchesMap.has(r.jugador_id)) playerMatchesMap.set(r.jugador_id, []);
-        playerMatchesMap.get(r.jugador_id)!.push({
-          fecha: r.fecha,
-          minutos: dur,
-          dist,
-          parts: [{ nombre: "Partido Completo", minutos: dur, dist, rawTask: r.metricas || r, fecha: r.fecha }],
-        });
-      }
-      return;
-    }
-
-    if (matchParts.length === 0) return;
+    if (matchParts.length === 0 && !isMatch) return;
 
     if (!playerMatchesMap.has(r.jugador_id)) playerMatchesMap.set(r.jugador_id, []);
+    const playerMatches = playerMatchesMap.get(r.jugador_id)!;
 
-    const totalMinutes = matchParts.reduce((acc, t) => acc + Number(t.Tiempo || t.duracion_min || t.Duration || 0), 0);
-    const totalDist = matchParts.reduce((acc, t) => acc + calculateGpsMetricValue(t, "Distance(m)", derivedVariables), 0);
-
-    const parts: AnalyzedMatchPart[] = matchParts.map((t) => {
-      const pMin = Number(t.Tiempo || t.duracion_min || t.Duration || 0);
-      const pDist = calculateGpsMetricValue(t, "Distance(m)", derivedVariables);
-      return {
-        nombre: t.nombre || t.name || t.tarea || "Parte",
-        minutos: pMin,
-        dist: pDist,
-        rawTask: t,
+    let existingMatch = playerMatches.find((m) => m.fecha === r.fecha);
+    if (!existingMatch) {
+      existingMatch = {
         fecha: r.fecha,
+        minutos: 0,
+        dist: 0,
+        parts: [],
+        rival:
+          r.metricas?.rival ||
+          r.rival ||
+          (r.tarea && r.tarea.toLowerCase() !== "total" ? r.tarea : null) ||
+          r.tipo_sesion ||
+          "Partido",
+        tipo_sesion: r.tipo_sesion,
+        rawRecord: r,
       };
-    });
+      playerMatches.push(existingMatch);
+    }
 
-    playerMatchesMap.get(r.jugador_id)!.push({
-      fecha: r.fecha,
-      minutos: Math.round(totalMinutes * 10) / 10,
-      dist: totalDist,
-      parts,
-    });
+    if (matchParts.length > 0) {
+      matchParts.forEach((t) => {
+        const pMin = Number(t.Tiempo || t.duracion_min || t.Duration || 0);
+        const pDist = calculateGpsMetricValue(t, "Distance(m)", derivedVariables);
+        existingMatch!.parts.push({
+          nombre: t.nombre || t.name || t.tarea || t.Split_Name || "Parte",
+          minutos: Math.round(pMin * 10) / 10,
+          dist: pDist,
+          rawTask: t,
+          fecha: r.fecha,
+        });
+        existingMatch!.minutos = Math.round((existingMatch!.minutos + pMin) * 10) / 10;
+        existingMatch!.dist += pDist;
+      });
+    } else if (isMatch) {
+      const dur = Number(r.duracion || r.metricas?.["Duration(min)"] || r.minutos_totales || 0);
+      const dist = calculateGpsMetricValue(r, "Distance(m)", derivedVariables);
+      if (dur > 0 || dist > 0) {
+        existingMatch.parts.push({
+          nombre: "Partido Completo",
+          minutos: dur || 90,
+          dist,
+          rawTask: r.metricas || r,
+          fecha: r.fecha,
+        });
+        existingMatch.minutos = Math.round((existingMatch.minutos + (dur || 90)) * 10) / 10;
+        existingMatch.dist += dist;
+      }
+    }
   });
 
   const profiles = new Map<string, CompetitiveProfilePlayer>();
   const positionProfilesMap = new Map<string, CompetitiveProfilePlayer[]>();
 
-  // PASO 1: Calcular perfiles individuales para jugadores con minutos jugados
+  // PASO 1: Calcular perfiles individuales para jugadores
   (jugadores || []).forEach((j) => {
     const overrides = customOverrides[j.id] || {};
     const matches = playerMatchesMap.get(j.id) || [];
     const pos = (j.posicion || "JUG").toUpperCase();
 
-    const fullMatches = matches.filter((m) => m.minutos >= 80);
+    // Ordenar partidos del más reciente al más antiguo
+    const allSortedMatches = [...matches].sort((a, b) => b.fecha.localeCompare(a.fecha));
 
-    // Extraer todas las partes individuales de ~45 min (entre 38 y 65 min)
+    // Detección automática oficial: partidos de 90' (>=70 min o ambas partes con >=60 min)
+    const autoFullMatches = allSortedMatches.filter(
+      (m) =>
+        m.minutos >= 70 ||
+        (m.parts.some((pt) => isFirstHalfTask(pt.nombre)) &&
+          m.parts.some((pt) => isSecondHalfTask(pt.nombre)) &&
+          m.minutos >= 60)
+    );
+
+    // Extraer todas las partes individuales de ~45 min (entre 35 y 65 min) que no pertenezcan ya a un partido completo
     const halfParts: AnalyzedMatchPart[] = [];
-    matches.forEach((m) => {
-      if (Array.isArray(m.parts)) {
+    allSortedMatches.forEach((m) => {
+      if (m.parts && m.parts.length > 0) {
         m.parts.forEach((p) => {
-          if (p.minutos >= 38 && p.minutos <= 65) {
+          if (p.minutos >= 35 && p.minutos <= 65) {
             halfParts.push(p);
           }
         });
       }
     });
+
+    // Determinar si el jugador tiene una selección manual personalizada de partidos
+    const customDates = customPlayerMatches?.[j.id];
+    const isCustom = Array.isArray(customDates);
+
+    let matchesToUse: AnalyzedMatch[] = [];
+    if (isCustom) {
+      matchesToUse = allSortedMatches.filter((m) => customDates.includes(m.fecha));
+    } else {
+      matchesToUse = autoFullMatches;
+    }
 
     const p: CompetitiveProfilePlayer = {
       jugadorId: j.id,
@@ -344,15 +477,24 @@ export function computeCompetitiveProfiles({
       posicion: j.posicion,
       category: "copiado_posicion",
       isReal: false,
+      isCustomMatches: isCustom,
+      customMatchesCount: isCustom ? customDates.length : undefined,
       badgeText: "Posición **",
       shortBadgeText: "Pos.**",
       asterisk: "**",
-      detailText: "Sin minutos (<45'). Copiado de compañeros de posición (No real **)",
-      matchesCount: matches.length,
-      fullMatchesCount: fullMatches.length,
+      detailText: isCustom
+        ? "Sin partidos seleccionados manualmente. Copiado de posición (**)"
+        : "Sin minutos (<45'). Copiado de compañeros de posición (No real **)",
+      methodDescription: isCustom
+        ? "Copiado de posición (sin partidos seleccionados)"
+        : "Copiado de compañeros de posición (menos de 45')",
+      usedMatchesList: [],
+      allAvailableMatches: allSortedMatches,
+      matchesCount: allSortedMatches.length,
+      fullMatchesCount: autoFullMatches.length,
       halfMatchesCount: halfParts.length,
       minutesMatch: 90,
-      analyzedMatches: matches,
+      analyzedMatches: allSortedMatches,
       values: {},
       explanations: {},
       dist: 10200,
@@ -364,20 +506,57 @@ export function computeCompetitiveProfiles({
       maxSpeed: 28.5,
     };
 
-    if (fullMatches.length > 1) {
-      // CASO 1: Varios partidos de 90 min -> (Máximo + Promedio) / 2
+    if (matchesToUse.length > 1) {
+      // CASO 1: Varios partidos (oficiales o seleccionados) -> (Máximo + Promedio sin máximo) / 2
       p.category = "real_varios";
       p.isReal = true;
-      p.badgeText = "90' (Máx+Prom sin máx)/2";
-      p.shortBadgeText = "90'";
-      p.asterisk = "";
-      p.detailText = `${fullMatches.length} partidos oficiales de 90' ((Máx+Prom sin máx)/2)`;
+      if (isCustom) {
+        p.badgeText = `90' (${matchesToUse.length} part. pers.)*`;
+        p.shortBadgeText = `${matchesToUse.length} part.*`;
+        p.asterisk = "*";
+        p.detailText =
+          `Partidos seleccionados manualmente (${matchesToUse.length}):\n` +
+          matchesToUse
+            .map(
+              (m) =>
+                `• ${formatProfileMatchDate(m.fecha)}: ${m.minutos}' (${m.parts.map((pt) => pt.nombre).join(", ") || "Partido"})`
+            )
+            .join("\n") +
+          `\nFórmula oficial: (Máxima + Promedio de las restantes) / 2`;
+      } else {
+        p.badgeText = "90' (Máx+Prom sin máx)/2";
+        p.shortBadgeText = "90'";
+        p.asterisk = "";
+        p.detailText =
+          `Partidos de 90' computados (${matchesToUse.length}):\n` +
+          matchesToUse
+            .map(
+              (m) =>
+                `• ${formatProfileMatchDate(m.fecha)}: ${m.minutos}' (${m.parts.map((pt) => pt.nombre).join(", ") || "Partido"})`
+            )
+            .join("\n") +
+          `\nFórmula oficial: (Máxima + Promedio de las restantes) / 2`;
+        p.methodDescription = `Fórmula oficial: (Máx + Prom sin máx)/2 con ${matchesToUse.length} partidos`;
+      }
+
+      p.usedMatchesList = matchesToUse.map((m) => {
+        const velMax = Math.max(0, ...m.parts.map((pt) => calculateGpsMetricValue(pt.rawTask, "MAX Speed(km/h)", derivedVariables) || 0));
+        return {
+          fecha: m.fecha,
+          minutos: m.minutos,
+          desc: m.parts.map((pt) => pt.nombre).join(" • ") || "Partido completo",
+          isFull: m.minutos >= 70,
+          dist: Math.round(m.dist),
+          velMax: Math.round(velMax * 10) / 10,
+          tipo: m.minutos >= 70 ? "90'" : `${Math.round(m.minutos)}'`,
+        };
+      });
 
       varsToCompute.forEach((v) => {
         const isRate = isRateOrPeak(v.key);
         const matchBreakdowns: MetricMatchBreakdown[] = [];
 
-        fullMatches.forEach((m) => {
+        matchesToUse.forEach((m) => {
           const partsBreakdown: MetricMatchPart[] = m.parts.map((part) => {
             let pVal: number;
             if (v.key === "Distancia / Min" || v.key.toLowerCase().includes("m/min")) {
@@ -413,9 +592,10 @@ export function computeCompetitiveProfiles({
         const maxVal = Math.max(...vList);
         const maxIdx = vList.indexOf(maxVal);
         const listWithoutMax = vList.filter((_, idx) => idx !== maxIdx);
-        const avgWithoutMax = listWithoutMax.length > 0
-          ? listWithoutMax.reduce((a, b) => a + b, 0) / listWithoutMax.length
-          : maxVal;
+        const avgWithoutMax =
+          listWithoutMax.length > 0
+            ? listWithoutMax.reduce((a, b) => a + b, 0) / listWithoutMax.length
+            : maxVal;
 
         const calcVal = isRate
           ? Math.round(((maxVal + avgWithoutMax) / 2) * 10) / 10
@@ -431,9 +611,9 @@ export function computeCompetitiveProfiles({
         const avgWithoutMaxFormatted = isRate ? avgWithoutMax.toFixed(1) : Math.round(avgWithoutMax).toString();
 
         const steps: string[] = [
-          `1. Partidos completos detectados: ${fullMatches.length} partidos oficiales de 90 minutos.`,
+          `1. Partidos computados: ${matchesToUse.length} partidos (${isCustom ? "selección manual" : "oficiales de 90'"}).`,
           `2. Valores por partido: ` +
-            matchBreakdowns.map((mb) => `${mb.fecha} (${mb.totalMatchVal} ${unit})`).join(", ") +
+            matchBreakdowns.map((mb) => `${formatProfileMatchDate(mb.fecha)} (${mb.totalMatchVal} ${unit})`).join(", ") +
             `.`,
           `3. Máximo registrado en un partido = ${maxVal} ${unit}.`,
           `4. Promedio excluyendo la máxima = ${avgWithoutMaxFormatted} ${unit}.`,
@@ -453,7 +633,7 @@ export function computeCompetitiveProfiles({
           overrideVal: isOverridden ? overrides[v.key] : null,
           calculatedVal: calcVal,
           finalVal,
-          summary: `Calculado a partir de ${fullMatches.length} partidos de 90' aplicando la fórmula oficial: (Máxima + Promedio sin máxima) / 2.`,
+          summary: `Calculado a partir de ${matchesToUse.length} partidos aplicando la fórmula oficial: (Máxima + Promedio sin máxima) / 2.`,
           formula: `(Máx: ${maxVal} + Prom. sin máx: ${avgWithoutMaxFormatted}) / 2 = ${calcVal} ${unit}`,
           steps,
           matches: matchBreakdowns,
@@ -467,22 +647,43 @@ export function computeCompetitiveProfiles({
       p.load = (p.values["Player Load"] as number) || 850;
       p.mMin = (p.values["Distancia / Min"] as number) || 113;
       p.maxSpeed = (p.values["MAX Speed(km/h)"] as number) || 28.5;
-      p.minutesMatch = Math.round(fullMatches.reduce((a, b) => a + b.minutos, 0) / fullMatches.length);
+      p.minutesMatch = Math.round(matchesToUse.reduce((a, b) => a + b.minutos, 0) / matchesToUse.length);
 
       profiles.set(j.id, p);
 
       if (!positionProfilesMap.has(pos)) positionProfilesMap.set(pos, []);
       positionProfilesMap.get(pos)!.push(p);
-    } else if (fullMatches.length === 1) {
-      // CASO 2: Solo 1 partido de 90 min -> valor directo de ese partido
+    } else if (matchesToUse.length === 1) {
+      // CASO 2: Solo 1 partido (oficial o seleccionado) -> valor directo de ese partido
+      const m = matchesToUse[0];
       p.category = "real_uno";
       p.isReal = true;
-      p.badgeText = "90' (1 partido)";
-      p.shortBadgeText = "90'";
-      p.asterisk = "";
-      p.detailText = `1 partido de 90' (${fullMatches[0].fecha})`;
+      if (isCustom) {
+        p.badgeText = `1 part. pers. (${formatProfileMatchDate(m.fecha)})*`;
+        p.shortBadgeText = "1 part.*";
+        p.asterisk = "*";
+        p.detailText = `1 partido seleccionado manualmente: ${formatProfileMatchDate(m.fecha)} (${m.minutos}') [Directo]`;
+      } else {
+        p.badgeText = "90' (1 partido)";
+        p.shortBadgeText = "90'";
+        p.asterisk = "";
+        p.detailText = `1 partido oficial de 90' computado: ${formatProfileMatchDate(m.fecha)} (${m.minutos}') [100% Real]`;
+        p.methodDescription = `1 partido de 90' completo oficial`;
+      }
 
-      const m = fullMatches[0];
+      const singleVelMax = Math.max(0, ...m.parts.map((pt) => calculateGpsMetricValue(pt.rawTask, "MAX Speed(km/h)", derivedVariables) || 0));
+      p.usedMatchesList = [
+        {
+          fecha: m.fecha,
+          minutos: m.minutos,
+          desc: m.parts.map((pt) => pt.nombre).join(" • ") || "Partido completo",
+          isFull: m.minutos >= 70,
+          dist: Math.round(m.dist),
+          velMax: Math.round(singleVelMax * 10) / 10,
+          tipo: m.minutos >= 70 ? "90'" : `${Math.round(m.minutos)}'`,
+        },
+      ];
+
       varsToCompute.forEach((v) => {
         const isRate = isRateOrPeak(v.key);
         const partsBreakdown: MetricMatchPart[] = m.parts.map((part) => {
@@ -527,7 +728,7 @@ export function computeCompetitiveProfiles({
         ];
 
         const steps: string[] = [
-          `1. El jugador ha disputado un único partido completo de 90' (${m.fecha}, ${m.minutos} min).`,
+          `1. Partido computado: ${formatProfileMatchDate(m.fecha)} (${m.minutos} min).`,
           `2. Desglose de tareas del partido: ` +
             partsBreakdown.map((pb) => `${pb.nombre}: ${pb.val} ${unit}`).join(" | ") +
             `.`,
@@ -547,8 +748,8 @@ export function computeCompetitiveProfiles({
           overrideVal: isOverridden ? overrides[v.key] : null,
           calculatedVal: calcVal,
           finalVal,
-          summary: `Valor directo del único partido de 90' disputado (${m.fecha}).`,
-          formula: `Valor partido 90' = ${calcVal} ${unit}`,
+          summary: `Valor directo del partido disputado (${formatProfileMatchDate(m.fecha)}).`,
+          formula: `Valor partido = ${calcVal} ${unit}`,
           steps,
           matches: matchBreakdowns,
         };
@@ -567,22 +768,38 @@ export function computeCompetitiveProfiles({
 
       if (!positionProfilesMap.has(pos)) positionProfilesMap.set(pos, []);
       positionProfilesMap.get(pos)!.push(p);
-    } else if (halfParts.length > 0) {
-      // CASO 3: <90 min pero al menos 45 min en una o varias partes
+    } else if (!isCustom && halfParts.length > 0) {
+      // CASO 3: <90 min pero al menos 45 min en una o varias partes (solo en modo automático)
       // Si tiene varias partes de ~45 min, promediamos aplicando la fórmula oficial (Máx + Prom sin máx)/2 proyectado a 90 min (x2)
       p.category = "estimado_45";
       p.isReal = false;
       p.asterisk = "*";
+      p.methodDescription = `Estimado 45' x 2 (${halfParts.length} partes)`;
+
+      p.usedMatchesList = halfParts.map((hp) => ({
+        fecha: hp.fecha || "",
+        minutos: hp.minutos,
+        desc: hp.nombre,
+        isFull: false,
+        dist: Math.round(hp.dist || 0),
+        velMax: Math.round((calculateGpsMetricValue(hp.rawTask, "MAX Speed(km/h)", derivedVariables) || 0) * 10) / 10,
+        tipo: "45'",
+      }));
 
       if (halfParts.length > 1) {
         p.badgeText = `45' x 2 (${halfParts.length} partes) *`;
         p.shortBadgeText = `45'* (${halfParts.length})`;
-        p.detailText = `Estimado: promedio oficial de ${halfParts.length} partes de ~45' x 2 (No real *)`;
+        p.detailText =
+          `Estimado 45' x 2 a partir de ${halfParts.length} partes:\n` +
+          halfParts
+            .map((hp) => `• ${formatProfileMatchDate(hp.fecha || "")}: ${hp.nombre} (${hp.minutos}')`)
+            .join("\n") +
+          `\nFórmula: Proyección x 2 (No real *)`;
       } else {
         const singlePart = halfParts[0];
         p.badgeText = "45' x 2 *";
         p.shortBadgeText = "45'*";
-        p.detailText = `Estimado: parte ${singlePart.nombre || "1ª parte"} (${singlePart.minutos}') x 2 (No real *)`;
+        p.detailText = `Estimado 45' x 2 a partir de parte: ${singlePart.nombre} (${formatProfileMatchDate(singlePart.fecha || "")}, ${singlePart.minutos}') x 2 (No real *)`;
       }
 
       varsToCompute.forEach((v) => {
