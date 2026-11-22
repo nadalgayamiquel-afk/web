@@ -828,7 +828,7 @@ export default function CargaExternaSection({
     return {};
   });
 
-  const [customPlayerMatches, setCustomPlayerMatches] = useState<Record<string, string[]>>(() => {
+  const [customPlayerMatches, setCustomPlayerMatches] = useState<Record<string, any>>(() => {
     if (typeof window !== "undefined") {
       try {
         const stored = localStorage.getItem("gps_competitive_profile_custom_matches");
@@ -867,22 +867,26 @@ export default function CargaExternaSection({
 
   const handleToggleMatchInProfile = (jugadorId: string, matchDate: string, isCurrentlyUsed: boolean) => {
     const playerProfile = competitiveProfiles.get(jugadorId);
-    const currentDates: string[] = Array.isArray(customPlayerMatches[jugadorId])
+    const rawConfigs: any[] = Array.isArray(customPlayerMatches[jugadorId])
       ? [...customPlayerMatches[jugadorId]]
-      : Array.from(new Set((playerProfile?.usedMatchesList || []).map((m: any) => m.fecha).filter(Boolean)));
+      : (playerProfile?.usedMatchesList || []).map((m: any) => ({ fecha: m.fecha, modo: m.modo || (m.isFull ? "entero" : "parte") }));
 
-    let nextDates: string[];
+    const currentConfigs: Array<{ fecha: string; modo: "entero" | "parte" }> = rawConfigs.map((item) =>
+      typeof item === "string" ? { fecha: item, modo: "entero" } : item
+    );
+
+    let nextConfigs: Array<{ fecha: string; modo: "entero" | "parte" }>;
     if (isCurrentlyUsed) {
-      nextDates = currentDates.filter((d) => d !== matchDate);
+      nextConfigs = currentConfigs.filter((m) => m.fecha !== matchDate);
     } else {
-      if (!currentDates.includes(matchDate)) {
-        nextDates = [...currentDates, matchDate];
+      if (!currentConfigs.some((m) => m.fecha === matchDate)) {
+        nextConfigs = [...currentConfigs, { fecha: matchDate, modo: "entero" }];
       } else {
-        nextDates = currentDates;
+        nextConfigs = currentConfigs;
       }
     }
 
-    const nextCustom = { ...customPlayerMatches, [jugadorId]: nextDates };
+    const nextCustom = { ...customPlayerMatches, [jugadorId]: nextConfigs };
     setCustomPlayerMatches(nextCustom);
     if (typeof window !== "undefined") {
       try {
@@ -6127,7 +6131,7 @@ export default function CargaExternaSection({
                                             </span>
                                           )}
                                           <span style={{ color: "#fef08a", fontWeight: 700, fontSize: "9px" }}>
-                                            ⏱️ {m.minutos} min totales
+                                            ⏱️ {m.minutos} min {m.modo === "parte" ? "(Parte x2)" : "(Entero 90')"}
                                           </span>
                                           {p.usedMatchesList && p.usedMatchesList.length > 1 && mIdx === 0 && (
                                             <span style={{ background: "#0284c7", color: "#fff", fontSize: "7.5px", fontWeight: 800, padding: "0 3px", borderRadius: "2px" }}>

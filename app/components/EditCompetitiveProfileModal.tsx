@@ -7,6 +7,7 @@ import {
   formatProfileMatchDate,
   AnalyzedMatch,
   CompetitiveProfilePlayer,
+  CustomMatchConfig,
 } from "@/app/lib/competitiveProfile";
 import { calculateGpsMetricValue } from "@/app/lib/gpsVariables";
 
@@ -18,9 +19,9 @@ interface EditCompetitiveProfileModalProps {
   gpsRecords: any[];
   allJugadores: any[];
   derivedVariables?: any[];
-  currentCustomDates?: string[];
+  currentCustomDates?: Array<string | CustomMatchConfig>;
   planificacionDays?: any[];
-  onSave: (selectedDates: string[]) => void;
+  onSave: (selectedMatches: CustomMatchConfig[]) => void;
   onResetAuto: () => void;
 }
 
@@ -49,61 +50,95 @@ export default function EditCompetitiveProfileModal({
     return currentProfile?.allAvailableMatches || [];
   }, [currentProfile]);
 
-  // Fechas seleccionadas inicialmente
-  const initialDates = useMemo(() => {
+  // Configuración inicial de partidos seleccionados (fecha -> "entero" | "parte")
+  const initialMatchesMap = useMemo(() => {
+    const map: Record<string, "entero" | "parte"> = {};
     if (Array.isArray(currentCustomDates)) {
-      return [...currentCustomDates];
+      currentCustomDates.forEach((item: any) => {
+        if (typeof item === "string") {
+          const match = availableMatches.find((m) => m.fecha === item);
+          map[item] = match && match.minutos < 75 ? "parte" : "entero";
+        } else if (item && item.fecha) {
+          map[item.fecha] = item.modo || "entero";
+        }
+      });
+      return map;
     }
-    // Si no tiene selección manual, partir de los partidos que actualmente están en usedMatchesList
+    // Si no tiene selección manual previa, inicializar con los que actualmente usa
     if (currentProfile?.usedMatchesList && currentProfile.usedMatchesList.length > 0) {
-      return currentProfile.usedMatchesList.map((m) => m.fecha).filter(Boolean);
+      currentProfile.usedMatchesList.forEach((m: any) => {
+        if (m.fecha) {
+          map[m.fecha] = m.modo || (m.isFull ? "entero" : "parte");
+        }
+      });
+      return map;
     }
-    // Si no, tomar los partidos completos automáticos
-    return availableMatches.filter((m) => m.minutos >= 70).map((m) => m.fecha);
+    // Si no, sugerir los partidos >= 75 min como entero
+    availableMatches.forEach((m) => {
+      if (m.minutos >= 75) {
+        map[m.fecha] = "entero";
+      }
+    });
+    return map;
   }, [currentCustomDates, currentProfile, availableMatches]);
 
-  const [selectedDates, setSelectedDates] = useState<string[]>(initialDates);
+  const [selectedMatches, setSelectedMatches] = useState<Record<string, "entero" | "parte">>(initialMatchesMap);
   const [extraMatchDate, setExtraMatchDate] = useState<string>("");
 
   useEffect(() => {
-    setSelectedDates(initialDates);
-  }, [jugador?.id, initialDates]);
+    setSelectedMatches(initialMatchesMap);
+  }, [jugador?.id, initialMatchesMap]);
 
   const isCustomMode = Array.isArray(currentCustomDates);
 
   // Toggle de un partido (añadir o quitar)
-  const handleToggleDate = (dateStr: string) => {
-    setSelectedDates((prev) => {
-      if (prev.includes(dateStr)) {
-        return prev.filter((d) => d !== dateStr);
+  const handleToggleMatch = (dateStr: string) => {
+    setSelectedMatches((prev) => {
+      const next = { ...prev };
+      if (dateStr in next) {
+        delete next[dateStr];
       } else {
-        return [...prev, dateStr];
+        const match = availableMatches.find((m) => m.fecha === dateStr);
+        next[dateStr] = match && match.minutos < 75 ? "parte" : "entero";
       }
+      return next;
     });
+  };
+
+  // Cambiar el modo de cálculo de un partido (Entero 90' vs Parte 45' x2)
+  const handleSetMatchMode = (dateStr: string, mode: "entero" | "parte") => {
+    setSelectedMatches((prev) => ({
+      ...prev,
+      [dateStr]: mode,
+    }));
   };
 
   // Añadir una fecha de partido de la lista general del equipo
   const handleAddExtraDate = () => {
     if (!extraMatchDate) return;
-    if (!selectedDates.includes(extraMatchDate)) {
-      setSelectedDates((prev) => [...prev, extraMatchDate]);
+    if (!(extraMatchDate in selectedMatches)) {
+      setSelectedMatches((prev) => ({ ...prev, [extraMatchDate]: "entero" }));
     }
     setExtraMatchDate("");
   };
 
-  // Recálculo en tiempo real de la vista previa con las fechas seleccionadas
+  const selectedMatchesArray: CustomMatchConfig[] = useMemo(() => {
+    return Object.entries(selectedMatches).map(([fecha, modo]) => ({ fecha, modo }));
+  }, [selectedMatches]);
+
+  // Recálculo en tiempo real de la vista previa con las opciones seleccionadas
   const previewProfile = useMemo(() => {
     const previewProfilesMap = computeCompetitiveProfiles({
       gpsRecords,
       jugadores: allJugadores && allJugadores.length > 0 ? allJugadores : [jugador],
       derivedVariables,
       customPlayerMatches: {
-        [jugador.id]: selectedDates,
+        [jugador.id]: selectedMatchesArray,
       },
       planificacionDays,
     });
     return previewProfilesMap.get(jugador.id);
-  }, [gpsRecords, allJugadores, jugador, derivedVariables, selectedDates, planificacionDays]);
+  }, [gpsRecords, allJugadores, jugador, derivedVariables, selectedMatchesArray, planificacionDays]);
 
   // Extraer métricas clave para un partido específico
   const getMatchMetricsSummary = (m: AnalyzedMatch) => {
@@ -121,9 +156,9 @@ export default function EditCompetitiveProfileModal({
     return { dt, hsr, vmax: vmax > 0 ? vmax.toFixed(1) : "—", accDec, pl };
   };
 
-  // Fechas del equipo disponibles que no están todavía en availableMatches
+  // Fechas del equipo disponibles que no están todavía en availableMatches ni seleccionadas
   const remainingTeamDates = allTeamMatches.filter(
-    (tm) => !availableMatches.some((am) => am.fecha === tm.fecha) && !selectedDates.includes(tm.fecha)
+    (tm) => !availableMatches.some((am) => am.fecha === tm.fecha) && !(tm.fecha in selectedMatches)
   );
 
   return (
@@ -242,10 +277,10 @@ export default function EditCompetitiveProfileModal({
               borderRadius: "6px",
               fontSize: "11.5px",
               color: "#0369a1",
-              lineHeight: 1.45,
+              lineHeight: "1.45",
             }}
           >
-            <strong>Fórmula oficial del club:</strong> Con <strong>2 o más partidos</strong> seleccionados, se aplica la fórmula <code>(Máxima + Promedio de los restantes) / 2</code>. Con <strong>1 partido</strong>, se toma el valor directo 100% real. Marca las casillas de los partidos que quieres computar.
+            <strong>Personalización del cálculo:</strong> Selecciona qué partidos computar y elige para cada uno si cuenta como <strong>Partido Entero (90')</strong> (valor real directo del partido) o como <strong>Parte (~45' x2)</strong> (media parte proyectada a 90' x2). Con 2 o más partidos se aplica la fórmula oficial <code>(Máxima + Promedio de los restantes) / 2</code>.
           </div>
 
           {/* Lista de partidos del jugador */}
@@ -255,7 +290,7 @@ export default function EditCompetitiveProfileModal({
                 Partidos disputados por el jugador ({availableMatches.length})
               </span>
               <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>
-                {selectedDates.length} seleccionados
+                {selectedMatchesArray.length} seleccionados
               </span>
             </div>
 
@@ -278,48 +313,55 @@ export default function EditCompetitiveProfileModal({
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                 {availableMatches.map((m) => {
-                  const isChecked = selectedDates.includes(m.fecha);
-                  const isFull = m.minutos >= 70;
+                  const isChecked = m.fecha in selectedMatches;
+                  const currentMode = selectedMatches[m.fecha] || (m.minutos >= 75 ? "entero" : "parte");
+                  const isFull = currentMode === "entero";
                   const metrics = getMatchMetricsSummary(m);
                   const rival = m.rival || planificacionDays?.find((d: any) => d.fecha === m.fecha)?.rival;
 
                   return (
                     <div
                       key={m.fecha}
-                      onClick={() => handleToggleDate(m.fecha)}
                       style={{
                         padding: "10px 14px",
                         borderRadius: "8px",
-                        border: isChecked ? "1.5px solid #0284c7" : "1px solid #e2e8f0",
-                        background: isChecked ? "#f0f9ff" : "#ffffff",
+                        border: isChecked
+                          ? isFull
+                            ? "1.5px solid #0284c7"
+                            : "1.5px solid #d97706"
+                          : "1px solid #e2e8f0",
+                        background: isChecked
+                          ? isFull
+                            ? "#f0f9ff"
+                            : "#fffbeb"
+                          : "#ffffff",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "space-between",
-                        cursor: "pointer",
+                        gap: "12px",
                         transition: "all 0.15s ease",
                       }}
                     >
-                      {/* Izquierda: Checkbox + Fecha + Minutos Totales + Desglose */}
-                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                      {/* Izquierda: Checkbox + Fecha + Rival + Minutos Totales + Desglose */}
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px", flex: 1 }}>
                         <input
                           type="checkbox"
                           checked={isChecked}
-                          onChange={() => handleToggleDate(m.fecha)}
-                          onClick={(e) => e.stopPropagation()}
+                          onChange={() => handleToggleMatch(m.fecha)}
                           style={{
                             width: "18px",
                             height: "18px",
                             cursor: "pointer",
-                            accentColor: "#0284c7",
+                            accentColor: isFull ? "#0284c7" : "#d97706",
                           }}
                         />
                         <div>
-                          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                            <strong style={{ fontSize: "13.5px", color: "#0f172a" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                            <strong style={{ fontSize: "13px", color: "#0f172a" }}>
                               📅 {formatProfileMatchDate(m.fecha)}
                             </strong>
                             {rival && (
-                              <span style={{ fontSize: "12px", fontWeight: 700, color: "#0284c7" }}>
+                              <span style={{ fontSize: "11.5px", fontWeight: 700, color: "#0284c7" }}>
                                 vs {rival}
                               </span>
                             )}
@@ -327,18 +369,27 @@ export default function EditCompetitiveProfileModal({
                               style={{
                                 fontSize: "11px",
                                 fontWeight: 800,
-                                padding: "2px 8px",
+                                padding: "2px 6px",
                                 borderRadius: "4px",
-                                background: isFull ? "#dcfce7" : m.minutos >= 40 ? "#fef3c7" : "#f1f5f9",
-                                color: isFull ? "#15803d" : m.minutos >= 40 ? "#b45309" : "#475569",
-                                border: isFull ? "1px solid #bbf7d0" : m.minutos >= 40 ? "1px solid #fde68a" : "1px solid #e2e8f0",
+                                background: isChecked ? (isFull ? "#dbeafe" : "#fef3c7") : "#f1f5f9",
+                                color: isChecked ? (isFull ? "#1d4ed8" : "#b45309") : "#64748b",
                               }}
                             >
-                              ⏱️ {m.minutos} min totales {isFull ? "(>=70' Completo)" : "(Parte)"}
+                              ⏱️ {m.minutos} min totales
                             </span>
                             {isChecked ? (
-                              <span style={{ fontSize: "10px", fontWeight: 800, color: "#059669", background: "#ecfdf5", padding: "1px 6px", borderRadius: "3px", border: "1px solid #a7f3d0" }}>
-                                ✓ CONTANDO
+                              <span
+                                style={{
+                                  fontSize: "9.5px",
+                                  fontWeight: 800,
+                                  padding: "1px 6px",
+                                  borderRadius: "3px",
+                                  background: isFull ? "#dcfce7" : "#fef3c7",
+                                  color: isFull ? "#15803d" : "#92400e",
+                                  border: isFull ? "1px solid #86efac" : "1px solid #fde68a",
+                                }}
+                              >
+                                ✓ {isFull ? "ENTERO (90')" : "PARTE (~45' x2)"}
                               </span>
                             ) : (
                               <span style={{ fontSize: "10px", fontWeight: 600, color: "#94a3b8" }}>
@@ -346,21 +397,71 @@ export default function EditCompetitiveProfileModal({
                               </span>
                             )}
                           </div>
-                          <div style={{ fontSize: "11px", color: "#64748b", marginTop: "3px" }}>
-                            Desglose de tareas: {m.parts && m.parts.length > 0
+                          <div style={{ fontSize: "10.5px", color: "#64748b", marginTop: "3px" }}>
+                            Tareas: {m.parts && m.parts.length > 0
                               ? m.parts.map((p) => `${p.nombre} (${p.minutos}')`).join(" + ")
                               : "Partido completo"}
                           </div>
                         </div>
                       </div>
 
-                      {/* Botón explícito Quitar / Añadir + Métricas */}
-                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      {/* Centro: Selector Elegir si cuenta como Parte o como Partido Entero */}
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
+                        <span style={{ fontSize: "8.5px", fontWeight: 800, color: "#64748b", textTransform: "uppercase" }}>
+                          Contar como:
+                        </span>
+                        <div style={{ display: "inline-flex", borderRadius: "6px", overflow: "hidden", border: "1px solid #cbd5e1" }}>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSetMatchMode(m.fecha, "entero");
+                            }}
+                            style={{
+                              padding: "4px 8px",
+                              fontSize: "10px",
+                              fontWeight: 700,
+                              border: "none",
+                              cursor: "pointer",
+                              background: isChecked && isFull ? "#0284c7" : "#f8fafc",
+                              color: isChecked && isFull ? "#ffffff" : "#475569",
+                              transition: "all 0.15s ease",
+                            }}
+                            title="Contar esta participación como partido entero de 90' directo"
+                          >
+                            ⚽ Entero (90')
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSetMatchMode(m.fecha, "parte");
+                            }}
+                            style={{
+                              padding: "4px 8px",
+                              fontSize: "10px",
+                              fontWeight: 700,
+                              border: "none",
+                              borderLeft: "1px solid #cbd5e1",
+                              cursor: "pointer",
+                              background: isChecked && !isFull ? "#d97706" : "#f8fafc",
+                              color: isChecked && !isFull ? "#ffffff" : "#475569",
+                              transition: "all 0.15s ease",
+                            }}
+                            title="Contar esta participación como parte (~45' proyectada a 90' x2)"
+                          >
+                            ⏱️ Parte (x2)
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Derecha: Botón Quitar / Añadir + Métricas */}
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleToggleDate(m.fecha);
+                            handleToggleMatch(m.fecha);
                           }}
                           style={{
                             padding: "3px 8px",
@@ -368,7 +469,7 @@ export default function EditCompetitiveProfileModal({
                             border: isChecked ? "1px solid #f87171" : "1px solid #86efac",
                             background: isChecked ? "#fee2e2" : "#f0fdf4",
                             color: isChecked ? "#dc2626" : "#16a34a",
-                            fontSize: "11px",
+                            fontSize: "10.5px",
                             fontWeight: 700,
                             cursor: "pointer",
                             whiteSpace: "nowrap",
@@ -378,18 +479,14 @@ export default function EditCompetitiveProfileModal({
                         </button>
 
                         {/* Derecha: Métricas clave en chips */}
-                        <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "11px", color: "#334155" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "10.5px", color: "#334155" }}>
                           <div style={{ textAlign: "right" }}>
-                            <span style={{ color: "#64748b", fontSize: "9px", display: "block" }}>Distancia</span>
+                            <span style={{ color: "#64748b", fontSize: "8.5px", display: "block" }}>Distancia</span>
                             <strong>{metrics.dt.toLocaleString()} m</strong>
                           </div>
                           <div style={{ textAlign: "right" }}>
-                            <span style={{ color: "#64748b", fontSize: "9px", display: "block" }}>Vmax</span>
+                            <span style={{ color: "#64748b", fontSize: "8.5px", display: "block" }}>Vmax</span>
                             <strong>{metrics.vmax} k/h</strong>
-                          </div>
-                          <div style={{ textAlign: "right" }}>
-                            <span style={{ color: "#64748b", fontSize: "9px", display: "block" }}>Acc-Dec</span>
-                            <strong>{metrics.accDec}</strong>
                           </div>
                         </div>
                       </div>
@@ -459,7 +556,7 @@ export default function EditCompetitiveProfileModal({
           >
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
               <strong style={{ fontSize: "12px", color: "#166534" }}>
-                📊 Vista previa del Perfil Competitivo resultante ({selectedDates.length} partidos):
+                📊 Vista previa del Perfil Competitivo resultante ({selectedMatchesArray.length} partidos):
               </strong>
               <span
                 style={{
@@ -573,7 +670,7 @@ export default function EditCompetitiveProfileModal({
             <button
               type="button"
               onClick={() => {
-                onSave(selectedDates);
+                onSave(selectedMatchesArray);
                 onClose();
               }}
               style={{
