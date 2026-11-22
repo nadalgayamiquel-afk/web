@@ -842,6 +842,24 @@ export default function CargaExternaSection({
   const [hoveredMethodPlayerId, setHoveredMethodPlayerId] = useState<string | null>(null);
   const [pinnedMethodPlayerId, setPinnedMethodPlayerId] = useState<string | null>(null);
   const activeMethodPlayerId = pinnedMethodPlayerId || hoveredMethodPlayerId;
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleMethodMouseEnter = (playerId: string) => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+    setHoveredMethodPlayerId(playerId);
+  };
+
+  const handleMethodMouseLeave = () => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+    }
+    hoverTimeoutRef.current = setTimeout(() => {
+      setHoveredMethodPlayerId(null);
+    }, 250);
+  };
 
   const allTeamMatches = useMemo(() => {
     return getAllTeamMatches(gpsRecords);
@@ -5958,44 +5976,41 @@ export default function CargaExternaSection({
 
                         {/* Método (Ultra discreto y compacto con Popover Interactivo) */}
                         <td
-                          style={{ padding: "4px 2px", textAlign: "center", width: "38px", position: "relative", cursor: "pointer" }}
-                          onMouseEnter={() => setHoveredMethodPlayerId(j.id)}
-                          onMouseLeave={() => {
-                            if (pinnedMethodPlayerId !== j.id) {
-                              setHoveredMethodPlayerId(null);
-                            }
-                          }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditingProfilePlayer(j);
-                          }}
+                          style={{ padding: "4px 2px", textAlign: "center", width: "42px", position: "relative" }}
+                          onMouseEnter={() => handleMethodMouseEnter(j.id)}
+                          onMouseLeave={handleMethodMouseLeave}
                         >
-                          <span
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPinnedMethodPlayerId(null);
+                              setHoveredMethodPlayerId(null);
+                              setEditingProfilePlayer(j);
+                            }}
                             style={{
                               display: "inline-block",
-                              padding: "1px 3px",
-                              borderRadius: "3px",
+                              padding: "2px 4px",
+                              borderRadius: "4px",
                               background: badgeBg,
                               color: badgeColor,
-                              fontSize: "8.5px",
+                              fontSize: "9px",
                               fontWeight: 800,
                               whiteSpace: "nowrap",
-                              border: p.isCustomMatches ? "1px dashed #0284c7" : "none",
+                              border: p.isCustomMatches ? "1.5px dashed #0284c7" : "1px solid rgba(0,0,0,0.06)",
+                              cursor: "pointer",
                             }}
+                            title="Haz clic para abrir la ventana de partidos"
                           >
                             {p.shortBadgeText || "—"}{p.isCustomMatches ? "*" : ""}
-                          </span>
+                          </button>
 
                           {/* Popover interactivo detallado con los partidos utilizados y opciones de añadir/quitar */}
-                          {activeMethodPlayerId === j.id && (
+                          {activeMethodPlayerId === j.id && !editingProfilePlayer && (
                             <div
                               onClick={(e) => e.stopPropagation()}
-                              onMouseEnter={() => setHoveredMethodPlayerId(j.id)}
-                              onMouseLeave={() => {
-                                if (pinnedMethodPlayerId !== j.id) {
-                                  setHoveredMethodPlayerId(null);
-                                }
-                              }}
+                              onMouseEnter={() => handleMethodMouseEnter(j.id)}
+                              onMouseLeave={handleMethodMouseLeave}
                               style={{
                                 position: "absolute",
                                 ...(idx > filteredProfileJugadores.length - 4 && filteredProfileJugadores.length > 5
@@ -6309,30 +6324,45 @@ export default function CargaExternaSection({
                           )}
                         </td>
 
-                        {/* Partidos (Ultra discreto y compacto con apertura de modal o popover) */}
+                        {/* Partidos (Botón interactivo claro para abrir ventana modal) */}
                         <td
-                          style={{ padding: "4px 2px", textAlign: "center", width: "44px", fontSize: "10px", color: "#334155", cursor: "pointer" }}
-                          onMouseEnter={() => setHoveredMethodPlayerId(j.id)}
-                          onMouseLeave={() => {
-                            if (pinnedMethodPlayerId !== j.id) {
-                              setHoveredMethodPlayerId(null);
-                            }
-                          }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditingProfilePlayer(j);
-                          }}
+                          style={{ padding: "4px 3px", textAlign: "center", width: "56px" }}
                         >
-                          <span
-                            style={{ fontWeight: 800, fontSize: "11px", color: "#0f172a" }}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPinnedMethodPlayerId(null);
+                              setHoveredMethodPlayerId(null);
+                              setEditingProfilePlayer(j);
+                            }}
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              gap: "2px",
+                              padding: "2px 5px",
+                              borderRadius: "4px",
+                              border: p.isCustomMatches ? "1.5px solid #0284c7" : "1px solid #cbd5e1",
+                              background: p.isCustomMatches ? "#e0f2fe" : "#f8fafc",
+                              cursor: "pointer",
+                              color: "#0f172a",
+                              fontSize: "10px",
+                              fontWeight: 700,
+                              transition: "all 0.15s ease",
+                            }}
+                            title="Haz clic para abrir la ventana con todos los partidos, minutos y opciones para añadir o quitar"
                           >
-                            {p.matchesCount || 0}
-                          </span>
-                          {p.fullMatchesCount ? (
-                            <span style={{ fontSize: "8.5px", color: "#94a3b8", marginLeft: "1.5px" }}>
-                              ({p.fullMatchesCount})
+                            <span style={{ fontWeight: 800, fontSize: "11px", color: p.isCustomMatches ? "#0369a1" : "#0f172a" }}>
+                              {p.matchesCount || 0}
                             </span>
-                          ) : null}
+                            {p.fullMatchesCount ? (
+                              <span style={{ fontSize: "8.5px", color: p.isCustomMatches ? "#0284c7" : "#64748b" }}>
+                                ({p.fullMatchesCount})
+                              </span>
+                            ) : null}
+                            <span style={{ fontSize: "9px", color: "#0284c7", marginLeft: "1px" }}>⚙️</span>
+                          </button>
                         </td>
 
                         {/* Columnas dinámicas según favoritas elegidas */}
@@ -10542,6 +10572,7 @@ export default function CargaExternaSection({
       {/* Modal de Edición de Partidos del Perfil Competitivo */}
       {editingProfilePlayer && (
         <EditCompetitiveProfileModal
+          key={editingProfilePlayer.id}
           isOpen={Boolean(editingProfilePlayer)}
           onClose={() => setEditingProfilePlayer(null)}
           jugador={editingProfilePlayer}

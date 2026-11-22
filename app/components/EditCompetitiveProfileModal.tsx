@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   computeCompetitiveProfiles,
   getAllTeamMatches,
@@ -64,6 +64,10 @@ export default function EditCompetitiveProfileModal({
 
   const [selectedDates, setSelectedDates] = useState<string[]>(initialDates);
   const [extraMatchDate, setExtraMatchDate] = useState<string>("");
+
+  useEffect(() => {
+    setSelectedDates(initialDates);
+  }, [jugador?.id, initialDates]);
 
   const isCustomMode = Array.isArray(currentCustomDates);
 
@@ -135,7 +139,7 @@ export default function EditCompetitiveProfileModal({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        zIndex: 9999,
+        zIndex: 100000,
         padding: "16px",
       }}
       onClick={(e) => {
