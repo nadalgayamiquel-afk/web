@@ -78,6 +78,7 @@ export interface CompetitiveProfilePlayer {
   usedMatchesList?: Array<{
     fecha: string;
     minutos: number;
+    rival?: string;
     desc: string;
     isFull: boolean;
     dist?: number;
@@ -326,6 +327,7 @@ export function computeCompetitiveProfiles({
   availableFavVariables,
   derivedVariables = [],
   customPlayerMatches = {},
+  planificacionDays = [],
 }: {
   gpsRecords: any[];
   jugadores: any[];
@@ -333,7 +335,15 @@ export function computeCompetitiveProfiles({
   availableFavVariables?: any[];
   derivedVariables?: any[];
   customPlayerMatches?: Record<string, string[]>;
+  planificacionDays?: any[];
 }): Map<string, CompetitiveProfilePlayer> {
+  const rivalsByDate = new Map<string, string>();
+  (planificacionDays || []).forEach((p: any) => {
+    if (p.fecha && (p.rival || p.equipo_rival || p.oponente)) {
+      rivalsByDate.set(p.fecha, p.rival || p.equipo_rival || p.oponente);
+    }
+  });
+
   // Construir mapa de todas las variables posibles para que cualquier variable elegida tenga cálculo y explicación completa
   const allVarsMap = new Map<string, any>();
   ALL_GPS_VARIABLES.forEach((v) => allVarsMap.set(v.key, v));
@@ -383,11 +393,12 @@ export function computeCompetitiveProfiles({
         dist: 0,
         parts: [],
         rival:
+          rivalsByDate.get(r.fecha) ||
           r.metricas?.rival ||
           r.rival ||
           (r.tarea && r.tarea.toLowerCase() !== "total" ? r.tarea : null) ||
-          r.tipo_sesion ||
-          "Partido",
+          (r.tipo_sesion && r.tipo_sesion.toLowerCase() !== "partido" ? r.tipo_sesion : null) ||
+          undefined,
         tipo_sesion: r.tipo_sesion,
         rawRecord: r,
       };
@@ -542,14 +553,16 @@ export function computeCompetitiveProfiles({
       p.usedMatchesList = matchesToUse.map((m) => {
         const velMax = Math.max(0, ...m.parts.map((pt) => calculateGpsMetricValue(pt.rawTask, "MAX Speed(km/h)", derivedVariables) || 0));
         const isHalf = m.minutos >= 35 && m.minutos < 70;
+        const totalMin = Math.round(m.minutos * 10) / 10;
         return {
           fecha: m.fecha,
-          minutos: m.minutos,
-          desc: m.parts.map((pt) => pt.nombre).join(" • ") || "Partido completo",
+          minutos: totalMin,
+          rival: m.rival || rivalsByDate.get(m.fecha),
+          desc: m.parts.map((pt) => `${pt.nombre} (${pt.minutos}')`).join(" + ") || "Partido completo",
           isFull: m.minutos >= 70,
           dist: isHalf ? Math.round(m.dist * 2) : Math.round(m.dist),
           velMax: Math.round(velMax * 10) / 10,
-          tipo: m.minutos >= 70 ? "90'" : `${Math.round(m.minutos)}' (x2)`,
+          tipo: `${totalMin} min totales${isHalf ? " (x2)" : ""}`,
         };
       });
 
@@ -681,15 +694,17 @@ export function computeCompetitiveProfiles({
 
       const singleVelMax = Math.max(0, ...m.parts.map((pt) => calculateGpsMetricValue(pt.rawTask, "MAX Speed(km/h)", derivedVariables) || 0));
       const isSingleHalf = m.minutos >= 35 && m.minutos < 70;
+      const singleTotalMin = Math.round(m.minutos * 10) / 10;
       p.usedMatchesList = [
         {
           fecha: m.fecha,
-          minutos: m.minutos,
-          desc: m.parts.map((pt) => pt.nombre).join(" • ") || "Partido completo",
+          minutos: singleTotalMin,
+          rival: m.rival || rivalsByDate.get(m.fecha),
+          desc: m.parts.map((pt) => `${pt.nombre} (${pt.minutos}')`).join(" + ") || "Partido completo",
           isFull: m.minutos >= 70,
           dist: isSingleHalf ? Math.round(m.dist * 2) : Math.round(m.dist),
           velMax: Math.round(singleVelMax * 10) / 10,
-          tipo: m.minutos >= 70 ? "90'" : `${Math.round(m.minutos)}' (x2)`,
+          tipo: `${singleTotalMin} min totales${isSingleHalf ? " (x2)" : ""}`,
         },
       ];
 
@@ -792,15 +807,19 @@ export function computeCompetitiveProfiles({
       p.asterisk = "*";
       p.methodDescription = `Estimado 45' x 2 (${halfParts.length} partes)`;
 
-      p.usedMatchesList = halfParts.map((hp) => ({
-        fecha: hp.fecha || "",
-        minutos: hp.minutos,
-        desc: hp.nombre,
-        isFull: false,
-        dist: Math.round(hp.dist || 0),
-        velMax: Math.round((calculateGpsMetricValue(hp.rawTask, "MAX Speed(km/h)", derivedVariables) || 0) * 10) / 10,
-        tipo: "45'",
-      }));
+      p.usedMatchesList = halfParts.map((hp) => {
+        const hpMin = Math.round(hp.minutos * 10) / 10;
+        return {
+          fecha: hp.fecha || "",
+          minutos: hpMin,
+          rival: rivalsByDate.get(hp.fecha || ""),
+          desc: hp.nombre,
+          isFull: false,
+          dist: Math.round((hp.dist || 0) * 2),
+          velMax: Math.round((calculateGpsMetricValue(hp.rawTask, "MAX Speed(km/h)", derivedVariables) || 0) * 10) / 10,
+          tipo: `${hpMin} min (45' x2)`,
+        };
+      });
 
       if (halfParts.length > 1) {
         p.badgeText = `45' x 2 (${halfParts.length} partes) *`;

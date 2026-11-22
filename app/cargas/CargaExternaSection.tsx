@@ -2873,8 +2873,9 @@ export default function CargaExternaSection({
       availableFavVariables,
       derivedVariables,
       customPlayerMatches,
+      planificacionDays,
     });
-  }, [gpsRecords, jugadores, customOverrides, availableFavVariables, derivedVariables, customPlayerMatches]);
+  }, [gpsRecords, jugadores, customOverrides, availableFavVariables, derivedVariables, customPlayerMatches, planificacionDays]);
 
   const filteredProfileJugadores = useMemo(() => {
     return jugadores.filter((j) => {
@@ -5966,9 +5967,8 @@ export default function CargaExternaSection({
                           }}
                           onClick={(e) => {
                             e.stopPropagation();
-                            setPinnedMethodPlayerId(pinnedMethodPlayerId === j.id ? null : j.id);
+                            setEditingProfilePlayer(j);
                           }}
-                          title="Clic o pasar el cursor para ver y gestionar partidos del perfil"
                         >
                           <span
                             style={{
@@ -6010,7 +6010,7 @@ export default function CargaExternaSection({
                                 padding: "10px 12px",
                                 boxShadow: "0 20px 35px -5px rgba(0,0,0,0.5), 0 10px 15px -5px rgba(0,0,0,0.3)",
                                 border: "1px solid #334155",
-                                width: "330px",
+                                width: "350px",
                                 textAlign: "left",
                                 fontSize: "11px",
                                 lineHeight: "1.4",
@@ -6029,11 +6029,28 @@ export default function CargaExternaSection({
                                   </span>
                                 </div>
                                 <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                                  {pinnedMethodPlayerId === j.id && (
-                                    <span style={{ fontSize: "8px", color: "#38bdf8", background: "rgba(56,189,248,0.15)", padding: "1px 4px", borderRadius: "3px" }}>
-                                      📌 Fijado
-                                    </span>
-                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setPinnedMethodPlayerId(null);
+                                      setHoveredMethodPlayerId(null);
+                                      setEditingProfilePlayer(j);
+                                    }}
+                                    style={{
+                                      background: "rgba(2, 132, 199, 0.25)",
+                                      border: "1px solid #0284c7",
+                                      color: "#38bdf8",
+                                      cursor: "pointer",
+                                      fontSize: "9px",
+                                      fontWeight: 800,
+                                      padding: "2px 6px",
+                                      borderRadius: "4px",
+                                    }}
+                                    title="Abrir ventana completa para gestionar todos los partidos"
+                                  >
+                                    🔍 Abrir ventana
+                                  </button>
                                   <button
                                     type="button"
                                     onClick={(e) => {
@@ -6085,12 +6102,17 @@ export default function CargaExternaSection({
                                           fontSize: "9.5px",
                                         }}
                                       >
-                                        <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                                        <div style={{ display: "flex", alignItems: "center", gap: "4px", flexWrap: "wrap" }}>
                                           <span style={{ color: "#38bdf8", fontWeight: 700 }}>
                                             📅 {formatProfileMatchDate(m.fecha)}
                                           </span>
-                                          <span style={{ color: "#94a3b8", fontSize: "8.5px" }}>
-                                            ({m.tipo || `${Math.round(m.minutos)}'`})
+                                          {m.rival && (
+                                            <span style={{ color: "#7dd3fc", fontWeight: 600 }}>
+                                              vs {m.rival}
+                                            </span>
+                                          )}
+                                          <span style={{ color: "#fef08a", fontWeight: 700, fontSize: "9px" }}>
+                                            ⏱️ {m.minutos} min totales
                                           </span>
                                           {p.usedMatchesList && p.usedMatchesList.length > 1 && mIdx === 0 && (
                                             <span style={{ background: "#0284c7", color: "#fff", fontSize: "7.5px", fontWeight: 800, padding: "0 3px", borderRadius: "2px" }}>
@@ -6152,7 +6174,7 @@ export default function CargaExternaSection({
 
                                     {unusedPlayerMatches.length > 0 ? (
                                       <div style={{ display: "flex", flexDirection: "column", gap: "3px", maxHeight: "100px", overflowY: "auto", marginBottom: "4px" }}>
-                                        {unusedPlayerMatches.slice(0, 4).map((um: any) => (
+                                        {unusedPlayerMatches.slice(0, 5).map((um: any) => (
                                           <div
                                             key={um.fecha}
                                             style={{
@@ -6165,10 +6187,10 @@ export default function CargaExternaSection({
                                               fontSize: "9px",
                                             }}
                                           >
-                                            <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                                            <div style={{ display: "flex", alignItems: "center", gap: "4px", flexWrap: "wrap" }}>
                                               <span style={{ color: "#e2e8f0" }}>📅 {formatProfileMatchDate(um.fecha)}</span>
-                                              <span style={{ color: "#94a3b8", fontSize: "8.5px" }}>({Math.round(um.minutos || 0)}')</span>
-                                              {um.rival && <span style={{ color: "#64748b", fontSize: "8px" }}>vs {um.rival}</span>}
+                                              {um.rival && <span style={{ color: "#7dd3fc", fontSize: "8.5px" }}>vs {um.rival}</span>}
+                                              <span style={{ color: "#fef08a", fontWeight: 700, fontSize: "8.5px" }}>⏱️ {Math.round(um.minutos || 0)} min totales</span>
                                             </div>
                                             <button
                                               type="button"
@@ -6218,7 +6240,7 @@ export default function CargaExternaSection({
                                         <option value="">+ Seleccionar otro partido para añadir...</option>
                                         {allAddable.map((m: any) => (
                                           <option key={m.fecha} value={m.fecha}>
-                                            📅 {formatProfileMatchDate(m.fecha)} {m.label || m.rival ? `- ${m.label || m.rival}` : `${Math.round(m.minutos || 0)}'`}
+                                            📅 {formatProfileMatchDate(m.fecha)} {m.label || m.rival ? `- ${m.label || m.rival}` : `${Math.round(m.minutos || 0)} min`}
                                           </option>
                                         ))}
                                       </select>
@@ -6278,16 +6300,16 @@ export default function CargaExternaSection({
                                     padding: "2px 6px",
                                     cursor: "pointer",
                                   }}
-                                  title="Abrir editor completo de partidos y valores"
+                                  title="Abrir ventana completa de gestión de partidos"
                                 >
-                                  ✏️ Ajustes y valores
+                                  🔍 Ventana completa ({p.matchesCount} part.)
                                 </button>
                               </div>
                             </div>
                           )}
                         </td>
 
-                        {/* Partidos (Ultra discreto y compacto con apertura de popover al clic o hover) */}
+                        {/* Partidos (Ultra discreto y compacto con apertura de modal o popover) */}
                         <td
                           style={{ padding: "4px 2px", textAlign: "center", width: "44px", fontSize: "10px", color: "#334155", cursor: "pointer" }}
                           onMouseEnter={() => setHoveredMethodPlayerId(j.id)}
@@ -6298,9 +6320,8 @@ export default function CargaExternaSection({
                           }}
                           onClick={(e) => {
                             e.stopPropagation();
-                            setPinnedMethodPlayerId(pinnedMethodPlayerId === j.id ? null : j.id);
+                            setEditingProfilePlayer(j);
                           }}
-                          title="Clic para ver, añadir o quitar partidos del perfil"
                         >
                           <span
                             style={{ fontWeight: 800, fontSize: "11px", color: "#0f172a" }}
@@ -10529,6 +10550,7 @@ export default function CargaExternaSection({
           allJugadores={jugadores}
           derivedVariables={derivedVariables}
           currentCustomDates={customPlayerMatches[editingProfilePlayer.id]}
+          planificacionDays={planificacionDays}
           onSave={(selectedDates) => {
             const next = { ...customPlayerMatches, [editingProfilePlayer.id]: selectedDates };
             setCustomPlayerMatches(next);

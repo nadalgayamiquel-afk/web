@@ -19,6 +19,7 @@ interface EditCompetitiveProfileModalProps {
   allJugadores: any[];
   derivedVariables?: any[];
   currentCustomDates?: string[];
+  planificacionDays?: any[];
   onSave: (selectedDates: string[]) => void;
   onResetAuto: () => void;
 }
@@ -32,6 +33,7 @@ export default function EditCompetitiveProfileModal({
   allJugadores,
   derivedVariables = [],
   currentCustomDates,
+  planificacionDays = [],
   onSave,
   onResetAuto,
 }: EditCompetitiveProfileModalProps) {
@@ -94,9 +96,10 @@ export default function EditCompetitiveProfileModal({
       customPlayerMatches: {
         [jugador.id]: selectedDates,
       },
+      planificacionDays,
     });
     return previewProfilesMap.get(jugador.id);
-  }, [gpsRecords, allJugadores, jugador, derivedVariables, selectedDates]);
+  }, [gpsRecords, allJugadores, jugador, derivedVariables, selectedDates, planificacionDays]);
 
   // Extraer métricas clave para un partido específico
   const getMatchMetricsSummary = (m: AnalyzedMatch) => {
@@ -274,13 +277,14 @@ export default function EditCompetitiveProfileModal({
                   const isChecked = selectedDates.includes(m.fecha);
                   const isFull = m.minutos >= 70;
                   const metrics = getMatchMetricsSummary(m);
+                  const rival = m.rival || planificacionDays?.find((d: any) => d.fecha === m.fecha)?.rival;
 
                   return (
                     <div
                       key={m.fecha}
                       onClick={() => handleToggleDate(m.fecha)}
                       style={{
-                        padding: "10px 12px",
+                        padding: "10px 14px",
                         borderRadius: "8px",
                         border: isChecked ? "1.5px solid #0284c7" : "1px solid #e2e8f0",
                         background: isChecked ? "#f0f9ff" : "#ffffff",
@@ -291,7 +295,7 @@ export default function EditCompetitiveProfileModal({
                         transition: "all 0.15s ease",
                       }}
                     >
-                      {/* Izquierda: Checkbox + Fecha + Tareas */}
+                      {/* Izquierda: Checkbox + Fecha + Minutos Totales + Desglose */}
                       <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                         <input
                           type="checkbox"
@@ -299,55 +303,90 @@ export default function EditCompetitiveProfileModal({
                           onChange={() => handleToggleDate(m.fecha)}
                           onClick={(e) => e.stopPropagation()}
                           style={{
-                            width: "16px",
-                            height: "16px",
+                            width: "18px",
+                            height: "18px",
                             cursor: "pointer",
                             accentColor: "#0284c7",
                           }}
                         />
                         <div>
-                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                            <strong style={{ fontSize: "13px", color: "#0f172a" }}>
-                              {formatProfileMatchDate(m.fecha)}
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                            <strong style={{ fontSize: "13.5px", color: "#0f172a" }}>
+                              📅 {formatProfileMatchDate(m.fecha)}
                             </strong>
+                            {rival && (
+                              <span style={{ fontSize: "12px", fontWeight: 700, color: "#0284c7" }}>
+                                vs {rival}
+                              </span>
+                            )}
                             <span
                               style={{
-                                fontSize: "10px",
+                                fontSize: "11px",
                                 fontWeight: 800,
-                                padding: "1px 6px",
+                                padding: "2px 8px",
                                 borderRadius: "4px",
                                 background: isFull ? "#dcfce7" : m.minutos >= 40 ? "#fef3c7" : "#f1f5f9",
                                 color: isFull ? "#15803d" : m.minutos >= 40 ? "#b45309" : "#475569",
+                                border: isFull ? "1px solid #bbf7d0" : m.minutos >= 40 ? "1px solid #fde68a" : "1px solid #e2e8f0",
                               }}
                             >
-                              {m.minutos} min {isFull ? "(Completo)" : "(Parte)"}
+                              ⏱️ {m.minutos} min totales {isFull ? "(>=70' Completo)" : "(Parte)"}
                             </span>
+                            {isChecked ? (
+                              <span style={{ fontSize: "10px", fontWeight: 800, color: "#059669", background: "#ecfdf5", padding: "1px 6px", borderRadius: "3px", border: "1px solid #a7f3d0" }}>
+                                ✓ CONTANDO
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: "10px", fontWeight: 600, color: "#94a3b8" }}>
+                                No contando
+                              </span>
+                            )}
                           </div>
-                          <div style={{ fontSize: "11px", color: "#64748b", marginTop: "2px" }}>
-                            {m.parts && m.parts.length > 0
-                              ? m.parts.map((p) => `${p.nombre} (${p.minutos}')`).join(" • ")
+                          <div style={{ fontSize: "11px", color: "#64748b", marginTop: "3px" }}>
+                            Desglose de tareas: {m.parts && m.parts.length > 0
+                              ? m.parts.map((p) => `${p.nombre} (${p.minutos}')`).join(" + ")
                               : "Partido completo"}
                           </div>
                         </div>
                       </div>
 
-                      {/* Derecha: Métricas clave en chips */}
-                      <div style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "11px", color: "#334155" }}>
-                        <div style={{ textAlign: "right" }}>
-                          <span style={{ color: "#64748b", fontSize: "9.5px", display: "block" }}>Distancia</span>
-                          <strong>{metrics.dt.toLocaleString()} m</strong>
-                        </div>
-                        <div style={{ textAlign: "right" }}>
-                          <span style={{ color: "#64748b", fontSize: "9.5px", display: "block" }}>HSR</span>
-                          <strong>{metrics.hsr} m</strong>
-                        </div>
-                        <div style={{ textAlign: "right" }}>
-                          <span style={{ color: "#64748b", fontSize: "9.5px", display: "block" }}>Vmax</span>
-                          <strong>{metrics.vmax} km/h</strong>
-                        </div>
-                        <div style={{ textAlign: "right" }}>
-                          <span style={{ color: "#64748b", fontSize: "9.5px", display: "block" }}>Acc-Dec</span>
-                          <strong>{metrics.accDec}</strong>
+                      {/* Botón explícito Quitar / Añadir + Métricas */}
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleToggleDate(m.fecha);
+                          }}
+                          style={{
+                            padding: "3px 8px",
+                            borderRadius: "5px",
+                            border: isChecked ? "1px solid #f87171" : "1px solid #86efac",
+                            background: isChecked ? "#fee2e2" : "#f0fdf4",
+                            color: isChecked ? "#dc2626" : "#16a34a",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            cursor: "pointer",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {isChecked ? "✕ Quitar" : "+ Añadir"}
+                        </button>
+
+                        {/* Derecha: Métricas clave en chips */}
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "11px", color: "#334155" }}>
+                          <div style={{ textAlign: "right" }}>
+                            <span style={{ color: "#64748b", fontSize: "9px", display: "block" }}>Distancia</span>
+                            <strong>{metrics.dt.toLocaleString()} m</strong>
+                          </div>
+                          <div style={{ textAlign: "right" }}>
+                            <span style={{ color: "#64748b", fontSize: "9px", display: "block" }}>Vmax</span>
+                            <strong>{metrics.vmax} k/h</strong>
+                          </div>
+                          <div style={{ textAlign: "right" }}>
+                            <span style={{ color: "#64748b", fontSize: "9px", display: "block" }}>Acc-Dec</span>
+                            <strong>{metrics.accDec}</strong>
+                          </div>
                         </div>
                       </div>
                     </div>
