@@ -541,14 +541,15 @@ export function computeCompetitiveProfiles({
 
       p.usedMatchesList = matchesToUse.map((m) => {
         const velMax = Math.max(0, ...m.parts.map((pt) => calculateGpsMetricValue(pt.rawTask, "MAX Speed(km/h)", derivedVariables) || 0));
+        const isHalf = m.minutos >= 35 && m.minutos < 70;
         return {
           fecha: m.fecha,
           minutos: m.minutos,
           desc: m.parts.map((pt) => pt.nombre).join(" • ") || "Partido completo",
           isFull: m.minutos >= 70,
-          dist: Math.round(m.dist),
+          dist: isHalf ? Math.round(m.dist * 2) : Math.round(m.dist),
           velMax: Math.round(velMax * 10) / 10,
-          tipo: m.minutos >= 70 ? "90'" : `${Math.round(m.minutos)}'`,
+          tipo: m.minutos >= 70 ? "90'" : `${Math.round(m.minutos)}' (x2)`,
         };
       });
 
@@ -577,7 +578,14 @@ export function computeCompetitiveProfiles({
           } else if (isRate) {
             matchVal = Math.max(...partsBreakdown.map((pb) => pb.val));
           } else {
-            matchVal = partsBreakdown.reduce((sum, pb) => sum + pb.val, 0);
+            const rawSum = partsBreakdown.reduce((sum, pb) => sum + pb.val, 0);
+            if (m.minutos >= 35 && m.minutos < 70) {
+              matchVal = Math.round(rawSum * 2);
+            } else if (m.minutos > 0 && m.minutos < 35) {
+              matchVal = Math.round((rawSum * 90) / m.minutos);
+            } else {
+              matchVal = rawSum;
+            }
           }
 
           matchBreakdowns.push({
@@ -672,15 +680,16 @@ export function computeCompetitiveProfiles({
       }
 
       const singleVelMax = Math.max(0, ...m.parts.map((pt) => calculateGpsMetricValue(pt.rawTask, "MAX Speed(km/h)", derivedVariables) || 0));
+      const isSingleHalf = m.minutos >= 35 && m.minutos < 70;
       p.usedMatchesList = [
         {
           fecha: m.fecha,
           minutos: m.minutos,
           desc: m.parts.map((pt) => pt.nombre).join(" • ") || "Partido completo",
           isFull: m.minutos >= 70,
-          dist: Math.round(m.dist),
+          dist: isSingleHalf ? Math.round(m.dist * 2) : Math.round(m.dist),
           velMax: Math.round(singleVelMax * 10) / 10,
-          tipo: m.minutos >= 70 ? "90'" : `${Math.round(m.minutos)}'`,
+          tipo: m.minutos >= 70 ? "90'" : `${Math.round(m.minutos)}' (x2)`,
         },
       ];
 
@@ -706,7 +715,14 @@ export function computeCompetitiveProfiles({
         } else if (isRate) {
           raw = Math.max(...partsBreakdown.map((pb) => pb.val));
         } else {
-          raw = partsBreakdown.reduce((sum, pb) => sum + pb.val, 0);
+          const rawSum = partsBreakdown.reduce((sum, pb) => sum + pb.val, 0);
+          if (m.minutos >= 35 && m.minutos < 70) {
+            raw = Math.round(rawSum * 2);
+          } else if (m.minutos > 0 && m.minutos < 35) {
+            raw = Math.round((rawSum * 90) / m.minutos);
+          } else {
+            raw = rawSum;
+          }
         }
 
         const calcVal = isRate ? Math.round(raw * 10) / 10 : Math.round(raw);

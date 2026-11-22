@@ -17,7 +17,7 @@ import {
   addDeletedMicrocycleId,
   resetDeletedMicrocycles,
 } from "../lib/microciclos";
-import { computeCompetitiveProfiles, isMatchHalfTask, isFirstHalfTask, isSecondHalfTask, isRateOrPeak, formatProfileMatchDate, CompetitiveProfilePlayer } from "../lib/competitiveProfile";
+import { computeCompetitiveProfiles, isMatchHalfTask, isFirstHalfTask, isSecondHalfTask, isRateOrPeak, formatProfileMatchDate, CompetitiveProfilePlayer, getAllTeamMatches } from "../lib/competitiveProfile";
 import EditCompetitiveProfileModal from "../components/EditCompetitiveProfileModal";
 import {
   useFavoriteGpsVariables,
@@ -840,6 +840,63 @@ export default function CargaExternaSection({
 
   const [editingProfilePlayer, setEditingProfilePlayer] = useState<any | null>(null);
   const [hoveredMethodPlayerId, setHoveredMethodPlayerId] = useState<string | null>(null);
+  const [pinnedMethodPlayerId, setPinnedMethodPlayerId] = useState<string | null>(null);
+  const activeMethodPlayerId = pinnedMethodPlayerId || hoveredMethodPlayerId;
+
+  const allTeamMatches = useMemo(() => {
+    return getAllTeamMatches(gpsRecords);
+  }, [gpsRecords]);
+
+  const handleToggleMatchInProfile = (jugadorId: string, matchDate: string, isCurrentlyUsed: boolean) => {
+    const playerProfile = competitiveProfiles.get(jugadorId);
+    const currentDates: string[] = Array.isArray(customPlayerMatches[jugadorId])
+      ? [...customPlayerMatches[jugadorId]]
+      : Array.from(new Set((playerProfile?.usedMatchesList || []).map((m: any) => m.fecha).filter(Boolean)));
+
+    let nextDates: string[];
+    if (isCurrentlyUsed) {
+      nextDates = currentDates.filter((d) => d !== matchDate);
+    } else {
+      if (!currentDates.includes(matchDate)) {
+        nextDates = [...currentDates, matchDate];
+      } else {
+        nextDates = currentDates;
+      }
+    }
+
+    const nextCustom = { ...customPlayerMatches, [jugadorId]: nextDates };
+    setCustomPlayerMatches(nextCustom);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("gps_competitive_profile_custom_matches", JSON.stringify(nextCustom));
+        window.dispatchEvent(new CustomEvent("gps_competitive_profile_matches_updated", { detail: nextCustom }));
+      } catch (e) {}
+    }
+  };
+
+  const handleResetAutoInProfile = (jugadorId: string) => {
+    const nextCustom = { ...customPlayerMatches };
+    delete nextCustom[jugadorId];
+    setCustomPlayerMatches(nextCustom);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("gps_competitive_profile_custom_matches", JSON.stringify(nextCustom));
+        window.dispatchEvent(new CustomEvent("gps_competitive_profile_matches_updated", { detail: nextCustom }));
+      } catch (e) {}
+    }
+  };
+
+  useEffect(() => {
+    function handleClickOutside() {
+      if (pinnedMethodPlayerId) {
+        setPinnedMethodPlayerId(null);
+      }
+    }
+    if (pinnedMethodPlayerId) {
+      document.addEventListener("click", handleClickOutside);
+      return () => document.removeEventListener("click", handleClickOutside);
+    }
+  }, [pinnedMethodPlayerId]);
 
   useEffect(() => {
     const handleUpdate = () => {
@@ -5898,11 +5955,20 @@ export default function CargaExternaSection({
                           </div>
                         </td>
 
-                        {/* Método (Ultra discreto y compacto con Popover Hover) */}
+                        {/* Método (Ultra discreto y compacto con Popover Interactivo) */}
                         <td
-                          style={{ padding: "4px 2px", textAlign: "center", width: "38px", position: "relative" }}
+                          style={{ padding: "4px 2px", textAlign: "center", width: "38px", position: "relative", cursor: "pointer" }}
                           onMouseEnter={() => setHoveredMethodPlayerId(j.id)}
-                          onMouseLeave={() => setHoveredMethodPlayerId(null)}
+                          onMouseLeave={() => {
+                            if (pinnedMethodPlayerId !== j.id) {
+                              setHoveredMethodPlayerId(null);
+                            }
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPinnedMethodPlayerId(pinnedMethodPlayerId === j.id ? null : j.id);
+                          }}
+                          title="Clic o pasar el cursor para ver y gestionar partidos del perfil"
                         >
                           <span
                             style={{
@@ -5914,115 +5980,330 @@ export default function CargaExternaSection({
                               fontSize: "8.5px",
                               fontWeight: 800,
                               whiteSpace: "nowrap",
-                              cursor: "pointer",
                               border: p.isCustomMatches ? "1px dashed #0284c7" : "none",
                             }}
                           >
                             {p.shortBadgeText || "—"}{p.isCustomMatches ? "*" : ""}
                           </span>
 
-                          {/* Hover Popover detallado con los partidos utilizados */}
-                          {hoveredMethodPlayerId === j.id && (
+                          {/* Popover interactivo detallado con los partidos utilizados y opciones de añadir/quitar */}
+                          {activeMethodPlayerId === j.id && (
                             <div
+                              onClick={(e) => e.stopPropagation()}
+                              onMouseEnter={() => setHoveredMethodPlayerId(j.id)}
+                              onMouseLeave={() => {
+                                if (pinnedMethodPlayerId !== j.id) {
+                                  setHoveredMethodPlayerId(null);
+                                }
+                              }}
                               style={{
                                 position: "absolute",
-                                top: "100%",
+                                ...(idx > filteredProfileJugadores.length - 4 && filteredProfileJugadores.length > 5
+                                  ? { bottom: "100%", marginBottom: "6px" }
+                                  : { top: "100%", marginTop: "4px" }),
                                 left: "50%",
-                                transform: "translateX(-50%)",
-                                marginTop: "4px",
-                                zIndex: 9999,
+                                transform: "translateX(-25%)",
+                                zIndex: 99999,
                                 background: "#0f172a",
                                 color: "#ffffff",
                                 borderRadius: "8px",
                                 padding: "10px 12px",
-                                boxShadow: "0 10px 25px -5px rgba(0,0,0,0.4), 0 8px 10px -6px rgba(0,0,0,0.3)",
+                                boxShadow: "0 20px 35px -5px rgba(0,0,0,0.5), 0 10px 15px -5px rgba(0,0,0,0.3)",
                                 border: "1px solid #334155",
-                                minWidth: "260px",
-                                maxWidth: "340px",
+                                width: "330px",
                                 textAlign: "left",
                                 fontSize: "11px",
                                 lineHeight: "1.4",
-                                pointerEvents: "none",
+                                pointerEvents: "auto",
+                                cursor: "default",
                               }}
                             >
+                              {/* Cabecera del popover */}
                               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px", borderBottom: "1px solid #334155", paddingBottom: "4px" }}>
-                                <strong style={{ color: "#38bdf8", fontSize: "11.5px" }}>
-                                  {j.apodo || j.nombre}
-                                </strong>
-                                <span style={{ fontSize: "9px", padding: "1px 5px", borderRadius: "3px", background: badgeBg, color: badgeColor, fontWeight: 800 }}>
-                                  {p.shortBadgeText} {p.isCustomMatches ? "(Personalizado)" : ""}
-                                </span>
+                                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                                  <strong style={{ color: "#38bdf8", fontSize: "11.5px" }}>
+                                    {j.apodo || j.nombre}
+                                  </strong>
+                                  <span style={{ fontSize: "8.5px", padding: "1px 5px", borderRadius: "3px", background: badgeBg, color: badgeColor, fontWeight: 800 }}>
+                                    {p.shortBadgeText} {p.isCustomMatches ? "(Personalizado)" : ""}
+                                  </span>
+                                </div>
+                                <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                                  {pinnedMethodPlayerId === j.id && (
+                                    <span style={{ fontSize: "8px", color: "#38bdf8", background: "rgba(56,189,248,0.15)", padding: "1px 4px", borderRadius: "3px" }}>
+                                      📌 Fijado
+                                    </span>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setPinnedMethodPlayerId(null);
+                                      setHoveredMethodPlayerId(null);
+                                    }}
+                                    style={{
+                                      background: "transparent",
+                                      border: "none",
+                                      color: "#94a3b8",
+                                      cursor: "pointer",
+                                      fontSize: "13px",
+                                      padding: "0 2px",
+                                      lineHeight: 1,
+                                    }}
+                                    title="Cerrar ventana"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
                               </div>
 
                               <div style={{ fontSize: "10px", color: "#94a3b8", marginBottom: "6px" }}>
-                                {p.methodDescription}
+                                {p.methodDescription || p.detailText}
                               </div>
 
-                              {p.usedMatchesList && p.usedMatchesList.length > 0 ? (
-                                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                                  <div style={{ fontSize: "10px", fontWeight: 700, color: "#cbd5e1" }}>
-                                    Partidos incluidos ({p.usedMatchesList.length}):
-                                  </div>
-                                  {p.usedMatchesList.map((m: any, idx: number) => (
-                                    <div
-                                      key={idx}
-                                      style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        justifyContent: "space-between",
-                                        background: "rgba(255,255,255,0.06)",
-                                        padding: "3px 6px",
-                                        borderRadius: "4px",
-                                        fontSize: "10px",
-                                      }}
-                                    >
-                                      <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                                        <span style={{ color: "#38bdf8", fontWeight: 700 }}>
-                                          📅 {formatProfileMatchDate(m.fecha)}
-                                        </span>
-                                        <span style={{ color: "#94a3b8", fontSize: "9px" }}>
-                                          ({m.tipo || `${Math.round(m.minutos)}'`})
-                                        </span>
-                                      </div>
-                                      <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "9.5px" }}>
-                                        <span style={{ color: "#f8fafc", fontWeight: 600 }}>{Math.round(m.dist || 0)}m</span>
-                                        {m.velMax > 0 && (
-                                          <span style={{ color: "#34d399", fontWeight: 600 }}>{m.velMax.toFixed(1)}k/h</span>
-                                        )}
-                                        {p.usedMatchesList && p.usedMatchesList.length > 1 && idx === 0 && (
-                                          <span style={{ background: "#0284c7", color: "#fff", fontSize: "8px", fontWeight: 800, padding: "0 3px", borderRadius: "2px" }}>
-                                            MÁX
-                                          </span>
-                                        )}
-                                      </div>
-                                    </div>
-                                  ))}
+                              {/* Partidos que está contando */}
+                              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                                <div style={{ fontSize: "10px", fontWeight: 700, color: "#cbd5e1", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                                  <span>Partidos que está contando ({p.usedMatchesList?.length || 0}):</span>
                                   {p.usedMatchesList && p.usedMatchesList.length > 1 && (
-                                    <div style={{ fontSize: "9.5px", color: "#60a5fa", marginTop: "3px", fontStyle: "italic", textAlign: "right" }}>
-                                      Fórmula: (Máx + Promedio restantes) / 2
-                                    </div>
+                                    <span style={{ fontSize: "8.5px", color: "#60a5fa" }}>(Máx + Prom)/2</span>
                                   )}
                                 </div>
-                              ) : (
-                                <div style={{ fontSize: "10px", color: "#f87171" }}>
-                                  Sin partidos computados ({p.category})
-                                </div>
-                              )}
 
-                              {p.isCustomMatches && (
-                                <div style={{ fontSize: "9px", color: "#fbbf24", marginTop: "4px", borderTop: "1px dashed #475569", paddingTop: "3px" }}>
-                                  ⭐ Partidos seleccionados manualmente
-                                </div>
-                              )}
+                                {p.usedMatchesList && p.usedMatchesList.length > 0 ? (
+                                  <div style={{ display: "flex", flexDirection: "column", gap: "3px", maxHeight: "140px", overflowY: "auto" }}>
+                                    {p.usedMatchesList.map((m: any, mIdx: number) => (
+                                      <div
+                                        key={mIdx}
+                                        style={{
+                                          display: "flex",
+                                          alignItems: "center",
+                                          justifyContent: "space-between",
+                                          background: "rgba(255,255,255,0.06)",
+                                          padding: "3px 6px",
+                                          borderRadius: "4px",
+                                          fontSize: "9.5px",
+                                        }}
+                                      >
+                                        <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                                          <span style={{ color: "#38bdf8", fontWeight: 700 }}>
+                                            📅 {formatProfileMatchDate(m.fecha)}
+                                          </span>
+                                          <span style={{ color: "#94a3b8", fontSize: "8.5px" }}>
+                                            ({m.tipo || `${Math.round(m.minutos)}'`})
+                                          </span>
+                                          {p.usedMatchesList && p.usedMatchesList.length > 1 && mIdx === 0 && (
+                                            <span style={{ background: "#0284c7", color: "#fff", fontSize: "7.5px", fontWeight: 800, padding: "0 3px", borderRadius: "2px" }}>
+                                              MÁX
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                                          <span style={{ color: "#f8fafc", fontWeight: 600 }}>{Math.round(m.dist || 0)}m</span>
+                                          {m.velMax > 0 && (
+                                            <span style={{ color: "#34d399", fontWeight: 600 }}>{m.velMax.toFixed(1)}k/h</span>
+                                          )}
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleToggleMatchInProfile(j.id, m.fecha, true);
+                                            }}
+                                            style={{
+                                              padding: "1px 5px",
+                                              borderRadius: "3px",
+                                              border: "1px solid rgba(239, 68, 68, 0.4)",
+                                              background: "rgba(239, 68, 68, 0.18)",
+                                              color: "#fca5a5",
+                                              fontSize: "9px",
+                                              fontWeight: 700,
+                                              cursor: "pointer",
+                                            }}
+                                            title="Quitar este partido del cálculo del perfil"
+                                          >
+                                            ✕ Quitar
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <div style={{ fontSize: "9.5px", color: "#f87171", padding: "3px 0" }}>
+                                    Sin partidos computados ({p.category === "copiado_posicion" ? "usando valores promedio de la posición" : "sin datos"})
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Sección para añadir partidos */}
+                              {(() => {
+                                const usedDatesSet = new Set((p.usedMatchesList || []).map((m: any) => m.fecha).filter(Boolean));
+                                const unusedPlayerMatches = (p.allAvailableMatches || []).filter((m: any) => !usedDatesSet.has(m.fecha));
+                                const unusedTeamMatches = (allTeamMatches || []).filter((tm: any) => !usedDatesSet.has(tm.fecha) && !unusedPlayerMatches.some((pm: any) => pm.fecha === tm.fecha));
+                                const allAddable = [...unusedPlayerMatches, ...unusedTeamMatches];
+
+                                return (
+                                  <div style={{ marginTop: "7px", borderTop: "1px solid #334155", paddingTop: "5px" }}>
+                                    <div style={{ fontSize: "10px", fontWeight: 700, color: "#86efac", marginBottom: "4px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                                      <span>+ Añadir partido al cálculo:</span>
+                                      {allAddable.length > 0 && (
+                                        <span style={{ fontSize: "8.5px", color: "#94a3b8" }}>{allAddable.length} disponibles</span>
+                                      )}
+                                    </div>
+
+                                    {unusedPlayerMatches.length > 0 ? (
+                                      <div style={{ display: "flex", flexDirection: "column", gap: "3px", maxHeight: "100px", overflowY: "auto", marginBottom: "4px" }}>
+                                        {unusedPlayerMatches.slice(0, 4).map((um: any) => (
+                                          <div
+                                            key={um.fecha}
+                                            style={{
+                                              display: "flex",
+                                              alignItems: "center",
+                                              justifyContent: "space-between",
+                                              background: "rgba(255,255,255,0.03)",
+                                              padding: "2px 6px",
+                                              borderRadius: "4px",
+                                              fontSize: "9px",
+                                            }}
+                                          >
+                                            <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                                              <span style={{ color: "#e2e8f0" }}>📅 {formatProfileMatchDate(um.fecha)}</span>
+                                              <span style={{ color: "#94a3b8", fontSize: "8.5px" }}>({Math.round(um.minutos || 0)}')</span>
+                                              {um.rival && <span style={{ color: "#64748b", fontSize: "8px" }}>vs {um.rival}</span>}
+                                            </div>
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleToggleMatchInProfile(j.id, um.fecha, false);
+                                              }}
+                                              style={{
+                                                padding: "1px 5px",
+                                                borderRadius: "3px",
+                                                border: "1px solid rgba(34, 197, 94, 0.4)",
+                                                background: "rgba(34, 197, 94, 0.18)",
+                                                color: "#86efac",
+                                                fontSize: "9px",
+                                                fontWeight: 700,
+                                                cursor: "pointer",
+                                              }}
+                                              title="Añadir este partido al cálculo del perfil"
+                                            >
+                                              + Añadir
+                                            </button>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ) : null}
+
+                                    {allAddable.length > 0 && (
+                                      <select
+                                        style={{
+                                          width: "100%",
+                                          background: "#1e293b",
+                                          color: "#cbd5e1",
+                                          border: "1px solid #475569",
+                                          borderRadius: "4px",
+                                          padding: "3px 6px",
+                                          fontSize: "9px",
+                                          cursor: "pointer",
+                                          marginTop: "2px",
+                                        }}
+                                        value=""
+                                        onChange={(e) => {
+                                          if (e.target.value) {
+                                            handleToggleMatchInProfile(j.id, e.target.value, false);
+                                          }
+                                        }}
+                                      >
+                                        <option value="">+ Seleccionar otro partido para añadir...</option>
+                                        {allAddable.map((m: any) => (
+                                          <option key={m.fecha} value={m.fecha}>
+                                            📅 {formatProfileMatchDate(m.fecha)} {m.label || m.rival ? `- ${m.label || m.rival}` : `${Math.round(m.minutos || 0)}'`}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    )}
+
+                                    {allAddable.length === 0 && (
+                                      <div style={{ fontSize: "8.5px", color: "#94a3b8", fontStyle: "italic" }}>
+                                        No hay más partidos disponibles.
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+
+                              {/* Pie de acciones del popover */}
+                              <div style={{ marginTop: "7px", borderTop: "1px solid #334155", paddingTop: "5px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "6px" }}>
+                                {p.isCustomMatches ? (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleResetAutoInProfile(j.id);
+                                    }}
+                                    style={{
+                                      background: "transparent",
+                                      border: "none",
+                                      color: "#f59e0b",
+                                      fontSize: "9.5px",
+                                      fontWeight: 700,
+                                      cursor: "pointer",
+                                      padding: 0,
+                                      textDecoration: "underline",
+                                    }}
+                                    title="Volver al cálculo automático oficial del perfil"
+                                  >
+                                    ↺ Restablecer automático
+                                  </button>
+                                ) : (
+                                  <span style={{ fontSize: "8.5px", color: "#64748b" }}>Cálculo automático</span>
+                                )}
+
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setPinnedMethodPlayerId(null);
+                                    setHoveredMethodPlayerId(null);
+                                    setEditingProfilePlayer(j);
+                                  }}
+                                  style={{
+                                    background: "rgba(56, 189, 248, 0.15)",
+                                    border: "1px solid rgba(56, 189, 248, 0.4)",
+                                    color: "#38bdf8",
+                                    fontSize: "9px",
+                                    fontWeight: 700,
+                                    borderRadius: "4px",
+                                    padding: "2px 6px",
+                                    cursor: "pointer",
+                                  }}
+                                  title="Abrir editor completo de partidos y valores"
+                                >
+                                  ✏️ Ajustes y valores
+                                </button>
+                              </div>
                             </div>
                           )}
                         </td>
 
-                        {/* Partidos (Ultra discreto y compacto) */}
-                        <td style={{ padding: "4px 2px", textAlign: "center", width: "44px", fontSize: "10px", color: "#334155" }}>
+                        {/* Partidos (Ultra discreto y compacto con apertura de popover al clic o hover) */}
+                        <td
+                          style={{ padding: "4px 2px", textAlign: "center", width: "44px", fontSize: "10px", color: "#334155", cursor: "pointer" }}
+                          onMouseEnter={() => setHoveredMethodPlayerId(j.id)}
+                          onMouseLeave={() => {
+                            if (pinnedMethodPlayerId !== j.id) {
+                              setHoveredMethodPlayerId(null);
+                            }
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPinnedMethodPlayerId(pinnedMethodPlayerId === j.id ? null : j.id);
+                          }}
+                          title="Clic para ver, añadir o quitar partidos del perfil"
+                        >
                           <span
                             style={{ fontWeight: 800, fontSize: "11px", color: "#0f172a" }}
-                            title={`${p.matchesCount || 0} partidos (${p.fullMatchesCount || 0} de 90' completos)`}
                           >
                             {p.matchesCount || 0}
                           </span>
