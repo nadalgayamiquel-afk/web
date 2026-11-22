@@ -61,9 +61,10 @@ export default async function CalendarioPage() {
   }
 
   // ─── RESILIENT DATA FALLBACK & COMPREHENSIVE MERGE ───
-  // 1. Bloques: Combinar BBDD con los bloques del backup maestro como fallback
-  const masterBloques = getMasterEventosBloquesMap();
-  bloques = { ...masterBloques, ...(bloques || {}) };
+  // 1. Bloques: Si la BBDD está vacía o falló, usar backup maestro como fallback
+  if (!bloques || Object.keys(bloques).length === 0) {
+    bloques = getMasterEventosBloquesMap();
+  }
 
   // 2. Días: Usar planificacion de BBDD / Supabase y sincronizar evento_1..6 desde bloques reales
   const masterPlanDays = getMasterPlanificacionDays();
@@ -123,25 +124,25 @@ export default async function CalendarioPage() {
   }
 
   // 3. Asignaciones de jugadores a eventos: Base de datos Supabase tiene prioridad absoluta
-  const masterAssignments = getMasterPlayerEventsMap();
-  bbddAssignments = { ...masterAssignments };
-
   const idToFecha = new Map<string, string>();
   (days as any[]).forEach((d: any) => {
     if (d.id && d.fecha) idToFecha.set(d.id, d.fecha);
   });
 
-  (estados as any[]).forEach((e: any) => {
-    if (!e.jugador_id || !e.sesion_dia_id) return;
-    const fecha = idToFecha.get(e.sesion_dia_id);
-    const assignedVal = (e.evento_asignado || "").trim();
-    if (assignedVal) {
+  if (!estados || estados.length === 0) {
+    bbddAssignments = getMasterPlayerEventsMap();
+  } else {
+    bbddAssignments = {};
+    (estados as any[]).forEach((e: any) => {
+      if (!e.jugador_id || !e.sesion_dia_id) return;
+      const fecha = idToFecha.get(e.sesion_dia_id);
+      const assignedVal = (e.evento_asignado || "").trim();
       if (fecha) {
         bbddAssignments[`${e.jugador_id}_${fecha}`] = assignedVal;
       }
       bbddAssignments[`${e.jugador_id}_${e.sesion_dia_id}`] = assignedVal;
-    }
-  });
+    });
+  }
 
   // 4. Comentarios y disponibilidades maestras
   const masterComentarios = getMasterComentarios();

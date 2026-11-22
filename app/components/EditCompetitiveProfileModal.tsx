@@ -553,3 +553,4 @@ export default function EditCompetitiveProfileModal({
     </div>
   );
 }
+

@@ -1780,11 +1780,10 @@ export function CalendarGrid({
       let changed = false;
 
       Object.entries(bbddPlayerAssignments).forEach(([key, eventCodes]) => {
-        if (eventCodes && typeof eventCodes === "string" && eventCodes.trim() !== "") {
-          if (next[key] !== eventCodes) {
-            next[key] = eventCodes;
-            changed = true;
-          }
+        const cleanVal = typeof eventCodes === "string" ? eventCodes.trim() : "";
+        if (next[key] !== cleanVal) {
+          next[key] = cleanVal;
+          changed = true;
         }
       });
 
@@ -1809,11 +1808,10 @@ export function CalendarGrid({
               const next = { ...prev };
               let changed = false;
               Object.entries(dbAssignments).forEach(([k, v]) => {
-                if (v && typeof v === "string" && v.trim() !== "") {
-                  if (next[k] !== v) {
-                    next[k] = v;
-                    changed = true;
-                  }
+                const cleanVal = typeof v === "string" ? v.trim() : "";
+                if (next[k] !== cleanVal) {
+                  next[k] = cleanVal;
+                  changed = true;
                 }
               });
               if (changed && typeof window !== "undefined") {
@@ -2320,17 +2318,19 @@ export function CalendarGrid({
     );
 
     if (fieldKey === "tipo") {
-      const oldType = (eventosBloquesMap[key]?.tipo || "").trim();
+      const oldType = (eventosBloquesMap[key]?.tipo || eventosBloquesMap[keyFecha]?.tipo || "").trim();
       const newType = value.trim();
 
-      // Sincronizar slot en días si aplica
+      // Sincronizar slot en días si aplica (una sola vez)
       if (slotIdx < 6) {
         const eventoKey = `evento_${slotIdx + 1}` as keyof SesionDia;
         handleCellUpdate(dayId, eventoKey, value);
       }
 
-      // SI SE HA BORRADO EL TIPO DE EVENTO (TEXTO VACÍO), BORRAR TAMBIÉN LA ASIGNACIÓN DE ESTE EVENTO EN LOS JUGADORES
-      if (oldType && !newType) {
+      // SI SE HA BORRADO O MODIFICADO EL TIPO DE EVENTO:
+      if (oldType && oldType.toLowerCase() !== newType.toLowerCase()) {
+        const rowsToSave: Array<{ jugador_id: string; fecha: string; evento_asignado: string | null }> = [];
+
         setPlayerEventsMap((prev) => {
           const nextMap = { ...prev };
           let changed = false;
@@ -2342,12 +2342,27 @@ export function CalendarGrid({
             [k1, k2].forEach((k) => {
               if (nextMap[k]) {
                 const codes = nextMap[k].split(",").map((c) => c.trim()).filter(Boolean);
-                const filtered = codes.filter((c) => c.toLowerCase() !== oldType.toLowerCase());
-                const updatedStr = filtered.join(", ");
+                const updatedCodes = codes.map((c) => {
+                  const cLower = c.toLowerCase();
+                  const oldLower = oldType.toLowerCase();
+                  if (cLower === oldLower) {
+                    return newType || null;
+                  }
+                  if (cLower.startsWith(oldLower) && !isNaN(Number(c.slice(oldType.length)))) {
+                    const suffix = c.slice(oldType.length);
+                    return newType ? `${newType}${suffix}` : null;
+                  }
+                  return c;
+                }).filter(Boolean) as string[];
+
+                const updatedStr = updatedCodes.join(", ");
 
                 if (updatedStr !== nextMap[k]) {
                   nextMap[k] = updatedStr;
                   changed = true;
+                  if (k === k2 || /^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+                    rowsToSave.push({ jugador_id: j.id, fecha, evento_asignado: updatedStr || null });
+                  }
                 }
               }
             });
@@ -2362,11 +2377,10 @@ export function CalendarGrid({
           }
           return nextMap;
         });
-      }
 
-      if (slotIdx < 6) {
-        const eventoKey = `evento_${slotIdx + 1}` as keyof SesionDia;
-        handleCellUpdate(dayId, eventoKey, value);
+        if (rowsToSave.length > 0) {
+          savePlayerEventAssignments(rowsToSave).catch(console.error);
+        }
       }
     }
   };
@@ -2716,7 +2730,8 @@ export function CalendarGrid({
       dayEvents.sort((a, b) => {
         const hA = a.hora ? a.hora.trim() : "99:99";
         const hB = b.hora ? b.hora.trim() : "99:99";
-        return hA.localeCompare(hB);
+        if (hA !== hB) return hA.localeCompare(hB);
+        return a.slot - b.slot;
       });
 
       const typeCounts = new Map<string, number>();
@@ -2754,28 +2769,32 @@ export function CalendarGrid({
   const getAssignedPlayersCountForSlot = React.useCallback(
     (dayId: string, slotIdx: number, fecha?: string) => {
       const key = `${dayId}_slot_${slotIdx}`;
-      const ev = eventosBloquesMap[key];
+      const keyFecha = fecha ? `${fecha}_slot_${slotIdx}` : "";
+      const ev = eventosBloquesMap[key] || (keyFecha ? eventosBloquesMap[keyFecha] : null);
       if (!ev || !ev.tipo || !ev.tipo.trim()) return "";
 
+      const dailyInfo = getDailyTeamEventsMap(dayId, fecha);
+      const codeItem = dailyInfo.availableCodesList.find((item) => item.event.slot === slotIdx);
+      const targetLabel = (codeItem?.codeLabel || ev.tipo).trim().toLowerCase();
       const rawCode = ev.tipo.trim().toLowerCase();
 
       let count = 0;
       jugadoresList.forEach((p) => {
         const k1 = `${p.id}_${dayId}`;
-        const k2 = `${p.id}_${fecha}`;
-        const cellVal = (playerEventsMap[k1] || playerEventsMap[k2] || "").trim();
+        const k2 = fecha ? `${p.id}_${fecha}` : "";
+        const cellVal = (playerEventsMap[k1] || (k2 ? playerEventsMap[k2] : "") || "").trim();
 
-        if (cellVal && cellVal.trim() !== "") {
+        if (cellVal) {
           const tokens = cellVal.split(",").map((t) => t.trim().toLowerCase());
-          if (tokens.some((t) => t === rawCode || rawCode.startsWith(t) || t.startsWith(rawCode))) {
+          if (tokens.some((t) => t === targetLabel || t === rawCode)) {
             count++;
           }
         }
       });
 
-      return count > 0 ? String(count) : "0";
+      return count > 0 ? String(count) : "";
     },
-    [eventosBloquesMap, jugadoresList, playerEventsMap]
+    [eventosBloquesMap, jugadoresList, playerEventsMap, getDailyTeamEventsMap]
   );
 
   const parsePlayerEventCellString = React.useCallback(
@@ -3169,8 +3188,9 @@ export function CalendarGrid({
       const scopedPlayerEvents: Record<string, string> = {};
       Object.entries(playerEventsMap).forEach(([k, v]) => {
         const parts = k.split("_");
-        const dayRef = parts.slice(1).join("_");
-        if (targetDates.has(dayRef) || targetIds.has(dayRef)) {
+        const rawDayRef = parts.slice(1).join("_");
+        const cleanDayRef = rawDayRef.replace(/^day_/, "");
+        if (targetDates.has(rawDayRef) || targetDates.has(cleanDayRef) || targetIds.has(rawDayRef) || targetIds.has(cleanDayRef)) {
           scopedPlayerEvents[k] = v;
         }
       });
@@ -3178,8 +3198,9 @@ export function CalendarGrid({
       const scopedEstados: Record<string, string> = {};
       Object.entries(estadosMap).forEach(([k, v]) => {
         const parts = k.split("_");
-        const dayRef = parts.slice(1).join("_");
-        if (targetDates.has(dayRef) || targetIds.has(dayRef)) {
+        const rawDayRef = parts.slice(1).join("_");
+        const cleanDayRef = rawDayRef.replace(/^day_/, "");
+        if (targetDates.has(rawDayRef) || targetDates.has(cleanDayRef) || targetIds.has(rawDayRef) || targetIds.has(cleanDayRef)) {
           scopedEstados[k] = v;
         }
       });
@@ -3187,7 +3208,9 @@ export function CalendarGrid({
       const scopedBloques: Record<string, EventoBloque> = {};
       Object.entries(eventosBloquesMap).forEach(([k, v]) => {
         const parts = k.split("_slot_");
-        if (targetDates.has(parts[0]) || targetIds.has(parts[0])) {
+        const rawDayRef = parts[0];
+        const cleanDayRef = rawDayRef.replace(/^(?:day_|ev_)/, "");
+        if (targetDates.has(rawDayRef) || targetDates.has(cleanDayRef) || targetIds.has(rawDayRef) || targetIds.has(cleanDayRef)) {
           scopedBloques[k] = v;
         }
       });
@@ -6943,7 +6966,7 @@ export function CalendarGrid({
                                 const keyFecha = `${d.fecha}_slot_${slotIdx}`;
                                 const ev = (!isPre && (eventosBloquesMap[key] || eventosBloquesMap[keyFecha])) || { num_jugadores: "", tipo: "" };
                                 const autoNumJugadores = getAssignedPlayersCountForSlot(d.id, slotIdx, d.fecha);
-                                const displayValue = autoNumJugadores || ev.num_jugadores || "";
+                                const displayValue = ev.num_jugadores !== undefined && ev.num_jugadores !== "" ? ev.num_jugadores : autoNumJugadores;
                                 const matchedTipo = tiposEventoConfig.find((t) => t.codigo.toLowerCase() === (ev.tipo || "").toLowerCase());
                                 const bg = isInFill ? "#bae6fd" : isInRange ? "#e0f2fe" : (matchedTipo ? matchedTipo.bg : "#ffffff");
                                 const textColor = matchedTipo ? matchedTipo.color : "#0f172a";
@@ -7218,6 +7241,20 @@ export function CalendarGrid({
                                       fecha: d.fecha,
                                       eventoAsignado: newVal || null,
                                     }).catch(console.error);
+
+                                    setTimeout(() => {
+                                      for (let sIdx = 0; sIdx < 6; sIdx++) {
+                                        const bKey = `${d.id}_slot_${sIdx}`;
+                                        const bKeyFecha = `${d.fecha}_slot_${sIdx}`;
+                                        const blk = eventosBloquesMap[bKey] || eventosBloquesMap[bKeyFecha];
+                                        if (blk && blk.tipo && blk.tipo.trim()) {
+                                          const assignedCount = getAssignedPlayersCountForSlot(d.id, sIdx, d.fecha);
+                                          if (assignedCount !== blk.num_jugadores) {
+                                            handleEventoBlockUpdate(d.id, d.fecha, sIdx, "num_jugadores", assignedCount);
+                                          }
+                                        }
+                                      }
+                                    }, 80);
                                   }}
                                 />
 

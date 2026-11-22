@@ -2045,6 +2045,7 @@ export async function saveFullPlanificacionBBDD(sessionsPayload: any[], comments
     for (const r of newCleanRows) {
       const { id, ...rest } = r;
       if (!rest.fecha) continue;
+      delete (rest as any).temporada;
       
       const { data: existing } = await supabase.from("sesiones_dia").select("id").eq("fecha", rest.fecha).maybeSingle();
       if (existing) {
@@ -2125,12 +2126,26 @@ export async function saveFullPlanificacionBBDD(sessionsPayload: any[], comments
       .select("id, fecha")
       .in("fecha", missingDatesArray);
 
+    const foundDates = new Set<string>();
     existingSessions?.forEach((s) => {
       if (s.fecha && s.id) {
+        foundDates.add(s.fecha);
         fechaToUuidMap.set(s.fecha, s.id);
         fechaToUuidMap.set(s.id, s.id);
       }
     });
+
+    const datesToCreate = missingDatesArray.filter((d) => !foundDates.has(d) && /^\d{4}-\d{2}-\d{2}$/.test(d));
+    if (datesToCreate.length > 0) {
+      const rowsToInsert = datesToCreate.map((f) => ({ fecha: f, equipo: "CE EUROPA" }));
+      const { data: createdSessions } = await supabase.from("sesiones_dia").insert(rowsToInsert).select("id, fecha");
+      createdSessions?.forEach((s) => {
+        if (s.fecha && s.id) {
+          fechaToUuidMap.set(s.fecha, s.id);
+          fechaToUuidMap.set(s.id, s.id);
+        }
+      });
+    }
   }
 
   const getRealUuid = (rawIdOrDate: string, extraDate?: string) => {
@@ -2344,7 +2359,7 @@ export async function saveFullPlanificacionBBDD(sessionsPayload: any[], comments
         }
         const slot = parseInt(match[2], 10);
         
-        const dayId = getRealUuid(rawSesionId);
+        const dayId = getRealUuid(rawSesionId, block.fecha);
         const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(dayId);
         
         if (isUuid) {
@@ -2564,18 +2579,20 @@ export async function getPlayerEventsBBDD(): Promise<Record<string, string>> {
       if (s.id && s.fecha) idToFecha.set(s.id, s.fecha);
     });
 
-    const finalAssignments: Record<string, string> = { ...getMasterPlayerEventsMap() };
+    if (estados.length === 0) {
+      return getMasterPlayerEventsMap();
+    }
+
+    const finalAssignments: Record<string, string> = {};
 
     estados.forEach((e: any) => {
       if (!e.jugador_id || !e.sesion_dia_id) return;
       const fecha = idToFecha.get(e.sesion_dia_id);
       const val = (e.evento_asignado || "").trim();
-      if (val) {
-        if (fecha) {
-          finalAssignments[`${e.jugador_id}_${fecha}`] = val;
-        }
-        finalAssignments[`${e.jugador_id}_${e.sesion_dia_id}`] = val;
+      if (fecha) {
+        finalAssignments[`${e.jugador_id}_${fecha}`] = val;
       }
+      finalAssignments[`${e.jugador_id}_${e.sesion_dia_id}`] = val;
     });
 
     return finalAssignments;
@@ -2620,7 +2637,7 @@ export async function savePlayerEventAssignments(
       if (!sesionId) {
         const { data: newS } = await supabase
           .from("sesiones_dia")
-          .insert({ fecha: r.fecha, equipo: "CE EUROPA", temporada: "2026/27" })
+          .insert({ fecha: r.fecha, equipo: "CE EUROPA" })
           .select("id")
           .single();
         if (newS) {
@@ -3004,7 +3021,7 @@ export async function getEventosBloquesBBDD(dayIds?: string[]) {
     if (Object.keys(map).length === 0) {
       return getMasterEventosBloquesMap();
     }
-    return { ...getMasterEventosBloquesMap(), ...map };
+    return map;
   }
 
   const { count, error: errCount } = await supabase
@@ -4672,6 +4689,39 @@ export async function saveExternalLinksBBDD(links: ExternalDatabaseLinks): Promi
   }
 }
 
+export async function resolveOrCreateSessionId(dayId: string, fecha?: string): Promise<string | null> {
+  const supabase = getServerSupabase();
+  const targetFecha = (fecha && /^\d{4}-\d{2}-\d{2}$/.test(fecha))
+    ? fecha
+    : (dayId || "").match(/\d{4}-\d{2}-\d{2}/)?.[0];
+
+  // 1. Si tenemos fecha, buscar por fecha primero
+  if (targetFecha) {
+    const { data: sByDate } = await supabase.from("sesiones_dia").select("id").eq("fecha", targetFecha).maybeSingle();
+    if (sByDate?.id) return sByDate.id;
+  }
+
+  // 2. Si dayId es un UUID válido, comprobar si existe en la tabla
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(dayId);
+  if (isUuid) {
+    const { data: sById } = await supabase.from("sesiones_dia").select("id").eq("id", dayId).maybeSingle();
+    if (sById?.id) return sById.id;
+  }
+
+  // 3. Si no existe pero tenemos targetFecha válida, crear la sesión (sin columna temporada)
+  if (targetFecha) {
+    const { data: newS, error } = await supabase
+      .from("sesiones_dia")
+      .insert({ fecha: targetFecha, equipo: "CE EUROPA" })
+      .select("id")
+      .single();
+    if (newS?.id) return newS.id;
+    if (error) console.error("Error creating sesiones_dia:", error.message);
+  }
+
+  return null;
+}
+
 export async function saveSingleBloqueBBDD(params: {
   dayId: string;
   fecha: string;
@@ -4690,17 +4740,10 @@ export async function saveSingleBloqueBBDD(params: {
   };
 }) {
   const supabase = getServerSupabase();
-  let realDayId = params.dayId;
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(realDayId);
-  if (!isUuid) {
-    let { data: s } = await supabase.from("sesiones_dia").select("id").eq("fecha", params.fecha).maybeSingle();
-    if (s?.id) {
-      realDayId = s.id;
-    } else {
-      const { data: newS } = await supabase.from("sesiones_dia").insert({ fecha: params.fecha, equipo: "CE EUROPA", temporada: "2026/27" }).select("id").single();
-      if (newS?.id) realDayId = newS.id;
-      else return { success: false, error: "Session could not be created" };
-    }
+  const realDayId = await resolveOrCreateSessionId(params.dayId, params.fecha);
+  if (!realDayId) {
+    console.error("No se pudo resolver o crear la sesión para bloque:", params.dayId, params.fecha);
+    return { success: false, error: "Session could not be resolved or created" };
   }
 
   // 1. Obtener bloque existente para fusionar características y nunca sobreescribir con null datos previos
@@ -4752,8 +4795,6 @@ export async function saveSingleBloqueBBDD(params: {
 
   // Also sync slot info into sesiones_dia (carga, volumen, etc. Never touch evento_am which is Evento General)
   const sessionUpdates: Record<string, any> = {};
-  const slot = params.slot;
-
   const cargaVal = params.block.carga !== undefined ? params.block.carga : existing?.carga;
   if (cargaVal && !isNaN(Number(cargaVal))) sessionUpdates.carga = Number(cargaVal);
 
@@ -4774,27 +4815,10 @@ export async function updatePlayerEventAssignmentBBDD(params: {
   eventoAsignado: string | null;
 }) {
   const supabase = getServerSupabase();
-  let realDayId = params.dayId;
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(realDayId);
-  if (!isUuid && params.fecha) {
-    let { data: s } = await supabase.from("sesiones_dia").select("id").eq("fecha", params.fecha).maybeSingle();
-    if (s?.id) {
-      realDayId = s.id;
-    } else {
-      const { data: newS } = await supabase.from("sesiones_dia").insert({ fecha: params.fecha, equipo: "CE EUROPA", temporada: "2026/27" }).select("id").single();
-      if (newS?.id) realDayId = newS.id;
-      else return { success: false, error: "Session not found or created" };
-    }
-  } else if (!isUuid) {
-    const cleanDate = realDayId.replace(/^day_/, "");
-    let { data: s } = await supabase.from("sesiones_dia").select("id").eq("fecha", cleanDate).maybeSingle();
-    if (s?.id) {
-      realDayId = s.id;
-    } else {
-      const { data: newS } = await supabase.from("sesiones_dia").insert({ fecha: cleanDate, equipo: "CE EUROPA", temporada: "2026/27" }).select("id").single();
-      if (newS?.id) realDayId = newS.id;
-      else return { success: false, error: "Session not found or created" };
-    }
+  const realDayId = await resolveOrCreateSessionId(params.dayId, params.fecha);
+  if (!realDayId) {
+    console.error("No se pudo resolver o crear la sesión para asignación:", params.dayId, params.fecha);
+    return { success: false, error: "Session not found or created" };
   }
 
   let realJugadorId = params.jugadorId;
@@ -4802,6 +4826,7 @@ export async function updatePlayerEventAssignmentBBDD(params: {
   if (!isPlayerUuid) {
     const { data: j } = await supabase.from("jugadores").select("id").or(`apodo.ilike.${realJugadorId},nombre.ilike.${realJugadorId}`).maybeSingle();
     if (j?.id) realJugadorId = j.id;
+    else return { success: false, error: "Player not found" };
   }
 
   const { data: existing } = await supabase
@@ -4855,17 +4880,9 @@ export async function savePlayerCommentBBDD(params: {
     return { success: true };
   }
 
-  let realDayId = params.dayId;
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(realDayId);
-  if (!isUuid) {
-    let { data: s } = await supabase.from("sesiones_dia").select("id").eq("fecha", fecha).maybeSingle();
-    if (s?.id) {
-      realDayId = s.id;
-    } else {
-      const { data: newS } = await supabase.from("sesiones_dia").insert({ fecha, equipo: "CE EUROPA", temporada: "2026/27" }).select("id").single();
-      if (newS?.id) realDayId = newS.id;
-      else return { success: false, error: "Could not create session" };
-    }
+  const realDayId = await resolveOrCreateSessionId(params.dayId, fecha);
+  if (!realDayId) {
+    return { success: false, error: "Could not resolve or create session" };
   }
 
   const fieldMap: Record<string, string> = {
