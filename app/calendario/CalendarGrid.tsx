@@ -2723,7 +2723,7 @@ export function CalendarGrid({
         }
 
         if (ev && ev.tipo && ev.tipo.trim() !== "") {
-          dayEvents.push(ev);
+          dayEvents.push({ ...ev, slot });
         }
       }
 
@@ -2768,33 +2768,79 @@ export function CalendarGrid({
 
   const getAssignedPlayersCountForSlot = React.useCallback(
     (dayId: string, slotIdx: number, fecha?: string) => {
+      const dayObj = days.find((d) => d.id === dayId || (fecha && d.fecha === fecha));
+      const targetFecha = fecha || dayObj?.fecha;
       const key = `${dayId}_slot_${slotIdx}`;
-      const keyFecha = fecha ? `${fecha}_slot_${slotIdx}` : "";
-      const ev = eventosBloquesMap[key] || (keyFecha ? eventosBloquesMap[keyFecha] : null);
+      const keyFecha = targetFecha ? `${targetFecha}_slot_${slotIdx}` : "";
+      let ev = eventosBloquesMap[key] || (keyFecha ? eventosBloquesMap[keyFecha] : null);
+
+      if ((!ev || !ev.tipo || !ev.tipo.trim()) && dayObj) {
+        const directKey = `evento_${slotIdx + 1}` as keyof SesionDia;
+        const directVal = (dayObj as any)[directKey];
+        if (directVal && typeof directVal === "string" && directVal.trim()) {
+          ev = {
+            id: `ev_${dayObj.id}_${slotIdx}`,
+            day_id: dayObj.id,
+            fecha: dayObj.fecha,
+            slot: slotIdx,
+            tipo: directVal.trim(),
+            hora: "",
+            lugar: "",
+            duracion: "",
+            orientacion: "",
+            carga: "",
+            comentario: "",
+            num_jugadores: "",
+          };
+        }
+      }
+
       if (!ev || !ev.tipo || !ev.tipo.trim()) return "";
 
-      const dailyInfo = getDailyTeamEventsMap(dayId, fecha);
+      const dailyInfo = getDailyTeamEventsMap(dayId, targetFecha);
       const codeItem = dailyInfo.availableCodesList.find((item) => item.event.slot === slotIdx);
       const targetLabel = (codeItem?.codeLabel || ev.tipo).trim().toLowerCase();
       const rawCode = ev.tipo.trim().toLowerCase();
 
       let count = 0;
       jugadoresList.forEach((p) => {
-        const k1 = `${p.id}_${dayId}`;
-        const k2 = fecha ? `${p.id}_${fecha}` : "";
-        const cellVal = (playerEventsMap[k1] || (k2 ? playerEventsMap[k2] : "") || "").trim();
+        const cellKey = `${p.id}_${dayId}`;
+        const cellKeyFecha = targetFecha ? `${p.id}_${targetFecha}` : "";
+        const pApodo = (p.apodo || "").toUpperCase().trim();
+        const pNombre = (p.nombre || "").toUpperCase().trim();
+
+        let cellVal = "";
+        if (cellKeyFecha && playerEventsMap[cellKeyFecha] !== undefined) {
+          cellVal = playerEventsMap[cellKeyFecha];
+        } else if (playerEventsMap[cellKey] !== undefined) {
+          cellVal = playerEventsMap[cellKey];
+        } else if (targetFecha && pApodo && playerEventsMap[`${pApodo}_${targetFecha}`] !== undefined) {
+          cellVal = playerEventsMap[`${pApodo}_${targetFecha}`];
+        } else if (targetFecha && pNombre && playerEventsMap[`${pNombre}_${targetFecha}`] !== undefined) {
+          cellVal = playerEventsMap[`${pNombre}_${targetFecha}`];
+        } else if (pApodo && playerEventsMap[`${pApodo}_${dayId}`] !== undefined) {
+          cellVal = playerEventsMap[`${pApodo}_${dayId}`];
+        } else if (pNombre && playerEventsMap[`${pNombre}_${dayId}`] !== undefined) {
+          cellVal = playerEventsMap[`${pNombre}_${dayId}`];
+        }
+        cellVal = (cellVal || "").trim();
 
         if (cellVal) {
-          const tokens = cellVal.split(",").map((t) => t.trim().toLowerCase());
-          if (tokens.some((t) => t === targetLabel || t === rawCode)) {
-            count++;
-          }
+          const tokens = cellVal.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
+          const isMatch = tokens.some((t) => {
+            if (!t) return false;
+            if (t === targetLabel || t === rawCode) return true;
+            if (targetLabel === rawCode && (t === `${rawCode}1` || t.startsWith(`${rawCode} `))) return true;
+            if (targetLabel === `${rawCode}1` && (t === rawCode || t.startsWith(`${rawCode} `))) return true;
+            return false;
+          });
+          if (isMatch) count++;
         }
       });
 
       return count > 0 ? String(count) : "";
     },
-    [eventosBloquesMap, jugadoresList, playerEventsMap, getDailyTeamEventsMap]
+    [eventosBloquesMap, jugadoresList, playerEventsMap, getDailyTeamEventsMap, days]
   );
 
   const parsePlayerEventCellString = React.useCallback(
@@ -6966,7 +7012,8 @@ export function CalendarGrid({
                                 const keyFecha = `${d.fecha}_slot_${slotIdx}`;
                                 const ev = (!isPre && (eventosBloquesMap[key] || eventosBloquesMap[keyFecha])) || { num_jugadores: "", tipo: "" };
                                 const autoNumJugadores = getAssignedPlayersCountForSlot(d.id, slotIdx, d.fecha);
-                                const displayValue = ev.num_jugadores !== undefined && ev.num_jugadores !== "" ? ev.num_jugadores : autoNumJugadores;
+                                const hasExplicitManual = ev.num_jugadores !== undefined && ev.num_jugadores !== null && String(ev.num_jugadores).trim() !== "";
+                                const displayValue = hasExplicitManual ? String(ev.num_jugadores).trim() : (autoNumJugadores || "");
                                 const matchedTipo = tiposEventoConfig.find((t) => t.codigo.toLowerCase() === (ev.tipo || "").toLowerCase());
                                 const bg = isInFill ? "#bae6fd" : isInRange ? "#e0f2fe" : (matchedTipo ? matchedTipo.bg : "#ffffff");
                                 const textColor = matchedTipo ? matchedTipo.color : "#0f172a";
@@ -7034,6 +7081,10 @@ export function CalendarGrid({
                                 const isFiltered = filterEventoTipo !== "TODOS" && ev.tipo && ev.tipo !== filterEventoTipo;
                                 const borderRight = isSundayDate(d.fecha) ? "3px solid #0f172a" : "1px solid #cbd5e1";
 
+                                const countForModal = getAssignedPlayersCountForSlot(d.id, slotIdx, d.fecha);
+                                const hasExplicitManual = ev.num_jugadores !== undefined && ev.num_jugadores !== null && String(ev.num_jugadores).trim() !== "";
+                                const numJugadoresFinal = hasExplicitManual ? String(ev.num_jugadores).trim() : (countForModal || "");
+
                                 return (
                                   <td
                                     key={`sesion_${d.id}_${slotIdx}`}
@@ -7053,7 +7104,7 @@ export function CalendarGrid({
                                   >
                                     <button
                                       type="button"
-                                      onClick={() => setEventoDetailModalTarget(ev)}
+                                      onClick={() => setEventoDetailModalTarget({ ...ev, num_jugadores: numJugadoresFinal })}
                                       title="Haz clic para acceder dentro del evento"
                                       style={{
                                         display: "inline-flex",
