@@ -1,6 +1,11 @@
 "use client";
 
-import { getEffectiveRecord } from "@/app/lib/gpsTaskFilter";
+import {
+  getEffectiveRecord,
+  isTaskSimulada,
+  isRecordSimulado,
+  isRecordSimuladoActive,
+} from "@/app/lib/gpsTaskFilter";
 
 import GpsComparativeSection from "../components/GpsComparativeSection";
 
@@ -99,16 +104,6 @@ function calculateAge(fechaNacimiento: string | null): string {
     age--;
   }
   return `${age} años`;
-}
-
-
-function isRecordSimulado(record: any): boolean {
-  if (!record || !record.metricas) return false;
-  return Boolean(
-    record.metricas.es_simulado ||
-    record.metricas.tipo_registro === "SIMULADO" ||
-    (record.metricas.colC && String(record.metricas.colC).toUpperCase().includes("SIMULA"))
-  );
 }
 
 function getMetricValue(metricas: any, key: string, derivedList?: any[]): number {
@@ -1138,7 +1133,7 @@ function InformeGpsDiarioContent() {
     };
 
     const currentRecordRaw = playerGpsRecords.find((r) => r.fecha === selectedDate);
-    const isCurrentPlayerSimulado = isRecordSimulado(currentRecordRaw);
+    const isCurrentPlayerSimulado = isRecordSimuladoActive(currentRecordRaw, selectedTaskNames, availableSessionTasks);
     const currentRecord = (gpsFilter === "REAL" && isCurrentPlayerSimulado) ? null : currentRecordRaw;
     const currentRecordEffective = getEffectiveRecord(currentRecord, selectedTaskNames, availableSessionTasks, derivedVariables);
 
@@ -1186,12 +1181,27 @@ function InformeGpsDiarioContent() {
     // --- 1. Gráfico 1: Vs Media del equipo ---
     const rawTeamRecordsSameDay = teamGpsRecords.filter((r) => r.fecha === selectedDate);
     const simulatedPlayerIdsInDate = new Set(
-      rawTeamRecordsSameDay.filter((r) => isRecordSimulado(r)).map((r) => r.jugador_id)
+      rawTeamRecordsSameDay
+        .filter((r) => isRecordSimuladoActive(r, selectedTaskNames, availableSessionTasks))
+        .map((r) => r.jugador_id)
     );
-    const isPlayerSimInDate = (playerId: string) => simulatedPlayerIdsInDate.has(playerId);
+    if (
+      selectedJugadorId &&
+      currentRecordRaw?.fecha === selectedDate &&
+      isRecordSimuladoActive(currentRecordRaw, selectedTaskNames, availableSessionTasks)
+    ) {
+      simulatedPlayerIdsInDate.add(selectedJugadorId);
+    }
+    const isPlayerSimInDate = (playerId: string): boolean => {
+      if (simulatedPlayerIdsInDate.has(playerId)) return true;
+      const rec = rawTeamRecordsSameDay.find((r) => r.jugador_id === playerId) ||
+        (playerId === selectedJugadorId && currentRecordRaw?.fecha === selectedDate ? currentRecordRaw : null);
+      if (!rec) return false;
+      return isRecordSimuladoActive(rec, selectedTaskNames, availableSessionTasks);
+    };
 
     const teamRecordsSameDay = rawTeamRecordsSameDay
-      .filter((r) => gpsFilter === "TODO" || !isRecordSimulado(r))
+      .filter((r) => gpsFilter === "TODO" || !isRecordSimuladoActive(r, selectedTaskNames, availableSessionTasks))
       .map((r) => getEffectiveRecord(r, selectedTaskNames, availableSessionTasks, derivedVariables))
       .filter(Boolean);
     const teamCount = teamRecordsSameDay.length || 1;

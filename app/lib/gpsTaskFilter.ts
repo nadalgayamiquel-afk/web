@@ -103,9 +103,14 @@ export function getEffectiveRecord(
     zeroMetricas["+28 km/h (Num)"] = 0;
     zeroMetricas["+28 km/h (Tiempo)"] = 0;
     zeroMetricas["num_hids"] = 0;
+    zeroMetricas.es_simulado = false;
+    zeroMetricas.tipo_registro = "REAL";
+    zeroMetricas.origen_dato = "REAL";
 
     return {
       ...rec,
+      es_simulado: false,
+      tipo_registro: "REAL",
       duracion: 0,
       metricas: zeroMetricas,
     };
@@ -348,11 +353,21 @@ export function getEffectiveRecord(
     newMetricas["+28 km/h (Tiempo)"] = Math.round(sumV28Time * 100) / 100;
     newMetricas["num_hids"] = Math.round(sumHids);
 
+    const hasSimActive = activeTasksForPlayer.some(isTaskSimulada);
+    newMetricas.es_simulado = hasSimActive;
+    newMetricas.tipo_registro = hasSimActive ? "SIMULADO" : "REAL";
+    newMetricas.origen_dato = hasSimActive ? "SIMULADO" : "REAL";
+    if (!hasSimActive && newMetricas.colC && String(newMetricas.colC).toUpperCase().includes("SIMULA")) {
+      newMetricas.colC = "REAL";
+    }
+
     newMetricas.tareas = activeTasksForPlayer;
     newMetricas._hasActiveTasks = true;
 
     return {
       ...rec,
+      es_simulado: hasSimActive,
+      tipo_registro: hasSimActive ? "SIMULADO" : "REAL",
       duracion: Math.round(sumDur * 100) / 100,
       metricas: newMetricas,
     };
@@ -390,3 +405,67 @@ export function getEffectiveRecord(
 
   return rec;
 }
+
+export function isTaskSimulada(t: any): boolean {
+  if (!t) return false;
+  return Boolean(
+    t.es_simulado === true ||
+    t.es_simulado === "true" ||
+    String(t.tipo_registro || "").toUpperCase().includes("SIMULA") ||
+    String(t.origen_dato || "").toUpperCase().includes("SIMULA") ||
+    (t.colC && String(t.colC).toUpperCase().includes("SIMULA")) ||
+    (t["REAL / SIMULADO"] && String(t["REAL / SIMULADO"]).toUpperCase().includes("SIMULA")) ||
+    (t.nombre && String(t.nombre).toUpperCase().includes("SIMULA")) ||
+    (t.name && String(t.name).toUpperCase().includes("SIMULA")) ||
+    (t.tarea && String(t.tarea).toUpperCase().includes("SIMULA"))
+  );
+}
+
+export function isRecordSimulado(record: any): boolean {
+  if (!record) return false;
+  return Boolean(
+    record.es_simulado === true ||
+    record.es_simulado === "true" ||
+    record.metricas?.es_simulado === true ||
+    record.metricas?.es_simulado === "true" ||
+    String(record.tipo_registro || "").toUpperCase().includes("SIMULA") ||
+    String(record.metricas?.tipo_registro || "").toUpperCase().includes("SIMULA") ||
+    String(record.origen_dato || "").toUpperCase().includes("SIMULA") ||
+    String(record.metricas?.origen_dato || "").toUpperCase().includes("SIMULA") ||
+    (record.colC && String(record.colC).toUpperCase().includes("SIMULA")) ||
+    (record.metricas?.colC && String(record.metricas?.colC).toUpperCase().includes("SIMULA")) ||
+    (record["REAL / SIMULADO"] && String(record["REAL / SIMULADO"]).toUpperCase().includes("SIMULA")) ||
+    (record.metricas?.["REAL / SIMULADO"] && String(record.metricas?.["REAL / SIMULADO"]).toUpperCase().includes("SIMULA"))
+  );
+}
+
+export function isRecordSimuladoActive(
+  rec: any,
+  selectedTasks: string[],
+  allTasks: string[]
+): boolean {
+  if (!rec) return false;
+  const rawTasks = rec.metricas?.tareas || rec.tareas;
+  if (Array.isArray(rawTasks) && rawTasks.length > 0) {
+    if (allTasks && allTasks.length > 0 && (!selectedTasks || selectedTasks.length === 0)) {
+      return false;
+    }
+    return rawTasks.some((t: any) => {
+      if (!isTaskSimulada(t)) return false;
+      if (allTasks && allTasks.length > 0) {
+        const taskName = (t.nombre || t.name || t.tarea || t.task || "").trim();
+        return selectedTasks.some((sel) => sel.trim().toLowerCase() === taskName.toLowerCase());
+      }
+      return true;
+    });
+  }
+
+  if (isRecordSimulado(rec)) {
+    if (allTasks && allTasks.length > 0 && (!selectedTasks || selectedTasks.length === 0)) {
+      return false;
+    }
+    return true;
+  }
+  return false;
+}
+
