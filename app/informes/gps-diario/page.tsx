@@ -1192,13 +1192,7 @@ function InformeGpsDiarioContent() {
     ) {
       simulatedPlayerIdsInDate.add(selectedJugadorId);
     }
-    const isPlayerSimInDate = (playerId: string): boolean => {
-      if (simulatedPlayerIdsInDate.has(playerId)) return true;
-      const rec = rawTeamRecordsSameDay.find((r) => r.jugador_id === playerId) ||
-        (playerId === selectedJugadorId && currentRecordRaw?.fecha === selectedDate ? currentRecordRaw : null);
-      if (!rec) return false;
-      return isRecordSimuladoActive(rec, selectedTaskNames, availableSessionTasks);
-    };
+    const isPlayerSimInDate = (playerId: string): boolean => simulatedPlayerIdsInDate.has(playerId);
 
     const teamRecordsSameDay = rawTeamRecordsSameDay
       .filter((r) => gpsFilter === "TODO" || !isRecordSimuladoActive(r, selectedTaskNames, availableSessionTasks))

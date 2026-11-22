@@ -453,8 +453,8 @@ export function isRecordSimuladoActive(
     return rawTasks.some((t: any) => {
       if (!isTaskSimulada(t)) return false;
       if (allTasks && allTasks.length > 0) {
-        const taskName = (t.nombre || t.name || t.tarea || t.task || "").trim();
-        return selectedTasks.some((sel) => sel.trim().toLowerCase() === taskName.toLowerCase());
+        const taskName = (t.nombre || t.name || t.tarea || t.task || "").trim().normalize("NFC").toLowerCase();
+        return selectedTasks.some((sel) => sel.trim().normalize("NFC").toLowerCase() === taskName);
       }
       return true;
     });
