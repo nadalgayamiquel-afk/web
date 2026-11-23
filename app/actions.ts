@@ -2001,11 +2001,11 @@ export async function saveFullPlanificacionBBDD(sessionsPayload: any[], comments
       subperiodo: s.subperiodo ?? null,
       semana: cleanIntegerValue(s.semana),
       md: s.md ?? null,
-      rival: s.rival ?? null,
+      rival: s.rival && s.rival.trim() ? s.rival.trim() : null,
       carga: cleanNumericValue(s.carga),
       volumen: cleanNumericValue(s.volumen),
       intensidad: cleanNumericValue(s.intensidad),
-      evento_am: s.evento_am ?? s.evento ?? s.evento_principal ?? null,
+      evento_am: (s.evento_am && s.evento_am.trim()) || (s.evento && s.evento.trim()) || (s.evento_principal && s.evento_principal.trim()) || null,
       evento_pm: s.evento_pm ?? null,
       comentario_microciclo: s.comentario_microciclo ?? s.comentario ?? null,
     };
@@ -2363,7 +2363,7 @@ export async function saveFullPlanificacionBBDD(sessionsPayload: any[], comments
         const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(dayId);
         
         if (isUuid) {
-          const isEmpty = !(block.tipo || block.hora || block.lugar || block.duracion || block.orientacion || block.carga || block.comentario || block.num_jugadores || block.competicion);
+          const isEmpty = !block.tipo || !block.tipo.trim();
           if (!isEmpty) {
             bloquesRows.push({
               day_id: dayId,
@@ -4753,13 +4753,11 @@ export async function saveSingleBloqueBBDD(params: {
     .match({ day_id: realDayId, slot: params.slot })
     .maybeSingle();
 
-  // Si se elimina explícitamente el tipo (vacío o null) y no se pasan otras características, borrar bloque
-  const isClearingBlock = (params.block.tipo === "" || params.block.tipo === null) &&
-    (!params.block.hora && !params.block.lugar && !params.block.duracion && !params.block.orientacion && !params.block.carga && !params.block.comentario && !params.block.num_jugadores);
-
-  if (isClearingBlock) {
+  // Si se elimina explícitamente el tipo (vacío o null), el bloque queda cancelado/borrado de la BBDD
+  if (!params.block.tipo || params.block.tipo.trim() === "") {
     await supabase.from("sesiones_dia_bloques").delete().match({ day_id: realDayId, slot: params.slot });
-  } else {
+    return { success: true };
+  }
     // Si un campo no viene en params.block (undefined), preservamos el valor existente en BBDD
     const finalTipo = params.block.tipo !== undefined ? (params.block.tipo || null) : (existing?.tipo || null);
     const finalHora = params.block.hora !== undefined ? (params.block.hora || null) : (existing?.hora || null);
@@ -4791,7 +4789,6 @@ export async function saveSingleBloqueBBDD(params: {
         competicion: finalCompeticion,
       }, { onConflict: "day_id,slot" });
     }
-  }
 
   // Also sync slot info into sesiones_dia (carga, volumen, etc. Never touch evento_am which is Evento General)
   const sessionUpdates: Record<string, any> = {};

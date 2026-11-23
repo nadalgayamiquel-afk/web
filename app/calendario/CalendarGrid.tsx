@@ -1713,13 +1713,13 @@ export function CalendarGrid({
           cleanDbData[k] = dbData[k];
         });
         setEventosBloquesMap((prev) => {
-          const merged = { ...prev, ...cleanDbData };
+          const next = { ...cleanDbData };
           if (typeof window !== "undefined") {
             try {
-              localStorage.setItem("eventos_bloques_map_v5", JSON.stringify(merged));
+              localStorage.setItem("eventos_bloques_map_v5", JSON.stringify(next));
             } catch (e) {}
           }
-          return merged;
+          return next;
         });
       }
     }).catch(() => {});
@@ -2262,11 +2262,19 @@ export function CalendarGrid({
 
       currentBlockSnapshot = newBlock;
 
-      const updatedMap = {
-        ...prev,
-        [key]: newBlock,
-        [keyFecha]: newBlock,
-      };
+      const isCleared = fieldKey === "tipo" && (!value || value.trim() === "");
+      let updatedMap: Record<string, EventoBloque>;
+      if (isCleared) {
+        updatedMap = { ...prev };
+        delete updatedMap[key];
+        delete updatedMap[keyFecha];
+      } else {
+        updatedMap = {
+          ...prev,
+          [key]: newBlock,
+          [keyFecha]: newBlock,
+        };
+      }
 
       if (typeof window !== "undefined") {
         try {
@@ -2288,28 +2296,38 @@ export function CalendarGrid({
       blockTimerKey,
       setTimeout(async () => {
         try {
-          let blockToSave = currentBlockSnapshot;
-          if (typeof window !== "undefined") {
-            try {
-              const raw = localStorage.getItem("eventos_bloques_map_v5");
-              if (raw) {
-                const parsed = JSON.parse(raw);
-                if (parsed[key] || parsed[keyFecha]) {
-                  blockToSave = parsed[key] || parsed[keyFecha];
-                }
-              }
-            } catch (e) {}
-          }
-          if (!blockToSave) {
-            blockToSave = eventosBloquesMap[key] || eventosBloquesMap[keyFecha];
-          }
-          if (blockToSave) {
+          const isCleared = fieldKey === "tipo" && (!value || value.trim() === "");
+          if (isCleared) {
             await saveSingleBloqueBBDD({
               dayId,
               fecha,
               slot: slotIdx,
-              block: blockToSave,
+              block: { tipo: "" },
             });
+          } else {
+            let blockToSave = currentBlockSnapshot;
+            if (typeof window !== "undefined") {
+              try {
+                const raw = localStorage.getItem("eventos_bloques_map_v5");
+                if (raw) {
+                  const parsed = JSON.parse(raw);
+                  if (parsed[key] || parsed[keyFecha]) {
+                    blockToSave = parsed[key] || parsed[keyFecha];
+                  }
+                }
+              } catch (e) {}
+            }
+            if (!blockToSave) {
+              blockToSave = eventosBloquesMap[key] || eventosBloquesMap[keyFecha];
+            }
+            if (blockToSave) {
+              await saveSingleBloqueBBDD({
+                dayId,
+                fecha,
+                slot: slotIdx,
+                block: blockToSave,
+              });
+            }
           }
         } catch (err: any) {
           console.error("Error guardando bloque en BBDD:", err?.message || err);
@@ -2560,12 +2578,6 @@ export function CalendarGrid({
     }
     return [];
   });
-
-  useEffect(() => {
-    if (initialDays && initialDays.length > 0) {
-      setDays(recalculateMDForDays(initialDays));
-    }
-  }, [initialDays]);
 
   // Ref que apunta siempre al valor actual de days (para poder leerlo en beforeunload)
   const daysRef = useRef<SesionDia[]>(days);
@@ -3009,21 +3021,23 @@ export function CalendarGrid({
             const existing = map.get(d.fecha);
             const localDay = localDays ? localDays.find((ld) => ld.fecha === d.fecha || ld.id === d.id) : null;
 
-            const bestRival = (d.fecha && d.fecha < "2026-10-01") ? "" : (d.rival || localDay?.rival || existing?.rival || "");
-            const bestResultado = d.resultado_partido || localDay?.resultado_partido || existing?.resultado_partido || "";
-            const bestEvento = d.evento || (d as any).evento_am || localDay?.evento || existing?.evento || "";
-            const bestEvento1 = d.evento_1 ?? localDay?.evento_1 ?? existing?.evento_1 ?? null;
-            const bestEvento2 = d.evento_2 ?? (d as any).evento_pm ?? localDay?.evento_2 ?? existing?.evento_2 ?? null;
-            const bestEvento3 = d.evento_3 ?? localDay?.evento_3 ?? existing?.evento_3 ?? null;
-            const bestEvento4 = d.evento_4 ?? localDay?.evento_4 ?? existing?.evento_4 ?? null;
-            const bestEvento5 = d.evento_5 ?? localDay?.evento_5 ?? existing?.evento_5 ?? null;
-            const bestEvento6 = d.evento_6 ?? localDay?.evento_6 ?? existing?.evento_6 ?? null;
-            const bestCarga = d.carga ?? localDay?.carga ?? existing?.carga ?? null;
-            const bestVolumen = d.volumen ?? localDay?.volumen ?? existing?.volumen ?? null;
-            const bestIntensidad = d.intensidad ?? localDay?.intensidad ?? existing?.intensidad ?? null;
-            const bestSubperiodo = d.subperiodo || localDay?.subperiodo || existing?.subperiodo || "";
-            const bestMD = d.md || localDay?.md || existing?.md || "";
-            const bestComentario = d.comentario_microciclo || localDay?.comentario_microciclo || existing?.comentario_microciclo || null;
+            const bestRival = (d.fecha && d.fecha < "2026-10-01")
+              ? ""
+              : (d.rival !== undefined ? d.rival : (localDay?.rival !== undefined ? localDay.rival : (existing?.rival || "")));
+            const bestResultado = d.resultado_partido !== undefined ? d.resultado_partido : (localDay?.resultado_partido !== undefined ? localDay.resultado_partido : (existing?.resultado_partido || ""));
+            const bestEvento = d.evento !== undefined ? d.evento : ((d as any).evento_am !== undefined ? (d as any).evento_am : (localDay?.evento !== undefined ? localDay.evento : (existing?.evento || existing?.evento_am || "")));
+            const bestEvento1 = d.evento_1 !== undefined ? d.evento_1 : (localDay?.evento_1 !== undefined ? localDay.evento_1 : (existing?.evento_1 ?? null));
+            const bestEvento2 = d.evento_2 !== undefined ? d.evento_2 : ((d as any).evento_pm !== undefined ? (d as any).evento_pm : (localDay?.evento_2 !== undefined ? localDay.evento_2 : (existing?.evento_2 ?? null)));
+            const bestEvento3 = d.evento_3 !== undefined ? d.evento_3 : (localDay?.evento_3 !== undefined ? localDay.evento_3 : (existing?.evento_3 ?? null));
+            const bestEvento4 = d.evento_4 !== undefined ? d.evento_4 : (localDay?.evento_4 !== undefined ? localDay.evento_4 : (existing?.evento_4 ?? null));
+            const bestEvento5 = d.evento_5 !== undefined ? d.evento_5 : (localDay?.evento_5 !== undefined ? localDay.evento_5 : (existing?.evento_5 ?? null));
+            const bestEvento6 = d.evento_6 !== undefined ? d.evento_6 : (localDay?.evento_6 !== undefined ? localDay.evento_6 : (existing?.evento_6 ?? null));
+            const bestCarga = d.carga !== undefined ? d.carga : (localDay?.carga !== undefined ? localDay.carga : (existing?.carga ?? null));
+            const bestVolumen = d.volumen !== undefined ? d.volumen : (localDay?.volumen !== undefined ? localDay.volumen : (existing?.volumen ?? null));
+            const bestIntensidad = d.intensidad !== undefined ? d.intensidad : (localDay?.intensidad !== undefined ? localDay.intensidad : (existing?.intensidad ?? null));
+            const bestSubperiodo = d.subperiodo !== undefined ? d.subperiodo : (localDay?.subperiodo !== undefined ? localDay.subperiodo : (existing?.subperiodo || ""));
+            const bestMD = d.md !== undefined ? d.md : (localDay?.md !== undefined ? localDay.md : (existing?.md || ""));
+            const bestComentario = d.comentario_microciclo !== undefined ? d.comentario_microciclo : (localDay?.comentario_microciclo !== undefined ? localDay.comentario_microciclo : (existing?.comentario_microciclo || null));
 
             if (existing) {
               map.set(d.fecha, {
@@ -3056,7 +3070,7 @@ export function CalendarGrid({
         return recalculateMDForDays(dedupList, eventosBloquesMap);
       });
     }
-  }, [initialDays, eventosBloquesMap]);
+  }, [initialDays]);
 
   // Guardar en localStorage antes de salir de la página (beforeunload)
   useEffect(() => {
@@ -3579,22 +3593,17 @@ export function CalendarGrid({
           }
           rivalEventoDebounceRef.current = setTimeout(async () => {
             try {
-              if (fieldKey === "evento") {
-                // GUARDAR EXCLUSIVAMENTE EVENTO GENERAL EN evento_am (BBDD / Supabase)
+              if (fieldKey === "evento" || fieldKey === "rival") {
+                const rivalVal = changedDay.rival && changedDay.rival.trim() ? changedDay.rival.trim() : null;
+                const eventoVal = changedDay.evento && changedDay.evento.trim() ? changedDay.evento.trim() : null;
                 await updateSesionDia(dayId, {
                   fecha: changedDay.fecha,
-                  evento_am: changedDay.evento || null,
-                  rival: changedDay.rival ?? null,
+                  rival: rivalVal,
+                  evento_am: eventoVal,
                   md: changedDay.md ?? null,
                 });
-              } else if (fieldKey === "rival") {
-                await updateSesionDia(dayId, {
-                  fecha: changedDay.fecha,
-                  rival: changedDay.rival ?? null,
-                  md: changedDay.md ?? null,
-                });
-                if (changedDay.rival && changedDay.rival.trim().length >= 2) {
-                  const rClean = changedDay.rival.trim().toUpperCase();
+                if (rivalVal && rivalVal.length >= 2) {
+                  const rClean = rivalVal.toUpperCase();
                   const matchedEscudo = findRivalEscudoUrl(rClean, rivalesList);
                   upsertSingleRivalBBDD({
                     nombre: rClean,
@@ -3604,31 +3613,49 @@ export function CalendarGrid({
               } else if (typeof fieldKey === "string" && fieldKey.startsWith("evento_")) {
                 // Eventos específicos (evento_1..6) se guardan en su columna exacta y en su bloque de BBDD
                 const slotIdx = parseInt(fieldKey.replace("evento_", "")) - 1;
-                await updateSesionDia(dayId, {
-                  fecha: changedDay.fecha,
-                  [fieldKey]: (changedDay as any)[fieldKey] ?? null,
-                });
+                const newEventoVal = (changedDay as any)[fieldKey] || "";
                 if (slotIdx >= 0 && slotIdx < 6) {
-                  let existingBlock: any = eventosBloquesMap[`${dayId}_slot_${slotIdx}`] ||
-                    eventosBloquesMap[`${changedDay.fecha}_slot_${slotIdx}`];
-                  if (!existingBlock && typeof window !== "undefined") {
-                    try {
-                      const raw = localStorage.getItem("eventos_bloques_map_v5");
-                      if (raw) {
-                        const parsed = JSON.parse(raw);
-                        existingBlock = parsed[`${dayId}_slot_${slotIdx}`] || parsed[`${changedDay.fecha}_slot_${slotIdx}`];
+                  if (!newEventoVal || !newEventoVal.trim()) {
+                    await saveSingleBloqueBBDD({
+                      dayId,
+                      fecha: changedDay.fecha,
+                      slot: slotIdx,
+                      block: { tipo: "" },
+                    });
+                    setEventosBloquesMap((prev) => {
+                      const next = { ...prev };
+                      delete next[`${dayId}_slot_${slotIdx}`];
+                      delete next[`${changedDay.fecha}_slot_${slotIdx}`];
+                      if (typeof window !== "undefined") {
+                        try {
+                          localStorage.setItem("eventos_bloques_map_v5", JSON.stringify(next));
+                          window.dispatchEvent(new Event("eventos_bloques_updated"));
+                        } catch (e) {}
                       }
-                    } catch (e) {}
+                      return next;
+                    });
+                  } else {
+                    let existingBlock: any = eventosBloquesMap[`${dayId}_slot_${slotIdx}`] ||
+                      eventosBloquesMap[`${changedDay.fecha}_slot_${slotIdx}`];
+                    if (!existingBlock && typeof window !== "undefined") {
+                      try {
+                        const raw = localStorage.getItem("eventos_bloques_map_v5");
+                        if (raw) {
+                          const parsed = JSON.parse(raw);
+                          existingBlock = parsed[`${dayId}_slot_${slotIdx}`] || parsed[`${changedDay.fecha}_slot_${slotIdx}`];
+                        }
+                      } catch (e) {}
+                    }
+                    await saveSingleBloqueBBDD({
+                      dayId,
+                      fecha: changedDay.fecha,
+                      slot: slotIdx,
+                      block: {
+                        ...(existingBlock || {}),
+                        tipo: newEventoVal.trim(),
+                      },
+                    });
                   }
-                  await saveSingleBloqueBBDD({
-                    dayId,
-                    fecha: changedDay.fecha,
-                    slot: slotIdx,
-                    block: {
-                      ...(existingBlock || {}),
-                      tipo: (changedDay as any)[fieldKey] || "",
-                    },
-                  });
                 }
               }
               pendingRivalEventoDaysRef.current = null;
