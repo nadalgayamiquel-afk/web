@@ -2349,6 +2349,24 @@ export async function saveFullPlanificacionBBDD(sessionsPayload: any[], comments
   if (eventosBloquesMap) {
     const bloquesRows: any[] = [];
     const bloquesToDelete: any[] = [];
+
+    // 1. Detectar slots a eliminar dentro del ámbito de sesiones que se están guardando
+    sessionsPayload.forEach((s) => {
+      const dayId = s.id;
+      if (!dayId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(dayId)) return;
+      const fecha = s.fecha;
+      for (let slot = 0; slot < 6; slot++) {
+        const k1 = `${dayId}_slot_${slot}`;
+        const k2 = fecha ? `${fecha}_slot_${slot}` : "";
+        const k3 = fecha ? `day_${fecha}_slot_${slot}` : "";
+        const k4 = `ev_${dayId}_slot_${slot}`;
+        const blk = eventosBloquesMap ? (eventosBloquesMap[k1] || (k2 ? eventosBloquesMap[k2] : null) || (k3 ? eventosBloquesMap[k3] : null) || (eventosBloquesMap[k4] || null)) : null;
+        if (!blk || !blk.tipo || !blk.tipo.trim()) {
+          bloquesToDelete.push({ day_id: dayId, slot });
+        }
+      }
+    });
+
     Object.keys(eventosBloquesMap).forEach((key) => {
       const block = eventosBloquesMap[key];
       const match = key.match(/(.+)_slot_(\d+)/);
@@ -2387,7 +2405,9 @@ export async function saveFullPlanificacionBBDD(sessionsPayload: any[], comments
     });
 
     if (bloquesToDelete.length > 0) {
-      for (const b of bloquesToDelete) {
+      const deleteKeyMap = new Map<string, { day_id: string; slot: number }>();
+      bloquesToDelete.forEach((b) => deleteKeyMap.set(`${b.day_id}_${b.slot}`, b));
+      for (const b of deleteKeyMap.values()) {
         await supabase.from("sesiones_dia_bloques").delete().match({ day_id: b.day_id, slot: b.slot });
       }
     }
@@ -4756,6 +4776,9 @@ export async function saveSingleBloqueBBDD(params: {
   // Si se elimina explícitamente el tipo (vacío o null), el bloque queda cancelado/borrado de la BBDD
   if (!params.block.tipo || params.block.tipo.trim() === "") {
     await supabase.from("sesiones_dia_bloques").delete().match({ day_id: realDayId, slot: params.slot });
+    if (params.fecha) {
+      await supabase.from("sesiones_dia_bloques").delete().match({ fecha: params.fecha, slot: params.slot });
+    }
     return { success: true };
   }
     // Si un campo no viene en params.block (undefined), preservamos el valor existente en BBDD

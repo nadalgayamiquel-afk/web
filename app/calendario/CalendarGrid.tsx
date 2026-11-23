@@ -322,6 +322,45 @@ export function isVideoCode(code?: string | null): boolean {
   return ["VD", "VIDEO", "VÍDEO", "CHARLA"].some((prefix) => c.startsWith(prefix));
 }
 
+export function removeBlockFromBloquesMap(
+  map: Record<string, EventoBloque>,
+  dayId: string,
+  fecha?: string,
+  slotIdx?: number
+): Record<string, EventoBloque> {
+  const next = { ...map };
+  const targetSlot = slotIdx !== undefined ? String(slotIdx) : undefined;
+  const targetDayId = dayId ? dayId.toLowerCase() : "";
+  const targetFecha = fecha ? fecha.toLowerCase() : "";
+
+  Object.keys(next).forEach((k) => {
+    const match = k.match(/(?:day_|ev_)?([^_]+)_slot_(\d+)/i) || k.match(/(?:day_|ev_)?([^_]+)_(\d+)/i);
+    if (match) {
+      const ref = match[1].toLowerCase();
+      const s = match[2];
+      if (targetSlot === undefined || s === targetSlot) {
+        if (ref === targetDayId || (targetFecha && ref === targetFecha)) {
+          delete next[k];
+        }
+      }
+    }
+  });
+
+  if (slotIdx !== undefined) {
+    delete next[`${dayId}_slot_${slotIdx}`];
+    delete next[`day_${dayId}_slot_${slotIdx}`];
+    delete next[`ev_${dayId}_slot_${slotIdx}`];
+    delete next[`ev_${dayId}_${slotIdx}`];
+    if (fecha) {
+      delete next[`${fecha}_slot_${slotIdx}`];
+      delete next[`day_${fecha}_slot_${slotIdx}`];
+      delete next[`ev_${fecha}_slot_${slotIdx}`];
+      delete next[`ev_${fecha}_${slotIdx}`];
+    }
+  }
+  return next;
+}
+
 export function getMatchResultStatus(
   d: SesionDia,
   eventBlocksMap?: Record<string, EventoBloque>
@@ -2265,9 +2304,7 @@ export function CalendarGrid({
       const isCleared = fieldKey === "tipo" && (!value || value.trim() === "");
       let updatedMap: Record<string, EventoBloque>;
       if (isCleared) {
-        updatedMap = { ...prev };
-        delete updatedMap[key];
-        delete updatedMap[keyFecha];
+        updatedMap = removeBlockFromBloquesMap(prev, dayId, fecha, slotIdx);
       } else {
         updatedMap = {
           ...prev,
@@ -3623,12 +3660,11 @@ export function CalendarGrid({
                       block: { tipo: "" },
                     });
                     setEventosBloquesMap((prev) => {
-                      const next = { ...prev };
-                      delete next[`${dayId}_slot_${slotIdx}`];
-                      delete next[`${changedDay.fecha}_slot_${slotIdx}`];
+                      const next = removeBlockFromBloquesMap(prev, dayId, changedDay.fecha, slotIdx);
                       if (typeof window !== "undefined") {
                         try {
                           localStorage.setItem("eventos_bloques_map_v5", JSON.stringify(next));
+                          localStorage.setItem("eventos_bloques_map_v1", JSON.stringify(next));
                           window.dispatchEvent(new Event("eventos_bloques_updated"));
                         } catch (e) {}
                       }
@@ -5158,7 +5194,6 @@ export function CalendarGrid({
                         textColor={textColor}
                         tiposConfig={tiposEventoConfig}
                         onCommit={(val) => {
-                          handleCellUpdate(d.id, eventoKey, val);
                           handleEventoBlockUpdate(d.id, d.fecha, eventoIdx, "tipo", val);
                         }}
                         onOpenPicker={(rect) => {
@@ -6650,10 +6685,6 @@ export function CalendarGrid({
                                   tiposConfig={tiposEventoConfig}
                                   onCommit={(val) => {
                                     handleEventoBlockUpdate(d.id, d.fecha, slotIdx, "tipo", val);
-                                    if (slotIdx < 6) {
-                                      const eventoKey = `evento_${slotIdx + 1}` as keyof SesionDia;
-                                      handleCellUpdate(d.id, eventoKey, val);
-                                    }
                                   }}
                                   onOpenPicker={(rect) => {
                                     setActivePickerCell({

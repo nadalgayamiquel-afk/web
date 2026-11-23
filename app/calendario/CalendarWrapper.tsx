@@ -47,11 +47,8 @@ export function CalendarWrapper(props: {
           localStorage.setItem("player_events_map_v1", JSON.stringify({ ...cur, ...props.bbddPlayerAssignments }));
         }
         if (props.initialBloques && Object.keys(props.initialBloques).length > 0) {
-          const curRaw = localStorage.getItem("eventos_bloques_map_v5");
-          const cur = curRaw ? JSON.parse(curRaw) : {};
-          const mergedBloques = { ...cur, ...props.initialBloques };
-          localStorage.setItem("eventos_bloques_map_v5", JSON.stringify(mergedBloques));
-          localStorage.setItem("eventos_bloques_map_v1", JSON.stringify(mergedBloques));
+          localStorage.setItem("eventos_bloques_map_v5", JSON.stringify(props.initialBloques));
+          localStorage.setItem("eventos_bloques_map_v1", JSON.stringify(props.initialBloques));
         }
         if (props.initialComentarios && props.initialComentarios.length > 0) {
           localStorage.setItem("comentarios_jugadores_v2", JSON.stringify(props.initialComentarios));
