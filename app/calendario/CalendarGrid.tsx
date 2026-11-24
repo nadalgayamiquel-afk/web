@@ -5702,6 +5702,7 @@ export function CalendarGrid({
                         const val = e.target.value;
                         handleCellUpdate(d.id, "evento", val);
                       }}
+                      title={matchedTipo ? `${matchedTipo.codigo} - ${matchedTipo.nombre}` : (evVal || "Evento General")}
                       style={{
                         width: "100%",
                         height: "100%",
@@ -5720,25 +5721,12 @@ export function CalendarGrid({
                         WebkitAppearance: matchedTipo ? "none" : undefined,
                       }}
                     >
-                      <option value="" style={{ color: "#0f172a", background: "#ffffff" }}>-- Sin evento --</option>
-                      <optgroup label="Eventos Generales">
-                        {tiposEventoConfig
-                          .filter((t) => t.categoria === "general" || !t.categoria)
-                          .map((t) => (
-                            <option key={t.codigo} value={t.codigo} style={{ color: t.color, background: "#ffffff", fontWeight: 800 }}>
-                              {t.codigo} - {t.nombre}
-                            </option>
-                          ))}
-                      </optgroup>
-                      <optgroup label="Eventos Específicos">
-                        {tiposEventoConfig
-                          .filter((t) => t.categoria === "especifico")
-                          .map((t) => (
-                            <option key={t.codigo} value={t.codigo} style={{ color: t.color, background: "#ffffff", fontWeight: 800 }}>
-                              {t.codigo} - {t.nombre}
-                            </option>
-                          ))}
-                      </optgroup>
+                      <option value="" style={{ color: "#0f172a", background: "#ffffff" }} />
+                      {(tiposEventoConfig && tiposEventoConfig.length > 0 ? tiposEventoConfig : tiposEvento).map((t) => (
+                        <option key={t.codigo} value={t.codigo} style={{ color: (t as any).color || "#0f172a", background: "#ffffff", fontWeight: 800 }}>
+                          {t.codigo}
+                        </option>
+                      ))}
                     </select>
 
                     {isCorner && (
