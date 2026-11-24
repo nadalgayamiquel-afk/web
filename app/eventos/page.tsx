@@ -75,6 +75,7 @@ const DEFAULT_JUGADORES: JugadorItem[] = [
 ];
 
 const DEFAULT_TIPOS_EVENTO_CONFIG: TipoEventoConfig[] = [
+  { codigo: "E", nombre: "Entrenamiento", color: "#ffffff", bg: "#1e3a8a", border: "#172554" },
   { codigo: "Co", nombre: "Coadyuvante", color: "#713f12", bg: "#fde047", border: "#eab308" },
   { codigo: "Op", nombre: "Campo", color: "#1e3a8a", bg: "#93c5fd", border: "#60a5fa" },
   { codigo: "Pa", nombre: "Partido", color: "#881337", bg: "#fecdd3", border: "#fda4af" },

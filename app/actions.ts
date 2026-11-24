@@ -1759,7 +1759,7 @@ export type TipoEventoConfig = {
 
 const DEFAULT_TIPOS_EVENTO_CONFIG: TipoEventoConfig[] = [
   // Generales
-  { codigo: "E", nombre: "Entrenamiento (E)", color: "#166534", bg: "#bbf7d0", border: "#86efac", categoria: "general" },
+  { codigo: "E", nombre: "Entrenamiento (E)", color: "#ffffff", bg: "#1e3a8a", border: "#172554", categoria: "general" },
   { codigo: "D", nombre: "Descanso (D)", color: "#334155", bg: "#e2e8f0", border: "#94a3b8", categoria: "general" },
   { codigo: "PL", nombre: "Partido Liga (PL)", color: "#881337", bg: "#fecdd3", border: "#fda4af", categoria: "general" },
   { codigo: "PAL", nombre: "Partido Amistoso Local (PAL)", color: "#881337", bg: "#fecdd3", border: "#fda4af", categoria: "general" },
@@ -1795,6 +1795,16 @@ export async function getTiposEventoConfig(): Promise<TipoEventoConfig[]> {
     if (dbTipos && dbTipos.length > 0) {
       return dbTipos.map((row: any) => {
         const found = DEFAULT_TIPOS_EVENTO_CONFIG.find(d => d.codigo.toLowerCase() === row.codigo.toLowerCase());
+        if (row.codigo.toUpperCase() === "E") {
+          return {
+            codigo: "E",
+            nombre: row.texto || found?.nombre || "Entrenamiento (E)",
+            color: "#ffffff",
+            bg: "#1e3a8a",
+            border: "#172554",
+            categoria: "general" as const,
+          };
+        }
         return {
           codigo: row.codigo,
           nombre: row.texto || found?.nombre || row.codigo,

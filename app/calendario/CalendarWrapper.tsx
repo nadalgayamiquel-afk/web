@@ -36,6 +36,25 @@ export function CalendarWrapper(props: {
         const cur = localStorage.getItem("tipos_evento_config_v1");
         if (!cur) {
           localStorage.setItem("tipos_evento_config_v1", JSON.stringify(props.initialTiposEventoConfig));
+        } else {
+          try {
+            const parsed = JSON.parse(cur);
+            if (Array.isArray(parsed)) {
+              let changed = false;
+              const next = parsed.map((t: any) => {
+                if (t.codigo === "E" || t.codigo === "e") {
+                  if (t.bg !== "#1e3a8a" || t.color !== "#ffffff") {
+                    changed = true;
+                    return { ...t, color: "#ffffff", bg: "#1e3a8a", border: "#172554" };
+                  }
+                }
+                return t;
+              });
+              if (changed) {
+                localStorage.setItem("tipos_evento_config_v1", JSON.stringify(next));
+              }
+            }
+          } catch (e) {}
         }
       }
       const RESTORE_VERSION = "rescued_post_oct13_v2";

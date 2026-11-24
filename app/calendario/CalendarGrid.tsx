@@ -171,7 +171,7 @@ export type JugadorItem = {
 };
 
 export const DEFAULT_TIPOS_EVENTO_CONFIG: TipoEventoConfig[] = [
-  { codigo: "E", nombre: "Entrenamiento (E)", color: "#166534", bg: "#bbf7d0", border: "#86efac", categoria: "general" },
+  { codigo: "E", nombre: "Entrenamiento (E)", color: "#ffffff", bg: "#1e3a8a", border: "#172554", categoria: "general" },
   { codigo: "D", nombre: "Descanso (D)", color: "#1e293b", bg: "#f1f5f9", border: "#cbd5e1", categoria: "general" },
   { codigo: "PL", nombre: "Partido Local (PL)", color: "#881337", bg: "#fecdd3", border: "#fda4af", categoria: "general" },
   { codigo: "PAL", nombre: "Partido Local (PAL)", color: "#881337", bg: "#fecdd3", border: "#fda4af", categoria: "general" },
@@ -2166,6 +2166,9 @@ export function CalendarGrid({
         if (saved) {
           const list: TipoEventoConfig[] = JSON.parse(saved);
           return list.map((t) => {
+            if (t.codigo === "E" || t.codigo.toLowerCase() === "e") {
+              return { ...t, color: "#ffffff", bg: "#1e3a8a", border: "#172554" };
+            }
             if (t.codigo === "Co" && (t.bg === "#fef3c7" || !t.bg)) {
               return { ...t, color: "#713f12", bg: "#fde047", border: "#eab308" };
             }
@@ -2182,7 +2185,14 @@ export function CalendarGrid({
 
   useEffect(() => {
     if (initialTiposEventoConfig && initialTiposEventoConfig.length > 0) {
-      setTiposEventoConfig(initialTiposEventoConfig);
+      setTiposEventoConfig(
+        initialTiposEventoConfig.map((t) => {
+          if (t.codigo === "E" || t.codigo.toLowerCase() === "e") {
+            return { ...t, color: "#ffffff", bg: "#1e3a8a", border: "#172554" };
+          }
+          return t;
+        })
+      );
     }
   }, [initialTiposEventoConfig]);
 
@@ -5662,8 +5672,12 @@ export function CalendarGrid({
                 const isDrag = isDragging && activeDragRow === "evento" && dragStartIdx !== null && dragCurrentIdx !== null && idx >= Math.min(dragStartIdx, dragCurrentIdx) && idx <= Math.max(dragStartIdx, dragCurrentIdx);
                 const isHovered = hoverCell?.rowKey === "evento" && hoverCell?.dayId === d.id;
                 const matchedTipo = isPre ? null : tiposEventoConfig.find((t) => t.codigo.toLowerCase() === evVal.toLowerCase());
-                const cellBg = matchedTipo ? matchedTipo.bg : isDrag ? "#bfdbfe" : isSel ? "#eff6ff" : (evVal ? "#f8fafc" : "#ffffff");
-                const textColor = matchedTipo ? matchedTipo.color : "#0f172a";
+                let cellBg = matchedTipo ? matchedTipo.bg : isDrag ? "#bfdbfe" : isSel ? "#eff6ff" : (evVal ? "#f8fafc" : "#ffffff");
+                let textColor = matchedTipo ? matchedTipo.color : "#0f172a";
+                if (evVal.toUpperCase() === "E") {
+                  cellBg = "#1e3a8a";
+                  textColor = "#ffffff";
+                }
                 const showControls = !isPre && Boolean(evVal || isSel || isHovered);
 
                 return (
@@ -5723,7 +5737,15 @@ export function CalendarGrid({
                     >
                       <option value="" style={{ color: "#0f172a", background: "#ffffff" }} />
                       {(tiposEventoConfig && tiposEventoConfig.length > 0 ? tiposEventoConfig : tiposEvento).map((t) => (
-                        <option key={t.codigo} value={t.codigo} style={{ color: (t as any).color || "#0f172a", background: "#ffffff", fontWeight: 800 }}>
+                        <option
+                          key={t.codigo}
+                          value={t.codigo}
+                          style={{
+                            color: t.codigo.toUpperCase() === "E" ? "#ffffff" : ((t as any).color || "#0f172a"),
+                            background: t.codigo.toUpperCase() === "E" ? "#1e3a8a" : "#ffffff",
+                            fontWeight: 800,
+                          }}
+                        >
                           {t.codigo}
                         </option>
                       ))}
