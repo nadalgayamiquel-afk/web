@@ -3247,7 +3247,7 @@ export default function EventosCalendarPage() {
                           </div>
                         )}
                         <div style={{ fontSize: "10.5px", fontWeight: 900, textTransform: "uppercase", color: "#000000", marginTop: "2px", lineHeight: 1.1, textAlign: "center" }}>
-                          {item.rival.replace(/\s*\([A-ZÁÉÍÓÚa-záéíóú0-9\s-]+\)\s*$/gi, "").trim()} <span className="no-print" style={{ fontSize: "9px" }}>✏️</span>
+                          {item.rival.replace(/\s*\([A-ZÁÉÍÓÚa-záéíóú0-9\s-]+\)\s*$/gi, "").trim()}
                         </div>
                       </div>
                     ))}
@@ -3268,7 +3268,7 @@ export default function EventosCalendarPage() {
                       🛡️
                     </div>
                     <div style={{ fontSize: "11px", fontWeight: 900, textTransform: "uppercase", color: "#000000", marginTop: "2px", lineHeight: 1.1 }}>
-                      AÑADIR RIVAL <span className="no-print" style={{ fontSize: "9px" }}>✏️</span>
+                      AÑADIR RIVAL
                     </div>
                   </div>
                 )}
