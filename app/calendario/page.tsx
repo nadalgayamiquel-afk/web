@@ -85,21 +85,21 @@ export default async function CalendarioPage() {
 
       return {
         ...d,
-        rival: d.rival !== undefined && d.rival !== null ? d.rival : (m?.rival || ""),
-        evento: d.evento !== undefined && d.evento !== null ? d.evento : (d.evento_am !== undefined && d.evento_am !== null ? d.evento_am : (m?.evento || m?.evento_am || null)),
-        evento_am: d.evento_am !== undefined && d.evento_am !== null ? d.evento_am : (d.evento !== undefined && d.evento !== null ? d.evento : (m?.evento_am || m?.evento || null)),
+        rival: d.rival ? d.rival.trim() : "",
+        evento: (d.evento_am && d.evento_am.trim()) || (d.evento && d.evento.trim()) || null,
+        evento_am: (d.evento_am && d.evento_am.trim()) || (d.evento && d.evento.trim()) || null,
         evento_1: b0?.tipo ? b0.tipo.trim() : null,
         evento_2: b1?.tipo ? b1.tipo.trim() : null,
         evento_3: b2?.tipo ? b2.tipo.trim() : null,
         evento_4: b3?.tipo ? b3.tipo.trim() : null,
         evento_5: b4?.tipo ? b4.tipo.trim() : null,
         evento_6: b5?.tipo ? b5.tipo.trim() : null,
-        md: d.md || m?.md || null,
-        carga: d.carga ?? m?.carga ?? null,
-        volumen: d.volumen ?? m?.volumen ?? null,
-        intensidad: d.intensidad ?? m?.intensidad ?? null,
-        comentario_microciclo: d.comentario_microciclo || m?.comentario_microciclo || null,
-        resultado_partido: d.resultado_partido || m?.resultado_partido || "",
+        md: d.md || null,
+        carga: d.carga ?? null,
+        volumen: d.volumen ?? null,
+        intensidad: d.intensidad ?? null,
+        comentario_microciclo: d.comentario_microciclo || null,
+        resultado_partido: d.resultado_partido || "",
       };
     }) as SesionDia[];
   }

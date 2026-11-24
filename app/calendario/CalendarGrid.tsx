@@ -2357,7 +2357,7 @@ export function CalendarGrid({
             if (!blockToSave) {
               blockToSave = eventosBloquesMap[key] || eventosBloquesMap[keyFecha];
             }
-            if (blockToSave) {
+            if (blockToSave && blockToSave.tipo && blockToSave.tipo.trim()) {
               await saveSingleBloqueBBDD({
                 dayId,
                 fecha,
@@ -2979,12 +2979,10 @@ export function CalendarGrid({
       const map: Record<string, { rival: string; evento: string }> = {};
       currentDays.forEach((d) => {
         if (d.fecha && d.fecha < "2026-10-01") return;
-        if (d.rival !== undefined || d.evento !== undefined) {
-          const entry = { rival: d.rival || "", evento: d.evento || "" };
-          map[d.id] = entry;
-          if (d.fecha) {
-            map[d.fecha] = entry;
-          }
+        const entry = { rival: d.rival ? d.rival.trim() : "", evento: d.evento ? d.evento.trim() : "" };
+        map[d.id] = entry;
+        if (d.fecha) {
+          map[d.fecha] = entry;
         }
       });
       localStorage.setItem("rival_evento_map_v1", JSON.stringify(map));
@@ -2999,113 +2997,17 @@ export function CalendarGrid({
     } catch (e) { return {}; }
   };
 
-  // Aplicar el mapa rival/evento al cargar (garantiza que nunca se pierdan)
-  useEffect(() => {
-    const rivalEventoMap = loadRivalEventoMap();
-    const ids = Object.keys(rivalEventoMap);
-    if (ids.length === 0) return;
-    setDays((prev) => {
-      let changed = false;
-      const updated = prev.map((d) => {
-        if (d.fecha && d.fecha < "2026-10-01") {
-          if (d.rival) {
-            changed = true;
-            return { ...d, rival: "" };
-          }
-          return d;
-        }
-        const saved = rivalEventoMap[d.id] || (d.fecha ? rivalEventoMap[d.fecha] : null);
-        if (!saved) return d;
-        const newRival = saved.rival !== undefined ? saved.rival : (d.rival || "");
-        const newEvento = saved.evento !== undefined ? saved.evento : (d.evento || "");
-        if (newRival !== d.rival || newEvento !== d.evento) {
-          changed = true;
-          return { ...d, rival: newRival, evento: newEvento };
-        }
-        return d;
-      });
-      return changed ? recalculateMDForDays(updated) : prev;
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Sincronizar días con Supabase: Supabase + localStorage combinados sin perder eventos
+  // Sincronizar días directamente desde Supabase sin que localStorages obsoletos revivan datos borrados
   useEffect(() => {
     if (initialDays && initialDays.length > 0) {
-      // Leer desde localStorage para fusionar los últimos cambios locales no sincronizados
-      let localDays: SesionDia[] | null = null;
+      setDays(initialDays);
       if (typeof window !== "undefined") {
         try {
-          const saved = localStorage.getItem("planificacion_days_v5");
-          if (saved) {
-            localDays = JSON.parse(saved);
-          }
+          localStorage.setItem("planificacion_days_v5", JSON.stringify(initialDays));
+          localStorage.setItem("planificacion_days_v2", JSON.stringify(initialDays));
+          saveRivalEventoMap(initialDays);
         } catch (e) {}
       }
-      const localMap = new Map<string, SesionDia>();
-      if (localDays) localDays.forEach((d) => localMap.set(d.id, d));
-
-      setDays((prevDays) => {
-        const map = new Map<string, SesionDia>();
-        // 1. Días oficiales del servidor (claves únicas canónicas por fecha)
-        initialDays.forEach((d) => {
-          if (d && d.fecha) map.set(d.fecha, d);
-        });
-
-        // 2. Fusionar estado local previo o localStorage por fecha
-        prevDays.forEach((d) => {
-          if (d && d.fecha) {
-            const existing = map.get(d.fecha);
-            const localDay = localDays ? localDays.find((ld) => ld.fecha === d.fecha || ld.id === d.id) : null;
-
-            const bestRival = (d.fecha && d.fecha < "2026-10-01")
-              ? ""
-              : (d.rival !== undefined ? d.rival : (localDay?.rival !== undefined ? localDay.rival : (existing?.rival || "")));
-            const bestResultado = d.resultado_partido !== undefined ? d.resultado_partido : (localDay?.resultado_partido !== undefined ? localDay.resultado_partido : (existing?.resultado_partido || ""));
-            const bestEvento = d.evento !== undefined ? d.evento : ((d as any).evento_am !== undefined ? (d as any).evento_am : (localDay?.evento !== undefined ? localDay.evento : (existing?.evento || existing?.evento_am || "")));
-            const bestEvento1 = d.evento_1 !== undefined ? d.evento_1 : (localDay?.evento_1 !== undefined ? localDay.evento_1 : (existing?.evento_1 ?? null));
-            const bestEvento2 = d.evento_2 !== undefined ? d.evento_2 : ((d as any).evento_pm !== undefined ? (d as any).evento_pm : (localDay?.evento_2 !== undefined ? localDay.evento_2 : (existing?.evento_2 ?? null)));
-            const bestEvento3 = d.evento_3 !== undefined ? d.evento_3 : (localDay?.evento_3 !== undefined ? localDay.evento_3 : (existing?.evento_3 ?? null));
-            const bestEvento4 = d.evento_4 !== undefined ? d.evento_4 : (localDay?.evento_4 !== undefined ? localDay.evento_4 : (existing?.evento_4 ?? null));
-            const bestEvento5 = d.evento_5 !== undefined ? d.evento_5 : (localDay?.evento_5 !== undefined ? localDay.evento_5 : (existing?.evento_5 ?? null));
-            const bestEvento6 = d.evento_6 !== undefined ? d.evento_6 : (localDay?.evento_6 !== undefined ? localDay.evento_6 : (existing?.evento_6 ?? null));
-            const bestCarga = d.carga !== undefined ? d.carga : (localDay?.carga !== undefined ? localDay.carga : (existing?.carga ?? null));
-            const bestVolumen = d.volumen !== undefined ? d.volumen : (localDay?.volumen !== undefined ? localDay.volumen : (existing?.volumen ?? null));
-            const bestIntensidad = d.intensidad !== undefined ? d.intensidad : (localDay?.intensidad !== undefined ? localDay.intensidad : (existing?.intensidad ?? null));
-            const bestSubperiodo = d.subperiodo !== undefined ? d.subperiodo : (localDay?.subperiodo !== undefined ? localDay.subperiodo : (existing?.subperiodo || ""));
-            const bestMD = d.md !== undefined ? d.md : (localDay?.md !== undefined ? localDay.md : (existing?.md || ""));
-            const bestComentario = d.comentario_microciclo !== undefined ? d.comentario_microciclo : (localDay?.comentario_microciclo !== undefined ? localDay.comentario_microciclo : (existing?.comentario_microciclo || null));
-
-            if (existing) {
-              map.set(d.fecha, {
-                ...existing,
-                id: existing.id || d.id, // Preservar siempre UUID oficial
-                equipo: existing.equipo || d.equipo || "CE EUROPA",
-                rival: bestRival,
-                resultado_partido: bestResultado,
-                evento: bestEvento,
-                evento_am: bestEvento,
-                evento_1: bestEvento1,
-                evento_2: bestEvento2,
-                evento_3: bestEvento3,
-                evento_4: bestEvento4,
-                evento_5: bestEvento5,
-                evento_6: bestEvento6,
-                carga: bestCarga,
-                volumen: bestVolumen,
-                intensidad: bestIntensidad,
-                subperiodo: bestSubperiodo,
-                md: bestMD,
-                comentario_microciclo: bestComentario,
-              });
-            } else {
-              map.set(d.fecha, d);
-            }
-          }
-        });
-        const dedupList = Array.from(map.values()).sort((a, b) => a.fecha.localeCompare(b.fecha));
-        return recalculateMDForDays(dedupList, eventosBloquesMap);
-      });
     }
   }, [initialDays]);
 
@@ -3308,7 +3210,9 @@ export function CalendarGrid({
         const rawDayRef = parts[0];
         const cleanDayRef = rawDayRef.replace(/^(?:day_|ev_)/, "");
         if (targetDates.has(rawDayRef) || targetDates.has(cleanDayRef) || targetIds.has(rawDayRef) || targetIds.has(cleanDayRef)) {
-          scopedBloques[k] = v;
+          if (v && v.tipo && v.tipo.trim()) {
+            scopedBloques[k] = v;
+          }
         }
       });
 
@@ -9313,31 +9217,56 @@ export function CalendarGrid({
               )}
             </div>
 
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
-              <button
-                onClick={() => setEscudoModalData(null)}
-                style={{ padding: "8px 14px", borderRadius: "8px", background: "#f1f5f9", border: "none", fontWeight: 700, cursor: "pointer", color: "#475569" }}
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleSaveEscudoModal}
-                disabled={isSavingEscudo}
-                style={{
-                  padding: "8px 18px",
-                  borderRadius: "8px",
-                  background: "#0284c7",
-                  color: "#ffffff",
-                  border: "none",
-                  fontWeight: 800,
-                  cursor: "pointer",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "6px"
-                }}
-              >
-                {isSavingEscudo ? "Guardando en BBDD..." : "💾 Guardar en BBDD"}
-              </button>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px" }}>
+              {escudoModalData.dayId ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleCellUpdate(escudoModalData.dayId!, "rival", "");
+                    setEscudoModalData(null);
+                  }}
+                  style={{
+                    padding: "8px 14px",
+                    borderRadius: "8px",
+                    background: "#fee2e2",
+                    border: "1px solid #fca5a5",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    color: "#991b1b",
+                    fontSize: "12px",
+                  }}
+                  title="Eliminar el rival y escudo asignados a este día"
+                >
+                  🗑️ Quitar de este día
+                </button>
+              ) : <div />}
+
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <button
+                  onClick={() => setEscudoModalData(null)}
+                  style={{ padding: "8px 14px", borderRadius: "8px", background: "#f1f5f9", border: "none", fontWeight: 700, cursor: "pointer", color: "#475569" }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleSaveEscudoModal}
+                  disabled={isSavingEscudo}
+                  style={{
+                    padding: "8px 18px",
+                    borderRadius: "8px",
+                    background: "#0284c7",
+                    color: "#ffffff",
+                    border: "none",
+                    fontWeight: 800,
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px"
+                  }}
+                >
+                  {isSavingEscudo ? "Guardando en BBDD..." : "💾 Guardar en BBDD"}
+                </button>
+              </div>
             </div>
           </div>
         </div>
