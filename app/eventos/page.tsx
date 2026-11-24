@@ -1020,90 +1020,93 @@ export default function EventosCalendarPage() {
       const f = day.dateStr;
       const dayMatches = filteredEventos.filter((ev) => {
         if (ev.fecha !== f) return false;
-        const isMatchCode = /^(?:PA|PAL|PAV|PL|PV|PAAM|PARTIDO|PARTIT)$/i.test(ev.codigo);
-        const isMatchName = /PARTIT|PARTIDO/i.test(ev.codigo + " " + ev.nombreCompleto) && !/PRE|POST|CAMPO|VIDEO|CHARLA|GYM/i.test(ev.codigo + " " + ev.nombreCompleto);
+        const code = (ev.codigo || "").toUpperCase();
+        const name = (ev.nombreCompleto || "").toUpperCase();
+        const isMatchCode = /^(?:PA|PAL|PAV|PL|PV|PAAM|PARTIDO|PARTIT)$/i.test(code);
+        const isMatchName = /PARTIT|PARTIDO/i.test(code + " " + name) && !/PRE|POST|CAMPO|VIDEO|CHARLA|GYM/i.test(code + " " + name);
         return ev.tipoCat === "partido" || isMatchCode || isMatchName;
       });
 
       const dbDay = dbDays.find((d: any) => d.fecha === f);
       const planDay = planDaysMap[f] || dbDay;
       const rivalMapEntry = rivalEventoMap[f];
-      const hasPlanMatch = Boolean(
-        (planDay && (
-          (planDay.rival && planDay.rival.trim()) ||
-          /^(?:PA|PAL|PAV|PL|PV|PAAM|PARTIDO|PARTIT)$/i.test(planDay.evento || planDay.evento_am || "") ||
-          planDay.md === "MD"
-        )) ||
-        (dbDay && (
-          (dbDay.rival && dbDay.rival.trim()) ||
-          /^(?:PA|PAL|PAV|PL|PV|PAAM|PARTIDO|PARTIT)$/i.test(dbDay.evento || dbDay.evento_am || "") ||
-          dbDay.md === "MD"
-        ))
+
+      // Un día tiene partido SÓLO SI hay un evento de partido real ese día en la programación
+      // o, si la programación está vacía, si el calendario marca explícitamente PL, PV, PA, PARTIDO o md="MD"
+      const planCode = (planDay?.evento || planDay?.evento_am || dbDay?.evento || dbDay?.evento_am || "").toUpperCase();
+      const isExplicitPlanMatch = /^(?:PA|PAL|PAV|PL|PV|PAAM|PARTIDO|PARTIT)$/i.test(planCode) || planDay?.md === "MD" || dbDay?.md === "MD";
+      const hasEventsThisDay = filteredEventos.some((e) => e.fecha === f);
+      const hasActualMatch = dayMatches.length > 0 || (!hasEventsThisDay && isExplicitPlanMatch);
+
+      if (!hasActualMatch) {
+        return; // No hay partido este día -> no se genera ningún escudo
+      }
+
+      let rivalName = "";
+      if (customRivalByDate[f]) {
+        rivalName = customRivalByDate[f];
+      } else if (rivalMapEntry?.rival && rivalMapEntry.rival.trim()) {
+        rivalName = rivalMapEntry.rival.trim();
+      } else if (planDay?.rival && planDay.rival.trim()) {
+        rivalName = planDay.rival.trim();
+      } else if (dbDay?.rival && dbDay.rival.trim()) {
+        rivalName = dbDay.rival.trim();
+      } else if (dayMatches.length > 0) {
+        const m = dayMatches[0];
+        let cand = (m.comentario || m.orientacion || "").trim();
+        if (cand && !/^JORNADA\s*\d+$/i.test(cand) && !/^2[ªa]\s*RONDA/i.test(cand)) {
+          rivalName = cand;
+        } else if (m.titulo) {
+          const clean = m.titulo.replace(/PARTIDO|PARTIT|OFICIAL|JORNADA\s*\d+|2[ªa]\s*RONDA/gi, "").replace(/·|-|vs/gi, " ").trim();
+          if (clean && !/^JORNADA\s*\d+$/i.test(clean) && !/^2[ªa]\s*RONDA/i.test(clean)) rivalName = clean;
+        }
+      }
+
+      // Si todavía no se encuentra el rival por nombre específico, asociar rival por fecha o microciclo oficial
+      if (!rivalName || rivalName.startsWith("RIVAL (")) {
+        const mText = (dayMatches[0]?.comentario || dayMatches[0]?.orientacion || dayMatches[0]?.titulo || "").toUpperCase();
+        if (mText.includes("2ª RONDA") || mText.includes("2A RONDA") || f === "2026-12-01") {
+          rivalName = "RAYO VALLECANO";
+        } else if (mText.includes("15") || f === "2026-12-06") {
+          rivalName = "ANTEQUERA CF";
+        } else if (mText.includes("14") || f === "2026-11-28") {
+          rivalName = "VILLARREAL CF B";
+        }
+      }
+
+      const diaAbrev = day.dayName.slice(0, 3).toUpperCase();
+      if (!rivalName) {
+        rivalName = `RIVAL (${diaAbrev})`;
+      }
+
+      const matchEv = dayMatches[0];
+      const code = (matchEv?.codigo || planDay?.evento || planDay?.evento_am || rivalMapEntry?.evento || dbDay?.evento || dbDay?.evento_am || "").toUpperCase();
+      const orient = (matchEv?.orientacion || planDay?.orientacion || dbDay?.orientacion || "").toUpperCase();
+      const lugar = (matchEv?.lugar || planDay?.lugar || dbDay?.lugar || "").toUpperCase();
+
+      const dayHasTravel = filteredEventos.some(
+        (e) => e.fecha === f && (/VIAJE|AEROPUERTO|AEROPORT|DESPLAZAMIENTO/i.test(e.codigo + " " + e.nombreCompleto + " " + (e.lugar || "")) || e.tipoCat === "viaje")
       );
 
-      if (dayMatches.length > 0 || hasPlanMatch || (rivalMapEntry && rivalMapEntry.rival) || (dbDay && dbDay.rival)) {
-        let rivalName = "";
-        if (customRivalByDate[f]) {
-          rivalName = customRivalByDate[f];
-        } else if (rivalMapEntry?.rival && rivalMapEntry.rival.trim()) {
-          rivalName = rivalMapEntry.rival.trim();
-        } else if (planDay?.rival && planDay.rival.trim()) {
-          rivalName = planDay.rival.trim();
-        } else if (dbDay?.rival && dbDay.rival.trim()) {
-          rivalName = dbDay.rival.trim();
-        } else if (dayMatches.length > 0) {
-          const m = dayMatches[0];
-          let cand = (m.comentario || m.orientacion || "").trim();
-          if (cand && !/^JORNADA\s*\d+$/i.test(cand) && !/^2[ªa]\s*RONDA/i.test(cand)) {
-            rivalName = cand;
-          } else if (m.titulo) {
-            const clean = m.titulo.replace(/PARTIDO|PARTIT|OFICIAL|JORNADA\s*\d+|2[ªa]\s*RONDA/gi, "").replace(/·|-|vs/gi, " ").trim();
-            if (clean && !/^JORNADA\s*\d+$/i.test(clean) && !/^2[ªa]\s*RONDA/i.test(clean)) rivalName = clean;
-          }
-        }
+      let isHome = true;
+      if (code === "PV" || code === "PAV" || orient.includes("VISITANTE") || orient.includes("FUERA") || lugar.includes("VISITANTE") || dayHasTravel || f === "2026-12-06") {
+        isHome = false;
+      } else if (code === "PL" || code === "PAL" || orient.includes("LOCAL") || orient.includes("CASA") || lugar.includes("SARDENYA")) {
+        isHome = true;
+      }
 
-        // Si todavía no se encuentra el rival por nombre específico, asociar rival por fecha o microciclo oficial
-        if (!rivalName || rivalName.startsWith("RIVAL (")) {
-          const mText = (dayMatches[0]?.comentario || dayMatches[0]?.orientacion || dayMatches[0]?.titulo || "").toUpperCase();
-          if (mText.includes("2ª RONDA") || mText.includes("2A RONDA") || f === "2026-12-01") {
-            rivalName = "RAYO VALLECANO";
-          } else if (mText.includes("15") || f === "2026-12-06") {
-            rivalName = "ANTEQUERA CF";
-          } else if (mText.includes("14") || f === "2026-11-28") {
-            rivalName = "VILLARREAL CF B";
-          }
-        }
+      const escudoUrl = findRivalEscudoUrl(rivalName);
 
-        const diaAbrev = day.dayName.slice(0, 3).toUpperCase();
-        if (!rivalName) {
-          rivalName = `RIVAL (${diaAbrev})`;
-        }
-
-        const matchEv = dayMatches[0];
-        const code = (matchEv?.codigo || planDay?.evento || planDay?.evento_am || rivalMapEntry?.evento || dbDay?.evento || dbDay?.evento_am || "").toUpperCase();
-        const orient = (matchEv?.orientacion || planDay?.orientacion || dbDay?.orientacion || "").toUpperCase();
-        const lugar = (matchEv?.lugar || planDay?.lugar || dbDay?.lugar || "").toUpperCase();
-
-        let isHome = true;
-        if (code === "PV" || code === "PAV" || orient.includes("VISITANTE") || orient.includes("FUERA") || lugar.includes("VISITANTE")) {
-          isHome = false;
-        } else if (code === "PL" || code === "PAL" || orient.includes("LOCAL") || orient.includes("CASA") || lugar.includes("SARDENYA")) {
-          isHome = true;
-        }
-
-        const escudoUrl = findRivalEscudoUrl(rivalName);
-
-        if (!seenFechas.has(f)) {
-          seenFechas.add(f);
-          result.push({
-            fecha: f,
-            diaSemana: diaAbrev,
-            rival: rivalName,
-            escudoUrl,
-            isHome,
-            matchEvent: matchEv,
-          });
-        }
+      if (!seenFechas.has(f)) {
+        seenFechas.add(f);
+        result.push({
+          fecha: f,
+          diaSemana: diaAbrev,
+          rival: rivalName,
+          escudoUrl,
+          isHome,
+          matchEvent: matchEv,
+        });
       }
     });
 
@@ -1343,10 +1346,15 @@ export default function EventosCalendarPage() {
       let isHome = true;
       if (rObj !== undefined) {
         isHome = rObj.isHome;
-      } else if (code === "PV" || code === "PAV" || orient.includes("VISITANTE") || orient.includes("FUERA") || lug.includes("VISITANTE")) {
-        isHome = false;
-      } else if (code === "PL" || code === "PAL" || orient.includes("LOCAL") || orient.includes("CASA") || lug.includes("SARDENYA")) {
-        isHome = true;
+      } else {
+        const dayHasTravel = filteredEventos.some(
+          (e) => e.fecha === ev.fecha && (/VIAJE|AEROPUERTO|AEROPORT|DESPLAZAMIENTO/i.test(e.codigo + " " + e.nombreCompleto + " " + (e.lugar || "")) || e.tipoCat === "viaje")
+        );
+        if (code === "PV" || code === "PAV" || orient.includes("VISITANTE") || orient.includes("FUERA") || lug.includes("VISITANTE") || dayHasTravel || ev.fecha === "2026-12-06") {
+          isHome = false;
+        } else if (code === "PL" || code === "PAL" || orient.includes("LOCAL") || orient.includes("CASA") || lug.includes("SARDENYA")) {
+          isHome = true;
+        }
       }
 
       const myClub = clubConfig?.nombreClub || activeTeam || "CE EUROPA";
