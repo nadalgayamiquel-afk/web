@@ -242,7 +242,22 @@
   {
     "id": "villarreal-b",
     "nombre": "VILLARREAL CF B",
-    "escudoUrl": "https://tmssl.akamaized.net/images/wappen/head/11972.png"
+    "escudoUrl": "/villarreal.png"
+  },
+  {
+    "id": "villareal-b",
+    "nombre": "VILLAREAL B",
+    "escudoUrl": "/villarreal.png"
+  },
+  {
+    "id": "villareal-cf-b",
+    "nombre": "VILLAREAL CF B",
+    "escudoUrl": "/villarreal.png"
+  },
+  {
+    "id": "villarreal-cf",
+    "nombre": "VILLARREAL CF",
+    "escudoUrl": "/villarreal.png"
   },
   {
     "id": "ce-hospitalet",

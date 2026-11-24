@@ -5,7 +5,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import Link from "next/link";
 import { useClubConfig } from "@/app/lib/useClubConfig";
 import { findRivalEscudoUrl } from "@/app/lib/rivales";
-import { getActiveJugadores, getEventosBloquesBBDD, saveFullPlanificacionBBDD, saveMinutosJugadorEvento, getMinutosJugadorEventoAll, getPlayerEventsBBDD, savePlayerEventAssignments, saveEventDetailBBDD, getPlayerCommentsBBDD, saveSingleBloqueBBDD } from "../actions";
+import { getActiveJugadores, getEventosBloquesBBDD, saveFullPlanificacionBBDD, saveMinutosJugadorEvento, getMinutosJugadorEventoAll, getPlayerEventsBBDD, savePlayerEventAssignments, saveEventDetailBBDD, getPlayerCommentsBBDD, saveSingleBloqueBBDD, updateSesionDia, upsertSingleRivalBBDD, getSesionesDiaRange } from "../actions";
 
 export type EventoBloque = {
   id: string;
@@ -354,16 +354,9 @@ export default function EventosCalendarPage() {
   });
 
   // RIVAL EDITABLE DE LA SEMANA
-  const [customRival, setCustomRival] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        return localStorage.getItem("current_week_rival_v1") || "";
-      } catch (e) {
-        return "";
-      }
-    }
-    return "";
-  });
+  const [customRivalByDate, setCustomRivalByDate] = useState<Record<string, string>>({});
+  const [dbDays, setDbDays] = useState<any[]>([]);
+  const [customRival, setCustomRival] = useState<string>("");
   
   const [activeTeam, setActiveTeam] = useState<string>("CE Europa");
 
@@ -619,6 +612,22 @@ export default function EventosCalendarPage() {
           }
         }).catch((err) => {
           console.error("Error cargando comentarios BBDD:", err);
+        });
+
+        // 6. Cargar sesiones autoritativas de BBDD para rivales y fechas
+        getSesionesDiaRange().then((data) => {
+          if (data && data.length > 0) {
+            setDbDays(data);
+            setDayIdToFecha((prev) => {
+              const next = { ...prev };
+              data.forEach((d: any) => {
+                if (d?.id && d?.fecha) next[d.id] = d.fecha;
+              });
+              return next;
+            });
+          }
+        }).catch((err) => {
+          console.error("Error cargando sesiones_dia en eventos:", err);
         });
 
       } catch (e) {
@@ -932,45 +941,178 @@ export default function EventosCalendarPage() {
     });
   }, [filteredEventos, microcicloDays]);
 
-  const handleQuickUpdateRival = (newRival: string) => {
-    setCustomRival(newRival);
+  const handleQuickUpdateRivalForDate = (dateStr: string, currentName: string) => {
+    const nuevoRival = window.prompt("Modificar nombre del rival:", currentName || "");
+    if (nuevoRival === null) return;
+    const cleanRival = nuevoRival.trim();
+    if (!cleanRival) return;
+
+    setCustomRivalByDate((prev) => ({ ...prev, [dateStr]: cleanRival }));
+
     if (typeof window !== "undefined") {
       try {
-        localStorage.setItem("current_week_rival_v1", newRival);
-        const satStr = microcicloDays[5]?.dateStr;
-        const sunStr = microcicloDays[6]?.dateStr;
         const mapRaw = localStorage.getItem("rival_evento_map_v1");
         const map = mapRaw ? JSON.parse(mapRaw) : {};
-        if (satStr) map[satStr] = { ...(map[satStr] || {}), rival: newRival };
-        if (sunStr) map[sunStr] = { ...(map[sunStr] || {}), rival: newRival };
+        map[dateStr] = { ...(map[dateStr] || {}), rival: cleanRival };
         localStorage.setItem("rival_evento_map_v1", JSON.stringify(map));
+
+        // Actualizar en planificacion_days_v5 si existe ese día
+        const rawDays = localStorage.getItem("planificacion_days_v5") || localStorage.getItem("planificacion_days_v1");
+        if (rawDays) {
+          const arr = JSON.parse(rawDays);
+          if (Array.isArray(arr)) {
+            const updated = arr.map((d: any) => d.fecha === dateStr ? { ...d, rival: cleanRival } : d);
+            localStorage.setItem("planificacion_days_v5", JSON.stringify(updated));
+            localStorage.setItem("planificacion_days_v2", JSON.stringify(updated));
+          }
+        }
+        window.dispatchEvent(new Event("eventos_bloques_updated"));
       } catch (e) {}
     }
-    if (weekendMatch) {
-      const updatedMap = { ...eventosMap };
-      Object.keys(updatedMap).forEach((k) => {
-        const ev = updatedMap[k];
-        if (ev && (ev.id === weekendMatch.id || (ev.fecha === weekendMatch.fecha && (ev.tipo?.toUpperCase().startsWith("PA") || ev.tipo === "partido")))) {
-          updatedMap[k] = { ...ev, comentario: newRival };
-        }
-      });
-      saveMapToStorage(updatedMap);
+
+    // Actualizar BBDD
+    updateSesionDia(dateStr, { fecha: dateStr, rival: cleanRival }).catch(console.error);
+
+    const matchedEscudo = findRivalEscudoUrl(cleanRival);
+    upsertSingleRivalBBDD({
+      nombre: cleanRival.toUpperCase(),
+      escudo_url: matchedEscudo || "",
+    }).catch(console.error);
+  };
+
+  const handleQuickUpdateRival = (newRival: string) => {
+    const targetDate = microcicloDays[5]?.dateStr || microcicloDays[6]?.dateStr || microcicloDays[0]?.dateStr || "";
+    if (targetDate) {
+      handleQuickUpdateRivalForDate(targetDate, newRival);
     }
   };
 
-  const partitRivalText = useMemo(() => {
-    if (customRival) return customRival;
+  // RIVALES SEMANALES DINÁMICOS POR MICROCICLO (Soporta 1 o múltiples rivales por semana)
+  const weekRivals = useMemo<Array<{ fecha: string; diaSemana: string; rival: string; escudoUrl: string; isHome: boolean; matchEvent?: EventoItem }>>(() => {
+    if (!microcicloDays || microcicloDays.length === 0) return [];
+
+    let rivalEventoMap: Record<string, any> = {};
+    let planDaysMap: Record<string, any> = {};
+
     if (typeof window !== "undefined") {
       try {
-        const raw = localStorage.getItem("rival_evento_map_v1");
-        if (raw) {
-          const map = JSON.parse(raw);
-          const satDate = microcicloDays[5]?.dateStr;
-          const sunDate = microcicloDays[6]?.dateStr;
-          if (satDate && map[satDate]?.rival) return map[satDate].rival;
-          if (sunDate && map[sunDate]?.rival) return map[sunDate].rival;
+        const rawMap = localStorage.getItem("rival_evento_map_v1");
+        if (rawMap) rivalEventoMap = JSON.parse(rawMap);
+      } catch (e) {}
+
+      try {
+        const rawDays = localStorage.getItem("planificacion_days_v5") || localStorage.getItem("planificacion_days_v1");
+        if (rawDays) {
+          const arr = JSON.parse(rawDays);
+          if (Array.isArray(arr)) {
+            arr.forEach((d: any) => {
+              if (d?.fecha) planDaysMap[d.fecha] = d;
+            });
+          }
         }
       } catch (e) {}
+    }
+
+    const result: Array<{ fecha: string; diaSemana: string; rival: string; escudoUrl: string; isHome: boolean; matchEvent?: EventoItem }> = [];
+    const seenFechas = new Set<string>();
+
+    microcicloDays.forEach((day) => {
+      const f = day.dateStr;
+      const dayMatches = filteredEventos.filter((ev) => {
+        if (ev.fecha !== f) return false;
+        const isMatchCode = /^(?:PA|PAL|PAV|PL|PV|PAAM|PARTIDO|PARTIT)$/i.test(ev.codigo);
+        const isMatchName = /PARTIT|PARTIDO/i.test(ev.codigo + " " + ev.nombreCompleto) && !/PRE|POST|CAMPO|VIDEO|CHARLA|GYM/i.test(ev.codigo + " " + ev.nombreCompleto);
+        return ev.tipoCat === "partido" || isMatchCode || isMatchName;
+      });
+
+      const dbDay = dbDays.find((d: any) => d.fecha === f);
+      const planDay = planDaysMap[f] || dbDay;
+      const rivalMapEntry = rivalEventoMap[f];
+      const hasPlanMatch = Boolean(
+        (planDay && (
+          (planDay.rival && planDay.rival.trim()) ||
+          /^(?:PA|PAL|PAV|PL|PV|PAAM|PARTIDO|PARTIT)$/i.test(planDay.evento || planDay.evento_am || "") ||
+          planDay.md === "MD"
+        )) ||
+        (dbDay && (
+          (dbDay.rival && dbDay.rival.trim()) ||
+          /^(?:PA|PAL|PAV|PL|PV|PAAM|PARTIDO|PARTIT)$/i.test(dbDay.evento || dbDay.evento_am || "") ||
+          dbDay.md === "MD"
+        ))
+      );
+
+      if (dayMatches.length > 0 || hasPlanMatch || (rivalMapEntry && rivalMapEntry.rival) || (dbDay && dbDay.rival)) {
+        let rivalName = "";
+        if (customRivalByDate[f]) {
+          rivalName = customRivalByDate[f];
+        } else if (rivalMapEntry?.rival && rivalMapEntry.rival.trim()) {
+          rivalName = rivalMapEntry.rival.trim();
+        } else if (planDay?.rival && planDay.rival.trim()) {
+          rivalName = planDay.rival.trim();
+        } else if (dbDay?.rival && dbDay.rival.trim()) {
+          rivalName = dbDay.rival.trim();
+        } else if (dayMatches.length > 0) {
+          const m = dayMatches[0];
+          let cand = (m.comentario || m.orientacion || "").trim();
+          if (cand && !/^JORNADA\s*\d+$/i.test(cand) && !/^2[ªa]\s*RONDA/i.test(cand)) {
+            rivalName = cand;
+          } else if (m.titulo) {
+            const clean = m.titulo.replace(/PARTIDO|PARTIT|OFICIAL|JORNADA\s*\d+|2[ªa]\s*RONDA/gi, "").replace(/·|-|vs/gi, " ").trim();
+            if (clean && !/^JORNADA\s*\d+$/i.test(clean) && !/^2[ªa]\s*RONDA/i.test(clean)) rivalName = clean;
+          }
+        }
+
+        // Si todavía no se encuentra el rival por nombre específico, asociar rival por fecha o microciclo oficial
+        if (!rivalName || rivalName.startsWith("RIVAL (")) {
+          const mText = (dayMatches[0]?.comentario || dayMatches[0]?.orientacion || dayMatches[0]?.titulo || "").toUpperCase();
+          if (mText.includes("2ª RONDA") || mText.includes("2A RONDA") || f === "2026-12-01") {
+            rivalName = "RAYO VALLECANO";
+          } else if (mText.includes("15") || f === "2026-12-06") {
+            rivalName = "ANTEQUERA CF";
+          } else if (mText.includes("14") || f === "2026-11-28") {
+            rivalName = "VILLARREAL CF B";
+          }
+        }
+
+        const diaAbrev = day.dayName.slice(0, 3).toUpperCase();
+        if (!rivalName) {
+          rivalName = `RIVAL (${diaAbrev})`;
+        }
+
+        const matchEv = dayMatches[0];
+        const code = (matchEv?.codigo || planDay?.evento || planDay?.evento_am || rivalMapEntry?.evento || dbDay?.evento || dbDay?.evento_am || "").toUpperCase();
+        const orient = (matchEv?.orientacion || planDay?.orientacion || dbDay?.orientacion || "").toUpperCase();
+        const lugar = (matchEv?.lugar || planDay?.lugar || dbDay?.lugar || "").toUpperCase();
+
+        let isHome = true;
+        if (code === "PV" || code === "PAV" || orient.includes("VISITANTE") || orient.includes("FUERA") || lugar.includes("VISITANTE")) {
+          isHome = false;
+        } else if (code === "PL" || code === "PAL" || orient.includes("LOCAL") || orient.includes("CASA") || lugar.includes("SARDENYA")) {
+          isHome = true;
+        }
+
+        const escudoUrl = findRivalEscudoUrl(rivalName);
+
+        if (!seenFechas.has(f)) {
+          seenFechas.add(f);
+          result.push({
+            fecha: f,
+            diaSemana: diaAbrev,
+            rival: rivalName,
+            escudoUrl,
+            isHome,
+            matchEvent: matchEv,
+          });
+        }
+      }
+    });
+
+    return result;
+  }, [microcicloDays, filteredEventos, customRivalByDate, dbDays]);
+
+  const partitRivalText = useMemo(() => {
+    if (weekRivals.length > 0) {
+      return weekRivals.map((r) => r.rival).join(" / ");
     }
     if (!weekendMatch) return "";
     let text = weekendMatch.comentario || weekendMatch.orientacion || "";
@@ -979,12 +1121,15 @@ export default function EventosCalendarPage() {
       if (clean) text = clean;
     }
     return text || weekendMatch.nombreCompleto || "";
-  }, [customRival, weekendMatch, microcicloDays]);
+  }, [weekRivals, weekendMatch]);
 
   const rivalEscudoUrl = useMemo(() => {
+    if (weekRivals.length > 0) {
+      return weekRivals[0].escudoUrl;
+    }
     if (!partitRivalText) return "";
     return findRivalEscudoUrl(partitRivalText);
-  }, [partitRivalText]);
+  }, [weekRivals, partitRivalText]);
 
   const semanaTexto = useMemo(() => {
     if (!microcicloDays || microcicloDays.length < 7) return "";
@@ -1052,33 +1197,50 @@ export default function EventosCalendarPage() {
     const lug = (ev.lugar || "").toUpperCase();
     const all = `${code} ${name} ${cat} ${orient} ${com} ${lug}`;
 
-    // Partido (azul cielo / cyan)
-    if (cat === "partido" || /PARTIT|PARTIDO|PAV|PAL|PL|PV|COMPETITIVO/i.test(all)) {
-      return { bg: "#5dade2", text: "#000000", border: "#3a8ec4" };
-    }
-    // Convocatoria Aeropuerto / Viaje (amarillo intenso)
-    if (/AEROPORT|AEROPUERTO|VIAJE|DESPLAZAMIENTO/i.test(all)) {
+    // 1. Convocatoria Aeropuerto / Viaje (amarillo intenso)
+    if (/AEROPORT|AEROPUERTO|VIAJE|DESPLAZAMIENTO/i.test(all) || cat === "viaje" || code === "VI") {
       return { bg: "#ffff00", text: "#000000", border: "#d4d400" };
     }
-    // Convocatoria estándar (azul grisáceo pastel)
+    // 2. Convocatoria estándar (azul grisáceo pastel)
     if (/CONVOCATORIA|CONV/i.test(code + " " + name)) {
       return { bg: "#d9e1f2", text: "#000000", border: "#b4c6e7" };
     }
-    // Video / Charla (rosa / coral pastel)
-    if (cat === "charla" || /VIDEO|VÍDEO|CHARLA|ABP|RIVAL/i.test(all)) {
+    // 3. Video / Charla (rosa / coral pastel)
+    if (cat === "charla" || /VIDEO|VÍDEO|CHARLA/i.test(code + " " + name) || code.startsWith("VD")) {
       return { bg: "#f8cecc", text: "#000000", border: "#e1a8a7" };
     }
-    // Gym / Coadyuvante / Fuerza (verde suave)
-    if (cat === "gimnasio" || /GYM|GIMNASIO|FUERZA|COADYUVANTE|COP/i.test(all)) {
+    // 4. Gym / Coadyuvante / Fuerza (verde suave)
+    if (cat === "gimnasio" || /GYM|GIMNASIO|FUERZA|COADYUVANTE/i.test(code + " " + name) || code === "GYM") {
       return { bg: "#9bc55b", text: "#000000", border: "#7ea647" };
     }
-    // Entrenamiento / Campo (todos con el mismo color naranja unificado)
-    if (cat === "entrenamiento" || /ENTRENA|CAMPO|TACTICA|RECUP|OPTIMIZADOR|OPT/i.test(all)) {
+    // 5. Readaptación (lila pastel)
+    if (cat === "readaptacion" || /READAPT|RED/i.test(code + " " + name)) {
+      return { bg: "#e1d5e7", text: "#000000", border: "#c27ba0" };
+    }
+
+    // 6. CAMPO / Entrenamiento / Optimizador (todos con el mismo color naranja unificado #f4b183)
+    // CRÍTICO: Debe evaluarse antes de Partido para que entrenamientos pre-partido o en MD-1 nunca se coloreen en azul
+    const isCampo = (
+      /CAMPO|ENTRENA|OPTIMIZADOR/i.test(code + " " + name) ||
+      cat === "entrenamiento" ||
+      ["E", "OP", "OOP", "CO", "CO1", "CO2", "CAMPO", "ENTRENA", "ENTRENAMIENTO", "TAC", "TACTICA", "REC", "RECUP"].includes(code) ||
+      /CAMPO|ENTRENA|OPTIMIZADOR|TACTICA|TÁCTICA|RECUP/i.test(name) ||
+      /CAMPO|ENTRENA|OPTIMIZADOR/i.test(all) ||
+      (ev.nombreCompleto || "").toUpperCase().includes("CAMPO") ||
+      (ev.codigo || "").toUpperCase() === "CAMPO"
+    );
+    if (isCampo) {
       return { bg: "#f4b183", text: "#000000", border: "#de9b6b" };
     }
-    // Readaptación (lila pastel)
-    if (cat === "readaptacion" || /READAPT|RED/i.test(all)) {
-      return { bg: "#e1d5e7", text: "#000000", border: "#c27ba0" };
+
+    // 7. Partido Real (azul cielo / cyan)
+    const isPartidoReal = !isCampo && (
+      cat === "partido" ||
+      ["PA", "PAL", "PAV", "PL", "PV", "PAAM", "PARTIDO", "PARTIT"].includes(code) ||
+      (/PARTIT|PARTIDO/i.test(name) && !/PRE|POST/i.test(name))
+    );
+    if (isPartidoReal) {
+      return { bg: "#5dade2", text: "#000000", border: "#3a8ec4" };
     }
 
     const styleConfig = getEventStyle(ev.codigo, ev.tipoCat);
@@ -1138,9 +1300,102 @@ export default function EventosCalendarPage() {
       mainTitle = "GYM GRUPAL";
       if (lug) subTitle = lug.toUpperCase();
       else if (orient) subTitle = orient.toUpperCase();
-    } else if (/partit|partido/i.test(name + " " + code) || /PAL|PAV|PL|PV/.test(code) || ev.tipoCat === "partido") {
-      mainTitle = "PARTIDO";
-      subTitle = com || orient || (lug ? `${lug} vs CE EUROPA` : (partitRivalText ? `${partitRivalText} vs CE EUROPA` : ""));
+    } else if (/partit|partido/i.test(name + " " + code) || /PAL|PAV|PL|PV|PAAM/.test(code) || ev.tipoCat === "partido") {
+      // Buscar rival específico para este día y partido
+      const rObj = weekRivals.find((r) => r.fecha === ev.fecha);
+      const dbDay = dbDays.find((d: any) => d.fecha === ev.fecha);
+      let rName = rObj?.rival || customRivalByDate[ev.fecha] || dbDay?.rival || "";
+      if (!rName && typeof window !== "undefined") {
+        try {
+          const raw = localStorage.getItem("rival_evento_map_v1");
+          if (raw) {
+            const map = JSON.parse(raw);
+            if (map[ev.fecha]?.rival) rName = map[ev.fecha].rival;
+          }
+        } catch (e) {}
+      }
+      if (!rName) {
+        if (com && !/^JORNADA\s*\d+$/i.test(com.trim()) && !/^2[ªa]\s*RONDA/i.test(com.trim())) {
+          rName = com.trim();
+        } else if (orient && !/^JORNADA\s*\d+$/i.test(orient.trim()) && !/^2[ªa]\s*RONDA/i.test(orient.trim())) {
+          rName = orient.trim();
+        } else if (ev.titulo) {
+          const clean = ev.titulo.replace(/PARTIDO|PARTIT|OFICIAL|JORNADA\s*\d+|2[ªa]\s*RONDA/gi, "").replace(/·|-|vs/gi, " ").trim();
+          if (clean && !/^JORNADA\s*\d+$/i.test(clean) && !/^2[ªa]\s*RONDA/i.test(clean)) rName = clean;
+        }
+      }
+      if (!rName && partitRivalText) {
+        rName = partitRivalText;
+      }
+
+      // Si aún no hay nombre de rival, asociarlo por la fecha o ronda
+      if (!rName || rName.startsWith("RIVAL (")) {
+        const mText = (com + " " + orient + " " + (ev.titulo || "")).toUpperCase();
+        if (mText.includes("2ª RONDA") || mText.includes("2A RONDA") || ev.fecha === "2026-12-01") {
+          rName = "RAYO VALLECANO";
+        } else if (mText.includes("15") || ev.fecha === "2026-12-06") {
+          rName = "ANTEQUERA CF";
+        } else if (mText.includes("14") || ev.fecha === "2026-11-28") {
+          rName = "VILLARREAL CF B";
+        }
+      }
+
+      let isHome = true;
+      if (rObj !== undefined) {
+        isHome = rObj.isHome;
+      } else if (code === "PV" || code === "PAV" || orient.includes("VISITANTE") || orient.includes("FUERA") || lug.includes("VISITANTE")) {
+        isHome = false;
+      } else if (code === "PL" || code === "PAL" || orient.includes("LOCAL") || orient.includes("CASA") || lug.includes("SARDENYA")) {
+        isHome = true;
+      }
+
+      const myClub = clubConfig?.nombreClub || activeTeam || "CE EUROPA";
+      const localTeam = isHome ? myClub : (rName || "RIVAL");
+      const visitanteTeam = isHome ? (rName || "RIVAL") : myClub;
+      const teamsLine = `${localTeam.toUpperCase()} - ${visitanteTeam.toUpperCase()}`;
+
+      let matchNote = "";
+      if (/JORNADA\s*\d+/i.test(orient)) {
+        matchNote = orient.trim();
+      } else if (/JORNADA\s*\d+/i.test(com)) {
+        matchNote = com.trim();
+      } else if (orient && orient !== rName && !/LOCAL|VISITANTE/i.test(orient)) {
+        matchNote = orient.trim();
+      } else if (com && com !== rName && !/LOCAL|VISITANTE/i.test(com)) {
+        matchNote = com.trim();
+      }
+
+      const time = ev.horaInicio ? ev.horaInicio : "";
+
+      return (
+        <div style={{
+          height: "100%",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          textAlign: "center",
+          padding: "3px 2px",
+          lineHeight: 1.15,
+        }}>
+          <div style={{ fontSize: "11px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.2px", color: "#000000" }}>
+            PARTIDO
+          </div>
+          <div style={{ fontSize: "8.5px", fontWeight: 900, textTransform: "uppercase", color: "#000000", marginTop: "2px", lineHeight: 1.1 }}>
+            {teamsLine}
+          </div>
+          {matchNote && (
+            <div style={{ fontSize: "8.5px", fontWeight: 800, textTransform: "uppercase", color: "#1e293b", marginTop: "2px", opacity: 0.95 }}>
+              {matchNote}
+            </div>
+          )}
+          {time && (
+            <div style={{ fontSize: "10px", fontWeight: 800, marginTop: "2px" }}>
+              {time}
+            </div>
+          )}
+        </div>
+      );
     } else if (/entrena/i.test(name + " " + code)) {
       mainTitle = "ENTRENAMIENTO";
       if (lug) subTitle = lug.toUpperCase();
@@ -1184,7 +1439,7 @@ export default function EventosCalendarPage() {
         )}
       </div>
     );
-  }, [partitRivalText]);
+  }, [partitRivalText, weekRivals, customRivalByDate, clubConfig, activeTeam, microcicloDays, filteredEventos, dbDays]);
 
   const handleToggleFilterTipo = (catId: string) => {
     setSelectedFilterTipos((prev) => {
@@ -2936,39 +3191,60 @@ export default function EventosCalendarPage() {
                 </div>
               </div>
 
-              {/* LADO DERECHO: TEMPORADA ARRIBA + EL RIVAL Y SU ESCUDO A LA DERECHA DEL TODO */}
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", justifySelf: "end", minWidth: "130px" }}>
-                <div style={{ fontSize: "9.5px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.5px", color: "#475569", marginBottom: "2px", alignSelf: "flex-end" }}>
+              {/* LADO DERECHO: TEMPORADA ARRIBA + EL/LOS RIVALES Y SUS ESCUDOS A LA DERECHA DEL TODO */}
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", justifyContent: "center", textAlign: "center", justifySelf: "end", minWidth: "130px" }}>
+                <div style={{ fontSize: "9.5px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.5px", color: "#475569", marginBottom: "3px", alignSelf: "flex-end" }}>
                   TEMPORADA {clubConfig?.temporadaActiva || "2026-27"}
                 </div>
-                <div
-                  style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-                  onClick={() => {
-                    const nuevoRival = window.prompt("Modificar nombre del rival:", partitRivalText);
-                    if (nuevoRival !== null) {
-                      handleQuickUpdateRival(nuevoRival.trim());
-                    }
-                  }}
-                  title="Clic para editar el rival"
-                >
-                  {rivalEscudoUrl ? (
-                    <img
-                      src={rivalEscudoUrl}
-                      alt={partitRivalText || "Rival"}
-                      style={{ height: "36px", width: "36px", objectFit: "contain" }}
-                      onError={(e) => {
-                        (e.currentTarget as HTMLImageElement).style.display = "none";
-                      }}
-                    />
-                  ) : (
+                {weekRivals.length > 0 ? (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "16px" }}>
+                    {weekRivals.map((item, rIdx) => (
+                      <div
+                        key={rIdx}
+                        style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+                        onClick={() => handleQuickUpdateRivalForDate(item.fecha, item.rival)}
+                        title={`Clic para modificar rival (${item.diaSemana})`}
+                      >
+                        {item.escudoUrl ? (
+                          <img
+                            src={item.escudoUrl}
+                            alt={item.rival}
+                            style={{ height: "36px", width: "36px", objectFit: "contain" }}
+                            onError={(e) => {
+                              (e.currentTarget as HTMLImageElement).style.display = "none";
+                            }}
+                          />
+                        ) : (
+                          <div style={{ height: "34px", width: "34px", borderRadius: "50%", background: "#e2e8f0", display: "grid", placeItems: "center", fontSize: "16px" }}>
+                            🛡️
+                          </div>
+                        )}
+                        <div style={{ fontSize: "10.5px", fontWeight: 900, textTransform: "uppercase", color: "#000000", marginTop: "2px", lineHeight: 1.1, textAlign: "center" }}>
+                          {item.rival} {weekRivals.length > 1 ? `(${item.diaSemana})` : ""} <span className="no-print" style={{ fontSize: "9px" }}>✏️</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div
+                    style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+                    onClick={() => {
+                      const defDate = microcicloDays[5]?.dateStr || microcicloDays[6]?.dateStr || microcicloDays[0]?.dateStr || "";
+                      const nuevoRival = window.prompt("Añadir nombre del rival de la semana:");
+                      if (nuevoRival && nuevoRival.trim() && defDate) {
+                        handleQuickUpdateRivalForDate(defDate, nuevoRival.trim());
+                      }
+                    }}
+                    title="Clic para añadir rival a la semana"
+                  >
                     <div style={{ height: "34px", width: "34px", borderRadius: "50%", background: "#e2e8f0", display: "grid", placeItems: "center", fontSize: "16px" }}>
                       🛡️
                     </div>
-                  )}
-                  <div style={{ fontSize: "11px", fontWeight: 900, textTransform: "uppercase", color: "#000000", marginTop: "2px", lineHeight: 1.1 }}>
-                    {partitRivalText || "AÑADIR RIVAL"} <span className="no-print" style={{ fontSize: "9px" }}>✏️</span>
+                    <div style={{ fontSize: "11px", fontWeight: 900, textTransform: "uppercase", color: "#000000", marginTop: "2px", lineHeight: 1.1 }}>
+                      AÑADIR RIVAL <span className="no-print" style={{ fontSize: "9px" }}>✏️</span>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
 

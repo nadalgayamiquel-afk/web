@@ -22,6 +22,7 @@ export const PRIMERA_RFEF_G2_2627: RivalConfig[] = [
   { id: "atletico-madrileno", nombre: "ATLÉTICO MADRILEÑO", escudoUrl: "https://tmssl.akamaized.net/images/wappen/head/3679.png" },
   { id: "cd-teruel", nombre: "CD TERUEL", escudoUrl: "https://tmssl.akamaized.net/images/wappen/head/19301.png" },
   { id: "ce-europa", nombre: "CE EUROPA", escudoUrl: "https://tmssl.akamaized.net/images/wappen/head/20528.png" },
+  { id: "rayo-vallecano", nombre: "RAYO VALLECANO", escudoUrl: "https://tmssl.akamaized.net/images/wappen/head/367.png" },
   { id: "rayo-majadahonda", nombre: "CF RAYO MAJADAHONDA", escudoUrl: "https://tmssl.akamaized.net/images/wappen/head/13702.png" },
   { id: "fc-cartagena", nombre: "FC CARTAGENA", escudoUrl: "https://tmssl.akamaized.net/images/wappen/head/7077.png" },
   { id: "nastic", nombre: "GIMNÀSTIC DE TARRAGONA", escudoUrl: "https://tmssl.akamaized.net/images/wappen/head/5648.png" },
@@ -34,7 +35,10 @@ export const PRIMERA_RFEF_G2_2627: RivalConfig[] = [
   { id: "sd-huesca", nombre: "SD HUESCA", escudoUrl: "https://tmssl.akamaized.net/images/wappen/head/5358.png" },
   { id: "ud-ibiza", nombre: "UD IBIZA", escudoUrl: "https://tmssl.akamaized.net/images/wappen/head/13241.png" },
   { id: "ue-sant-andreu", nombre: "UE SANT ANDREU", escudoUrl: "https://tmssl.akamaized.net/images/wappen/head/12697.png" },
-  { id: "villarreal-b", nombre: "VILLARREAL CF B", escudoUrl: "https://tmssl.akamaized.net/images/wappen/head/11972.png" }
+  { id: "villarreal-b", nombre: "VILLARREAL CF B", escudoUrl: "/villarreal.png" },
+  { id: "villareal-b", nombre: "VILLAREAL B", escudoUrl: "/villarreal.png" },
+  { id: "villareal-cf-b", nombre: "VILLAREAL CF B", escudoUrl: "/villarreal.png" },
+  { id: "villarreal-cf", nombre: "VILLARREAL CF", escudoUrl: "/villarreal.png" }
 ];
 
 
@@ -141,6 +145,32 @@ export function findRivalEscudoUrl(rivalName: string, rivalesList?: RivalConfig[
   const target = normalizeTeamName(rawTarget);
   if (!target) return "";
 
+  // 1. Reglas prioritarias absolutas para clubes específicos
+  if (target.includes("villarreal") || target.includes("villareal")) {
+    return "/villarreal.png";
+  }
+  if (target.includes("antequera")) {
+    return "https://tmssl.akamaized.net/images/wappen/head/16022.png";
+  }
+  if (target.includes("rayo") && !target.includes("majadahonda")) {
+    return "https://tmssl.akamaized.net/images/wappen/head/367.png";
+  }
+  if (target === "uesa" || target.includes("andreu")) {
+    return "https://tmssl.akamaized.net/images/wappen/head/12697.png";
+  }
+  if (target.includes("lleida")) {
+    return "https://tmssl.akamaized.net/images/wappen/head/92869.png";
+  }
+  if (target.includes("europa")) {
+    return "https://tmssl.akamaized.net/images/wappen/head/20528.png";
+  }
+  if (target.includes("hospitalet")) {
+    return "https://tmssl.akamaized.net/images/wappen/head/9477.png";
+  }
+  if (target.includes("sabadell")) {
+    return "https://tmssl.akamaized.net/images/wappen/head/11422.png";
+  }
+
   const sanitizeUrl = (url?: string): string => {
     if (!url) return "";
     const clean = url.trim();
@@ -153,14 +183,14 @@ export function findRivalEscudoUrl(rivalName: string, rivalesList?: RivalConfig[
     return clean;
   };
 
-  // 1. Coincidencia exacta normalizada
+  // 2. Coincidencia exacta normalizada (descartando placeholders SVG temporales)
   const exact = list.find((r) => normalizeTeamName(r.nombre) === target);
   if (exact && exact.escudoUrl && exact.escudoUrl.trim()) {
     const s = sanitizeUrl(exact.escudoUrl);
-    if (s && !s.includes("wikimedia.org")) return s;
+    if (s && !s.includes("wikimedia.org") && !s.startsWith("data:image/svg")) return s;
   }
 
-  // 2. Coincidencia de subcadena (si contiene o es contenido)
+  // 3. Coincidencia de subcadena (si contiene o es contenido)
   const partial = list.find((r) => {
     const rNorm = normalizeTeamName(r.nombre);
     if (rNorm.length < 3) return false;
@@ -168,24 +198,7 @@ export function findRivalEscudoUrl(rivalName: string, rivalesList?: RivalConfig[
   });
   if (partial && partial.escudoUrl && partial.escudoUrl.trim()) {
     const s = sanitizeUrl(partial.escudoUrl);
-    if (s && !s.includes("wikimedia.org")) return s;
-  }
-
-  // 3. Reglas especiales para variaciones de clubes
-  if (target === "uesa" || target.includes("andreu")) {
-    const r = list.find(x => x.id === "ue-sant-andreu" || x.id === "uesa");
-    if (r && r.escudoUrl) return r.escudoUrl;
-    return "https://tmssl.akamaized.net/images/wappen/head/12697.png";
-  }
-  if (target.includes("lleida")) {
-    const r = list.find(x => x.id === "atletic-lleida" || x.id === "at-lleida");
-    if (r && r.escudoUrl) return r.escudoUrl;
-    return "https://tmssl.akamaized.net/images/wappen/head/92869.png";
-  }
-  if (target.includes("europa")) {
-    const r = list.find(x => x.id === "ce-europa" || x.id === "europa");
-    if (r && r.escudoUrl) return r.escudoUrl;
-    return "https://tmssl.akamaized.net/images/wappen/head/20528.png";
+    if (s && !s.includes("wikimedia.org") && !s.startsWith("data:image/svg")) return s;
   }
   if (target.includes("hospitalet")) {
     const r = list.find(x => x.id === "ce-l-hospitalet" || x.id === "hospitalet");

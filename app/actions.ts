@@ -1748,26 +1748,99 @@ export async function fetchLiveWellnessSheet(sheetUrl?: string) {
   }
 }
 
+export type TipoEventoConfig = {
+  codigo: string;
+  nombre: string;
+  color: string;
+  bg: string;
+  border: string;
+  categoria?: "general" | "especifico";
+};
+
+const DEFAULT_TIPOS_EVENTO_CONFIG: TipoEventoConfig[] = [
+  // Generales
+  { codigo: "E", nombre: "Entrenamiento (E)", color: "#166534", bg: "#bbf7d0", border: "#86efac", categoria: "general" },
+  { codigo: "D", nombre: "Descanso (D)", color: "#334155", bg: "#e2e8f0", border: "#94a3b8", categoria: "general" },
+  { codigo: "PL", nombre: "Partido Liga (PL)", color: "#881337", bg: "#fecdd3", border: "#fda4af", categoria: "general" },
+  { codigo: "PAL", nombre: "Partido Amistoso Local (PAL)", color: "#881337", bg: "#fecdd3", border: "#fda4af", categoria: "general" },
+  { codigo: "PV", nombre: "Partido Viaje (PV)", color: "#881337", bg: "#fecdd3", border: "#fda4af", categoria: "general" },
+  { codigo: "PAV", nombre: "Partido Amistoso Visitante (PAV)", color: "#881337", bg: "#fecdd3", border: "#fda4af", categoria: "general" },
+  { codigo: "Vi", nombre: "Viaje (Vi)", color: "#ffffff", bg: "#475569", border: "#334155", categoria: "general" },
+  // Específicos
+  { codigo: "Co", nombre: "Coadyuvante (Co)", color: "#713f12", bg: "#fde047", border: "#eab308", categoria: "especifico" },
+  { codigo: "Op", nombre: "Campo (Op)", color: "#1e3a8a", bg: "#93c5fd", border: "#60a5fa", categoria: "especifico" },
+  { codigo: "Pa", nombre: "Partido (Pa)", color: "#881337", bg: "#fecdd3", border: "#fda4af", categoria: "especifico" },
+  { codigo: "PaAm", nombre: "Partido Amistoso (PaAm)", color: "#881337", bg: "#ffe4e6", border: "#fca5a5", categoria: "especifico" },
+  { codigo: "VD", nombre: "Video (VD)", color: "#713f12", bg: "#fef08a", border: "#fde047", categoria: "especifico" },
+  { codigo: "VD ABP", nombre: "Video ABP", color: "#713f12", bg: "#fef08a", border: "#fde047", categoria: "especifico" },
+  { codigo: "VD RIVAL", nombre: "Video Rival", color: "#713f12", bg: "#fef08a", border: "#fde047", categoria: "especifico" },
+  { codigo: "VD PROPIO", nombre: "Video Propio", color: "#713f12", bg: "#fef08a", border: "#fde047", categoria: "especifico" },
+  { codigo: "Red", nombre: "Readaptación (Red)", color: "#713f12", bg: "#fef9c3", border: "#fef08a", categoria: "especifico" },
+  { codigo: "Ot", nombre: "Otros (Ot)", color: "#1e293b", bg: "#e2e8f0", border: "#cbd5e1", categoria: "especifico" },
+  { codigo: "Va", nombre: "Valoraciones (Va)", color: "#7c2d12", bg: "#ffedd5", border: "#fed7aa", categoria: "especifico" },
+  { codigo: "Cop", nombre: "Coadyuvante Opcional (Cop)", color: "#ffffff", bg: "#d97706", border: "#b45309", categoria: "especifico" },
+  { codigo: "Oop", nombre: "Campo Opcional (Oop)", color: "#ffffff", bg: "#1e40af", border: "#1e3a8a", categoria: "especifico" },
+];
+
+export async function getTiposEventoConfig(): Promise<TipoEventoConfig[]> {
+  try {
+    const filePath = path.join(process.cwd(), "public", "tipos_evento.json");
+    if (fs.existsSync(filePath)) {
+      const content = fs.readFileSync(filePath, "utf-8");
+      const parsed = JSON.parse(content);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+    const supabase = getServerSupabase();
+    const { data: dbTipos } = await supabase.from("tipos_evento").select("*");
+    if (dbTipos && dbTipos.length > 0) {
+      return dbTipos.map((row: any) => {
+        const found = DEFAULT_TIPOS_EVENTO_CONFIG.find(d => d.codigo.toLowerCase() === row.codigo.toLowerCase());
+        return {
+          codigo: row.codigo,
+          nombre: row.texto || found?.nombre || row.codigo,
+          color: found?.color || "#0f172a",
+          bg: row.color || found?.bg || "#e2e8f0",
+          border: found?.border || "#cbd5e1",
+          categoria: found?.categoria || (/^(E|D|PL|PAL|PV|PAV|Vi)$/i.test(row.codigo) ? "general" : "especifico"),
+        };
+      });
+    }
+  } catch (e) {
+    console.warn("getTiposEventoConfig error:", e);
+  }
+  return DEFAULT_TIPOS_EVENTO_CONFIG;
+}
+
+export async function saveTiposEventoConfig(tipos: TipoEventoConfig[]) {
+  try {
+    const filePath = path.join(process.cwd(), "public", "tipos_evento.json");
+    fs.writeFileSync(filePath, JSON.stringify(tipos, null, 2), "utf-8");
+
+    const supabase = getServerSupabase();
+    const rows = tipos.map(t => ({
+      codigo: t.codigo,
+      texto: t.nombre || t.codigo,
+      color: t.bg || t.color || "#dbe5e2"
+    }));
+    await supabase.from("tipos_evento").upsert(rows, { onConflict: "codigo" });
+
+    return { success: true };
+  } catch (e: any) {
+    console.error("Error guardando tipos de evento:", e);
+    return { success: false, error: e?.message };
+  }
+}
+
 /**
  * Server Actions para Calendario / Planificación
  */
 export async function getTiposEvento() {
-  const supabase = getServerSupabase();
-  const { data, error } = await supabase.from("tipos_evento").select("*");
-  
-  const defaults = [
-    { codigo: "E", texto: "Entrenamiento", color: "#1e3a8a" },
-    { codigo: "PL", texto: "Partido Liga", color: "#dc2626" },
-    { codigo: "PAL", texto: "Partido Amistoso Local", color: "#b91c1c" },
-    { codigo: "PV", texto: "Partido Viaje", color: "#d97706" },
-    { codigo: "PAV", texto: "Partido Amistoso Visitante", color: "#ea580c" },
-    { codigo: "D", texto: "Descanso", color: "#64748b" },
-  ];
-
-  if (error || !data || data.length === 0) {
-    return defaults;
-  }
-  return data;
+  const config = await getTiposEventoConfig();
+  return config.map(t => ({
+    codigo: t.codigo,
+    texto: t.nombre || t.codigo,
+    color: t.bg || t.color || "#1e3a8a",
+  }));
 }
 
 export async function getSesionesDiaRange(desde?: string, hasta?: string, equipo?: string) {
@@ -1921,21 +1994,22 @@ export async function updateSesionDia(id: string, datos: Record<string, any>) {
   }
 
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-  let query = supabase.from("sesiones_dia").update(payload);
-  if (isUuid) {
-    query = query.eq("id", id);
-  } else if (datos.fecha) {
-    query = query.eq("fecha", datos.fecha);
-  } else {
-    const cleanDate = id.replace(/^day_/, "");
-    query = query.eq("fecha", cleanDate);
+  const realDayId = isUuid ? id : await resolveOrCreateSessionId(id, datos.fecha);
+  if (!realDayId) {
+    console.error("No se pudo resolver o crear sesión para updateSesionDia:", id, datos.fecha);
+    return { success: false, error: "Session could not be resolved or created" };
   }
-  const { error } = await query;
+
+  payload.id = realDayId;
+  if (datos.fecha) payload.fecha = datos.fecha;
+
+  const { error } = await supabase.from("sesiones_dia").upsert(payload, { onConflict: "id" });
 
   if (error) {
     console.error("Error al actualizar la sesión:", error.message);
     throw new Error(`Error BBDD: ${error.message}`);
   }
+  return { success: true };
 }
 
 export async function batchUpdateSesionesDia(updates: Array<{ id: string; datos: Record<string, any> }>) {
@@ -2350,36 +2424,20 @@ export async function saveFullPlanificacionBBDD(sessionsPayload: any[], comments
     const bloquesRows: any[] = [];
     const bloquesToDelete: any[] = [];
 
-    // 1. Detectar slots a eliminar dentro del ámbito de sesiones que se están guardando
-    sessionsPayload.forEach((s) => {
-      const dayId = s.id;
-      if (!dayId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(dayId)) return;
-      const fecha = s.fecha;
-      for (let slot = 0; slot < 6; slot++) {
-        const k1 = `${dayId}_slot_${slot}`;
-        const k2 = fecha ? `${fecha}_slot_${slot}` : "";
-        const k3 = fecha ? `day_${fecha}_slot_${slot}` : "";
-        const k4 = `ev_${dayId}_slot_${slot}`;
-        const blk = eventosBloquesMap ? (eventosBloquesMap[k1] || (k2 ? eventosBloquesMap[k2] : null) || (k3 ? eventosBloquesMap[k3] : null) || (eventosBloquesMap[k4] || null)) : null;
-        if (!blk || !blk.tipo || !blk.tipo.trim()) {
-          bloquesToDelete.push({ day_id: dayId, slot });
-        }
-      }
-    });
-
-    Object.keys(eventosBloquesMap).forEach((key) => {
+    // 1. Recopilar bloques y detectar slots explícitamente vacíos
+    for (const key of Object.keys(eventosBloquesMap)) {
       const block = eventosBloquesMap[key];
       const match = key.match(/(.+)_slot_(\d+)/);
       if (match && block) {
         let rawSesionId = match[1];
         if (rawSesionId.startsWith("ev_")) {
-            rawSesionId = rawSesionId.replace("ev_", "");
+          rawSesionId = rawSesionId.replace("ev_", "");
         }
         const slot = parseInt(match[2], 10);
         
         const dayId = getRealUuid(rawSesionId, block.fecha);
         const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(dayId);
-        
+
         if (isUuid) {
           const isEmpty = !block.tipo || !block.tipo.trim();
           if (!isEmpty) {
@@ -2402,13 +2460,34 @@ export async function saveFullPlanificacionBBDD(sessionsPayload: any[], comments
           }
         }
       }
-    });
+    }
 
     if (bloquesToDelete.length > 0) {
       const deleteKeyMap = new Map<string, { day_id: string; slot: number }>();
       bloquesToDelete.forEach((b) => deleteKeyMap.set(`${b.day_id}_${b.slot}`, b));
-      for (const b of deleteKeyMap.values()) {
-        await supabase.from("sesiones_dia_bloques").delete().match({ day_id: b.day_id, slot: b.slot });
+      const deleteDayIds = Array.from(new Set(Array.from(deleteKeyMap.values()).map(b => b.day_id)));
+
+      // Eliminar de forma ultra eficiente solo los bloques que realmente existen en BBDD
+      if (deleteDayIds.length > 0) {
+        for (let i = 0; i < deleteDayIds.length; i += 200) {
+          const chunkIds = deleteDayIds.slice(i, i + 200);
+          const { data: existingBloques } = await supabase
+            .from("sesiones_dia_bloques")
+            .select("id, day_id, slot")
+            .in("day_id", chunkIds);
+
+          if (existingBloques && existingBloques.length > 0) {
+            const idsToDelete = existingBloques
+              .filter(eb => deleteKeyMap.has(`${eb.day_id}_${eb.slot}`))
+              .map(eb => eb.id);
+
+            if (idsToDelete.length > 0) {
+              for (let j = 0; j < idsToDelete.length; j += 200) {
+                await supabase.from("sesiones_dia_bloques").delete().in("id", idsToDelete.slice(j, j + 200));
+              }
+            }
+          }
+        }
       }
     }
 
@@ -2420,15 +2499,15 @@ export async function saveFullPlanificacionBBDD(sessionsPayload: any[], comments
     const uniqueBloquesRows = Array.from(uniqueBloquesMap.values());
 
     if (uniqueBloquesRows.length > 0) {
-      const { error: errBloques } = await supabase.from("sesiones_dia_bloques").upsert(uniqueBloquesRows, { onConflict: "day_id,slot" });
-      if (errBloques) {
-        console.error("Error upserting bloques a Supabase:", errBloques.message);
-        try { require("fs").writeFileSync(path.join(process.cwd(), "public", "debug_error.json"), JSON.stringify(errBloques, null, 2)); } catch(e) {}
-      } else {
-        try { require("fs").writeFileSync(path.join(process.cwd(), "public", "debug_error.json"), JSON.stringify({ success: true, count: bloquesRows.length }, null, 2)); } catch(e) {}
+      for (let i = 0; i < uniqueBloquesRows.length; i += 200) {
+        const chunk = uniqueBloquesRows.slice(i, i + 200);
+        const { error: errBloques } = await supabase.from("sesiones_dia_bloques").upsert(chunk, { onConflict: "day_id,slot" });
+        if (errBloques) {
+          console.error("Error upserting bloques a Supabase:", errBloques.message);
+        }
       }
 
-      // Sincronizar automáticamente info del evento en sesiones_dia (bulk upsert en 1 sola consulta)
+      // Sincronizar automáticamente info del evento en sesiones_dia (bulk upsert en lotes)
       try {
         const dayUpdates = new Map<string, any>();
         uniqueBloquesRows.forEach((b) => {
@@ -2444,7 +2523,9 @@ export async function saveFullPlanificacionBBDD(sessionsPayload: any[], comments
 
         const dayRowsToUpdate = Array.from(dayUpdates.values());
         if (dayRowsToUpdate.length > 0) {
-          await supabase.from("sesiones_dia").upsert(dayRowsToUpdate, { onConflict: "id" });
+          for (let i = 0; i < dayRowsToUpdate.length; i += 200) {
+            await supabase.from("sesiones_dia").upsert(dayRowsToUpdate.slice(i, i + 200), { onConflict: "id" });
+          }
         }
       } catch (errSync: any) {
         console.error("Error syncing bloques to sesiones_dia:", errSync?.message);
@@ -2500,61 +2581,37 @@ export async function saveFullPlanificacionBBDD(sessionsPayload: any[], comments
     }
   }
 
-  // 7. Write-through: guardar comentarios en estado_diario_jugador y sesiones_dia
+  // 7. Write-through: sincronizar comentarios de equipo (TEAM) en sesiones_dia (los de jugadores ya se guardaron en lote en el paso 4)
   if (commentsPayload && commentsPayload.length > 0) {
     try {
+      const teamUpdatesMap = new Map<string, any>();
       for (const c of commentsPayload) {
         if (!c.texto || !c.texto.trim()) continue;
-        const rawDate = c.fecha || (c.day_id ? String(c.day_id).replace("d_", "") : null);
-        if (!rawDate) continue;
-        const sessionId = getRealUuid(c.day_id || rawDate, rawDate);
-        if (!sessionId) continue;
-
         if (c.jugador_id === "TEAM" || c.jugador_id === "team" || c.jugador_id === "EQUIPO") {
-          const teamUpdates: any = {};
-          if (c.tipo === "CON") {
-            teamUpdates.comentario_fisico = c.texto.trim();
-          } else {
-            teamUpdates.comentario_microciclo = c.texto.trim();
-            teamUpdates.comentario_tecnico = c.texto.trim();
-          }
-          await supabase.from("sesiones_dia").update(teamUpdates).eq("id", sessionId);
-        } else if (c.jugador_id) {
-          const colMap: Record<string, string> = {
-            WEL: "comentario_wellness",
-            FIS: "comentario_lesiones",
-            TEC: "comentario_tecnico",
-            CON: "comentario_fisico",
-            OTR: "comentario_medico",
-            PSI: "comentario_psicologico",
-            NUT: "comentario_nutricion",
-          };
-          const targetCol = colMap[c.tipo] || "comentario_lesiones";
-          const { data: exist } = await supabase
-            .from("estado_diario_jugador")
-            .select("id")
-            .match({ jugador_id: c.jugador_id, sesion_dia_id: sessionId })
-            .maybeSingle();
+          const rawDate = c.fecha || (c.day_id ? String(c.day_id).replace("d_", "") : null);
+          if (!rawDate) continue;
+          const sessionId = getRealUuid(c.day_id || rawDate, rawDate);
+          if (!sessionId) continue;
 
-          if (exist) {
-            await supabase
-              .from("estado_diario_jugador")
-              .update({ [targetCol]: c.texto.trim() })
-              .eq("id", exist.id);
+          const current = teamUpdatesMap.get(sessionId) || { id: sessionId };
+          if (c.tipo === "CON") {
+            current.comentario_fisico = c.texto.trim();
           } else {
-            await supabase
-              .from("estado_diario_jugador")
-              .insert({
-                jugador_id: c.jugador_id,
-                sesion_dia_id: sessionId,
-                [targetCol]: c.texto.trim(),
-                disponibilidad: "D",
-              });
+            current.comentario_microciclo = c.texto.trim();
+            current.comentario_tecnico = c.texto.trim();
           }
+          teamUpdatesMap.set(sessionId, current);
+        }
+      }
+
+      if (teamUpdatesMap.size > 0) {
+        const teamRows = Array.from(teamUpdatesMap.values());
+        for (let i = 0; i < teamRows.length; i += 200) {
+          await supabase.from("sesiones_dia").upsert(teamRows.slice(i, i + 200), { onConflict: "id" });
         }
       }
     } catch (e: any) {
-      console.error("Error guardando comentarios en BBDD:", e?.message);
+      console.error("Error guardando comentarios de equipo en BBDD:", e?.message);
     }
   }
 
@@ -2864,9 +2921,10 @@ export async function saveEventDetailBBDD(params: {
       .maybeSingle();
 
     if (!sesion) {
+      const activeClub = await getActiveClubName();
       const { data: newS, error: newSErr } = await supabase
         .from("sesiones_dia")
-        .insert({ fecha, equipo: "CE EUROPA", temporada: "2026/27" })
+        .insert({ fecha, equipo: activeClub })
         .select("id, evento_am, evento_pm")
         .single();
       if (newSErr) throw newSErr;
@@ -4760,18 +4818,12 @@ export async function saveSingleBloqueBBDD(params: {
   };
 }) {
   const supabase = getServerSupabase();
-  const realDayId = await resolveOrCreateSessionId(params.dayId, params.fecha);
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(params.dayId);
+  const realDayId = isUuid ? params.dayId : await resolveOrCreateSessionId(params.dayId, params.fecha);
   if (!realDayId) {
     console.error("No se pudo resolver o crear la sesión para bloque:", params.dayId, params.fecha);
     return { success: false, error: "Session could not be resolved or created" };
   }
-
-  // 1. Obtener bloque existente para fusionar características y nunca sobreescribir con null datos previos
-  const { data: existing } = await supabase
-    .from("sesiones_dia_bloques")
-    .select("*")
-    .match({ day_id: realDayId, slot: params.slot })
-    .maybeSingle();
 
   // Si se elimina explícitamente el tipo (vacío o null), el bloque queda cancelado/borrado de la BBDD
   if (!params.block.tipo || params.block.tipo.trim() === "") {
@@ -4781,37 +4833,51 @@ export async function saveSingleBloqueBBDD(params: {
     }
     return { success: true };
   }
-    // Si un campo no viene en params.block (undefined), preservamos el valor existente en BBDD
-    const finalTipo = params.block.tipo !== undefined ? (params.block.tipo || null) : (existing?.tipo || null);
-    const finalHora = params.block.hora !== undefined ? (params.block.hora || null) : (existing?.hora || null);
-    const finalLugar = params.block.lugar !== undefined ? (params.block.lugar || null) : (existing?.lugar || null);
-    const finalDuracion = params.block.duracion !== undefined ? (params.block.duracion ? String(params.block.duracion) : null) : (existing?.duracion ? String(existing.duracion) : null);
-    const finalOrientacion = params.block.orientacion !== undefined ? (params.block.orientacion || null) : (existing?.orientacion || null);
-    const finalCarga = params.block.carga !== undefined ? (params.block.carga || null) : (existing?.carga || null);
-    const finalComentario = params.block.comentario !== undefined ? (params.block.comentario || null) : (existing?.comentario || null);
-    const finalNumJugadores = params.block.num_jugadores !== undefined ? (params.block.num_jugadores || null) : (existing?.num_jugadores || null);
-    const finalCompeticion = params.block.competicion !== undefined ? (params.block.competicion || null) : (existing?.competicion || null);
 
-    const isAllEmpty = !finalTipo && !finalHora && !finalLugar && !finalDuracion && !finalOrientacion && !finalCarga && !finalComentario && !finalNumJugadores;
+  // 1. Obtener bloque existente solo si hay campos no definidos en block para no sobreescribir datos previos
+  const b = params.block;
+  let finalHora = b.hora !== undefined ? (b.hora || null) : undefined;
+  let finalLugar = b.lugar !== undefined ? (b.lugar || null) : undefined;
+  let finalDuracion = b.duracion !== undefined ? (b.duracion ? String(b.duracion) : null) : undefined;
+  let finalOrientacion = b.orientacion !== undefined ? (b.orientacion || null) : undefined;
+  let finalCarga = b.carga !== undefined ? (b.carga || null) : undefined;
+  let finalComentario = b.comentario !== undefined ? (b.comentario || null) : undefined;
+  let finalNumJugadores = b.num_jugadores !== undefined ? (b.num_jugadores || null) : undefined;
+  let finalCompeticion = b.competicion !== undefined ? (b.competicion || null) : undefined;
 
-    if (isAllEmpty) {
-      await supabase.from("sesiones_dia_bloques").delete().match({ day_id: realDayId, slot: params.slot });
-    } else {
-      await supabase.from("sesiones_dia_bloques").upsert({
-        day_id: realDayId,
-        fecha: params.fecha,
-        slot: params.slot,
-        tipo: finalTipo,
-        hora: finalHora,
-        lugar: finalLugar,
-        duracion: finalDuracion,
-        orientacion: finalOrientacion,
-        carga: finalCarga,
-        comentario: finalComentario,
-        num_jugadores: finalNumJugadores,
-        competicion: finalCompeticion,
-      }, { onConflict: "day_id,slot" });
-    }
+  const needsFetch = finalHora === undefined || finalLugar === undefined || finalDuracion === undefined ||
+    finalOrientacion === undefined || finalCarga === undefined || finalComentario === undefined;
+
+  let existing: any = null;
+  if (needsFetch) {
+    const { data } = await supabase
+      .from("sesiones_dia_bloques")
+      .select("*")
+      .match({ day_id: realDayId, slot: params.slot })
+      .maybeSingle();
+    existing = data;
+  }
+
+  const finalRow = {
+    day_id: realDayId,
+    fecha: params.fecha || null,
+    slot: params.slot,
+    tipo: b.tipo ? b.tipo.trim() : null,
+    hora: finalHora !== undefined ? finalHora : (existing?.hora || null),
+    lugar: finalLugar !== undefined ? finalLugar : (existing?.lugar || null),
+    duracion: finalDuracion !== undefined ? finalDuracion : (existing?.duracion ? String(existing.duracion) : null),
+    orientacion: finalOrientacion !== undefined ? finalOrientacion : (existing?.orientacion || null),
+    carga: finalCarga !== undefined ? finalCarga : (existing?.carga || null),
+    comentario: finalComentario !== undefined ? finalComentario : (existing?.comentario || null),
+    num_jugadores: finalNumJugadores !== undefined ? finalNumJugadores : (existing?.num_jugadores || null),
+    competicion: finalCompeticion !== undefined ? finalCompeticion : (existing?.competicion || null),
+  };
+
+  const { error } = await supabase.from("sesiones_dia_bloques").upsert(finalRow, { onConflict: "day_id,slot" });
+  if (error) {
+    console.error("Error al guardar bloque en BBDD:", error.message);
+    return { success: false, error: error.message };
+  }
 
   // Also sync slot info into sesiones_dia (carga, volumen, etc. Never touch evento_am which is Evento General)
   const sessionUpdates: Record<string, any> = {};

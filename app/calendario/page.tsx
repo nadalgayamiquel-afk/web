@@ -9,8 +9,8 @@ import {
   getMasterBrowserData,
 } from "@/app/lib/masterBackup";
 import Link from "next/link";
-import { getSesionesDiaRange, getTiposEvento, getActiveJugadores, getEstadoDiarioJugadores, getEventosBloquesBBDD } from "../actions";
-import type { SesionDia, TipoEvento } from "./CalendarGrid";
+import { getSesionesDiaRange, getTiposEvento, getTiposEventoConfig, getActiveJugadores, getEstadoDiarioJugadores, getEventosBloquesBBDD, TipoEventoConfig } from "../actions";
+import { type SesionDia, type TipoEvento, DEFAULT_TIPOS_EVENTO_CONFIG } from "./CalendarGrid";
 import { CalendarWrapper } from "./CalendarWrapper";
 import GenerateDaysModal from "./GenerateDaysModal";
 
@@ -19,13 +19,14 @@ export const dynamic = "force-dynamic";
 export default async function CalendarioPage() {
   let days: SesionDia[] = [];
   let tiposEvento: TipoEvento[] = [];
+  let tiposEventoConfig: TipoEventoConfig[] = DEFAULT_TIPOS_EVENTO_CONFIG;
   let jugadores: any[] = [];
   let estados: any[] = [];
   let bloques: Record<string, any> = {};
   let bbddAssignments: Record<string, string> = {};
 
   try {
-    const [rawDays, rawTipos, rawJugadores, rawBloques] = await Promise.all([
+    const [rawDays, rawTipos, rawTiposConfig, rawJugadores, rawBloques] = await Promise.all([
       getSesionesDiaRange().catch((e) => {
         console.warn("getSesionesDiaRange error:", e);
         return [];
@@ -33,6 +34,10 @@ export default async function CalendarioPage() {
       getTiposEvento().catch((e) => {
         console.warn("getTiposEvento error:", e);
         return [];
+      }),
+      getTiposEventoConfig().catch((e) => {
+        console.warn("getTiposEventoConfig error:", e);
+        return DEFAULT_TIPOS_EVENTO_CONFIG;
       }),
       getActiveJugadores().catch((e) => {
         console.warn("getActiveJugadores error:", e);
@@ -46,6 +51,7 @@ export default async function CalendarioPage() {
 
     days = (rawDays || []) as SesionDia[];
     tiposEvento = (rawTipos || []) as TipoEvento[];
+    tiposEventoConfig = (rawTiposConfig || DEFAULT_TIPOS_EVENTO_CONFIG) as TipoEventoConfig[];
     jugadores = rawJugadores || [];
     bloques = rawBloques || {};
 
@@ -193,6 +199,7 @@ export default async function CalendarioPage() {
         <CalendarWrapper
           initialDays={days}
           tiposEvento={tiposEvento}
+          initialTiposEventoConfig={tiposEventoConfig}
           initialJugadores={jugadores}
           initialEstados={estados}
           initialBloques={bloques}

@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useEffect } from "react";
-import type { SesionDia, TipoEvento, ComentarioJugadorDia } from "./CalendarGrid";
+import type { SesionDia, TipoEvento, ComentarioJugadorDia, TipoEventoConfig } from "./CalendarGrid";
 
 const CalendarGridClient = dynamic(
   () => import("./CalendarGrid").then((mod) => mod.CalendarGrid),
@@ -27,10 +27,17 @@ export function CalendarWrapper(props: {
   initialDisponibilidadMap?: Record<string, string>;
   initialMinutesMap?: Record<string, any>;
   initialBrowserData?: Record<string, any>;
+  initialTiposEventoConfig?: TipoEventoConfig[];
 }) {
   // Hidratar y restaurar en localStorage todos los datos reales post-12 de octubre antes de montar CalendarGrid
   if (typeof window !== "undefined") {
     try {
+      if (props.initialTiposEventoConfig && props.initialTiposEventoConfig.length > 0) {
+        const cur = localStorage.getItem("tipos_evento_config_v1");
+        if (!cur) {
+          localStorage.setItem("tipos_evento_config_v1", JSON.stringify(props.initialTiposEventoConfig));
+        }
+      }
       const RESTORE_VERSION = "rescued_post_oct13_v2";
       const alreadyRestored = localStorage.getItem("__master_restore_version__") === RESTORE_VERSION;
 

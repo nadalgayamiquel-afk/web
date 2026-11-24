@@ -2,7 +2,7 @@
 
 import { pruneStaleFutureLocalStorage } from "@/app/lib/cleanStorage";
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { updateSesionDia, batchUpdateSesionesDia, saveFullPlanificacionBBDD, updateEstadoDiarioJugador, fetchLiveWellnessSheet, updateFullBBDDRow, addLesion, forceBackupSyncDataLocal, getEventosBloquesBBDD, saveClubConfig, upsertSingleRivalBBDD, getRivalesBBDD, saveSingleBloqueBBDD, getPlayerEventsBBDD, updatePlayerEventAssignmentBBDD, savePlayerEventAssignments, savePlayerCommentBBDD, deletePlayerCommentBBDD, syncWellnessCommentsBatchBBDD } from "../actions";
+import { updateSesionDia, batchUpdateSesionesDia, saveFullPlanificacionBBDD, updateEstadoDiarioJugador, fetchLiveWellnessSheet, updateFullBBDDRow, addLesion, forceBackupSyncDataLocal, getEventosBloquesBBDD, saveClubConfig, upsertSingleRivalBBDD, getRivalesBBDD, saveSingleBloqueBBDD, getPlayerEventsBBDD, updatePlayerEventAssignmentBBDD, savePlayerEventAssignments, savePlayerCommentBBDD, deletePlayerCommentBBDD, syncWellnessCommentsBatchBBDD, saveTiposEventoConfig } from "../actions";
 import { getDisponibilidadInfo, CODIGOS_MANUALES, normalizeDisponibilidadCodigo } from "@/app/lib/disponibilidad";
 import LesionControlModal, { LesionFormData } from "./LesionControlModal";
 import { findRivalEscudoUrl, getStoredRivales, saveStoredRivales, RivalConfig, syncRivalesFromBBDD } from "@/app/lib/rivales";
@@ -157,6 +157,7 @@ export type TipoEventoConfig = {
   color: string;
   bg: string;
   border: string;
+  categoria?: "general" | "especifico";
 };
 
 export type JugadorItem = {
@@ -170,24 +171,26 @@ export type JugadorItem = {
 };
 
 export const DEFAULT_TIPOS_EVENTO_CONFIG: TipoEventoConfig[] = [
-  { codigo: "E", nombre: "Entrenamiento (E)", color: "#166534", bg: "#bbf7d0", border: "#86efac" },
-  { codigo: "Co", nombre: "Coadyuvante (Co)", color: "#713f12", bg: "#fde047", border: "#eab308" },
-  { codigo: "Op", nombre: "Campo (Op)", color: "#1e3a8a", bg: "#93c5fd", border: "#60a5fa" },
-  { codigo: "Pa", nombre: "Partido (Pa)", color: "#881337", bg: "#fecdd3", border: "#fda4af" },
-  { codigo: "PAL", nombre: "Partido Local (PAL)", color: "#881337", bg: "#fecdd3", border: "#fda4af" },
-  { codigo: "PAV", nombre: "Partido Visitante (PAV)", color: "#881337", bg: "#fecdd3", border: "#fda4af" },
-  { codigo: "PL", nombre: "Partido Local (PL)", color: "#881337", bg: "#fecdd3", border: "#fda4af" },
-  { codigo: "PV", nombre: "Partido Visitante (PV)", color: "#881337", bg: "#fecdd3", border: "#fda4af" },
-  { codigo: "Vi", nombre: "Viaje (Vi)", color: "#ffffff", bg: "#475569", border: "#334155" },
-  { codigo: "VD", nombre: "Video (VD)", color: "#713f12", bg: "#fef08a", border: "#fde047" },
-  { codigo: "VD ABP", nombre: "Video ABP", color: "#713f12", bg: "#fef08a", border: "#fde047" },
-  { codigo: "VD RIVAL", nombre: "Video Rival", color: "#713f12", bg: "#fef08a", border: "#fde047" },
-  { codigo: "Red", nombre: "Readaptación (Red)", color: "#713f12", bg: "#fef9c3", border: "#fef08a" },
-  { codigo: "Ot", nombre: "Otros (Ot)", color: "#1e293b", bg: "#e2e8f0", border: "#cbd5e1" },
-  { codigo: "Va", nombre: "Valoraciones (Va)", color: "#7c2d12", bg: "#ffedd5", border: "#fed7aa" },
-  { codigo: "Cop", nombre: "Coadyuvante Opcional (Cop)", color: "#ffffff", bg: "#d97706", border: "#b45309" },
-  { codigo: "Oop", nombre: "Campo Opcional (Oop)", color: "#ffffff", bg: "#1e40af", border: "#1e3a8a" },
-  { codigo: "PaAm", nombre: "Partido Amistoso (PaAm)", color: "#881337", bg: "#ffe4e6", border: "#fca5a5" },
+  { codigo: "E", nombre: "Entrenamiento (E)", color: "#166534", bg: "#bbf7d0", border: "#86efac", categoria: "general" },
+  { codigo: "D", nombre: "Descanso (D)", color: "#1e293b", bg: "#f1f5f9", border: "#cbd5e1", categoria: "general" },
+  { codigo: "PL", nombre: "Partido Local (PL)", color: "#881337", bg: "#fecdd3", border: "#fda4af", categoria: "general" },
+  { codigo: "PAL", nombre: "Partido Local (PAL)", color: "#881337", bg: "#fecdd3", border: "#fda4af", categoria: "general" },
+  { codigo: "PV", nombre: "Partido Visitante (PV)", color: "#881337", bg: "#fecdd3", border: "#fda4af", categoria: "general" },
+  { codigo: "PAV", nombre: "Partido Visitante (PAV)", color: "#881337", bg: "#fecdd3", border: "#fda4af", categoria: "general" },
+  { codigo: "Vi", nombre: "Viaje (Vi)", color: "#ffffff", bg: "#475569", border: "#334155", categoria: "general" },
+  { codigo: "Co", nombre: "Coadyuvante (Co)", color: "#713f12", bg: "#fde047", border: "#eab308", categoria: "especifico" },
+  { codigo: "Op", nombre: "Campo (Op)", color: "#1e3a8a", bg: "#93c5fd", border: "#60a5fa", categoria: "especifico" },
+  { codigo: "Pa", nombre: "Partido (Pa)", color: "#881337", bg: "#fecdd3", border: "#fda4af", categoria: "especifico" },
+  { codigo: "VD", nombre: "Video (VD)", color: "#713f12", bg: "#fef08a", border: "#fde047", categoria: "especifico" },
+  { codigo: "VD ABP", nombre: "Video ABP", color: "#713f12", bg: "#fef08a", border: "#fde047", categoria: "especifico" },
+  { codigo: "VD RIVAL", nombre: "Video Rival", color: "#713f12", bg: "#fef08a", border: "#fde047", categoria: "especifico" },
+  { codigo: "VD PROPIO", nombre: "Video Propio", color: "#713f12", bg: "#fef08a", border: "#fde047", categoria: "especifico" },
+  { codigo: "Red", nombre: "Readaptación (Red)", color: "#713f12", bg: "#fef9c3", border: "#fef08a", categoria: "especifico" },
+  { codigo: "Ot", nombre: "Otros (Ot)", color: "#1e293b", bg: "#e2e8f0", border: "#cbd5e1", categoria: "especifico" },
+  { codigo: "Va", nombre: "Valoraciones (Va)", color: "#7c2d12", bg: "#ffedd5", border: "#fed7aa", categoria: "especifico" },
+  { codigo: "Cop", nombre: "Coadyuvante Opcional (Cop)", color: "#ffffff", bg: "#d97706", border: "#b45309", categoria: "especifico" },
+  { codigo: "Oop", nombre: "Campo Opcional (Oop)", color: "#ffffff", bg: "#1e40af", border: "#1e3a8a", categoria: "especifico" },
+  { codigo: "PaAm", nombre: "Partido Amistoso (PaAm)", color: "#881337", bg: "#ffe4e6", border: "#fca5a5", categoria: "especifico" },
 ];
 
 export function autoCorrectEventoTipo(inputVal: string, tiposConfig: TipoEventoConfig[]): string {
@@ -421,6 +424,7 @@ type Props = {
   bbddPlayerAssignments?: Record<string, string>;
   initialComentarios?: ComentarioJugadorDia[];
   initialDisponibilidadMap?: Record<string, string>;
+  initialTiposEventoConfig?: TipoEventoConfig[];
 };
 
 // Formato de fecha corta: "lu. 20 jul"
@@ -691,8 +695,482 @@ function groupConsecutiveWeeks(
   return result;
 }
 
+function EventoDetailEditModal({
+  target,
+  tiposEventoConfig,
+  jugadoresList,
+  playerEventsMap,
+  onClose,
+  onSave,
+  onDelete,
+}: {
+  target: EventoBloque;
+  tiposEventoConfig: TipoEventoConfig[];
+  jugadoresList: JugadorItem[];
+  playerEventsMap: Record<string, string>;
+  onClose: () => void;
+  onSave: (updatedBlock: EventoBloque, assignedPlayerIds: Set<string>) => Promise<void>;
+  onDelete: () => Promise<void>;
+}) {
+  const [tipo, setTipo] = useState(target.tipo || "");
+  const [hora, setHora] = useState(target.hora || "");
+  const [lugar, setLugar] = useState(target.lugar || "");
+  const [duracion, setDuracion] = useState(target.duracion ? String(target.duracion) : "");
+  const [orientacion, setOrientacion] = useState(target.orientacion || "");
+  const [carga, setCarga] = useState(target.carga ? String(target.carga) : "");
+  const [comentario, setComentario] = useState(target.comentario || "");
+  const [competicion, setCompeticion] = useState(target.competicion || "");
+  const [playerSearch, setPlayerSearch] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // Inicializar jugadores convocados basados en playerEventsMap y target.slot / target.tipo
+  const [assignedPlayerIds, setAssignedPlayerIds] = useState<Set<string>>(() => {
+    const set = new Set<string>();
+    const code = (target.tipo || "").trim().toLowerCase();
+    const slotStr = String(target.slot + 1);
+
+    jugadoresList.forEach((j) => {
+      const pKey = `${j.id}_${target.day_id}`;
+      const pKeyFecha = `${j.id}_${target.fecha}`;
+      const val = playerEventsMap[pKey] !== undefined ? playerEventsMap[pKey] : playerEventsMap[pKeyFecha] || "";
+      if (val) {
+        const parts = val.toLowerCase().split(",").map((s) => s.trim());
+        if (code && parts.some((p) => p === code || p.startsWith(code) || p === slotStr)) {
+          set.add(j.id);
+        }
+      }
+    });
+    return set;
+  });
+
+  const togglePlayer = (id: string) => {
+    setAssignedPlayerIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAll = () => {
+    setAssignedPlayerIds(new Set(jugadoresList.map((j) => j.id)));
+  };
+
+  const deselectAll = () => {
+    setAssignedPlayerIds(new Set());
+  };
+
+  const matchedTipo = tiposEventoConfig.find((t) => t.codigo.toLowerCase() === tipo.trim().toLowerCase());
+
+  const filteredPlayers = useMemo(() => {
+    if (!playerSearch.trim()) return jugadoresList;
+    const q = playerSearch.toLowerCase().trim();
+    return jugadoresList.filter(
+      (j) =>
+        (j.nombre && j.nombre.toLowerCase().includes(q)) ||
+        (j.apodo && j.apodo.toLowerCase().includes(q)) ||
+        (j.posicion && j.posicion.toLowerCase().includes(q)) ||
+        (j.dorsal && String(j.dorsal).includes(q))
+    );
+  }, [jugadoresList, playerSearch]);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      const updated: EventoBloque = {
+        ...target,
+        tipo: tipo.trim(),
+        hora: hora.trim(),
+        lugar: lugar.trim(),
+        duracion: duracion.trim(),
+        orientacion: orientacion.trim(),
+        carga: carga.trim(),
+        comentario: comentario.trim(),
+        competicion: competicion.trim(),
+        num_jugadores: String(assignedPlayerIds.size),
+      };
+      await onSave(updated, assignedPlayerIds);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm("¿Estás seguro de que deseas eliminar este evento y desconvocar a sus jugadores?")) return;
+    setIsDeleting(true);
+    try {
+      await onDelete();
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  return (
+    <div
+      className="no-print"
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        width: "100vw",
+        height: "100vh",
+        background: "rgba(15, 23, 42, 0.65)",
+        backdropFilter: "blur(5px)",
+        zIndex: 9999,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "16px",
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          background: "#ffffff",
+          borderRadius: "16px",
+          padding: "24px",
+          width: "100%",
+          maxWidth: "680px",
+          maxHeight: "90vh",
+          overflowY: "auto",
+          boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.35)",
+          border: "1px solid #cbd5e1",
+          display: "flex",
+          flexDirection: "column",
+          gap: "16px",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* CABECERA */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #e2e8f0", paddingBottom: "12px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <span style={{ fontSize: "22px" }}>🔲</span>
+            <div>
+              <h3 style={{ margin: 0, fontSize: "17px", fontWeight: 900, color: "#0f172a" }}>
+                Gestión y Edición de la Sesión
+              </h3>
+              <p style={{ margin: "2px 0 0", fontSize: "12px", color: "#64748b", fontWeight: 700 }}>
+                Fecha: <span style={{ color: "#1e3a8a" }}>{formatDiaCorto(target.fecha)} ({target.fecha})</span> · Bloque #{target.slot + 1}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{ border: "none", background: "transparent", fontSize: "20px", cursor: "pointer", color: "#64748b" }}
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* PARÁMETROS DE LA SESIÓN */}
+        <div style={{ background: "#f8fafc", padding: "16px", borderRadius: "12px", border: "1px solid #e2e8f0" }}>
+          <div style={{ fontSize: "11.5px", fontWeight: 800, color: "#1e3a8a", textTransform: "uppercase", marginBottom: "12px", letterSpacing: "0.5px" }}>
+            1. Datos Generales de la Sesión
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr", gap: "10px", marginBottom: "10px" }}>
+            <div>
+              <label style={{ display: "block", fontSize: "10.5px", fontWeight: 800, color: "#475569", marginBottom: "4px" }}>
+                Tipo de Sesión *
+              </label>
+              <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                <select
+                  value={tipo}
+                  onChange={(e) => setTipo(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "7px 10px",
+                    borderRadius: "6px",
+                    border: "1px solid #cbd5e1",
+                    fontSize: "12px",
+                    fontWeight: 800,
+                    background: matchedTipo ? matchedTipo.bg : "#ffffff",
+                    color: matchedTipo ? matchedTipo.color : "#0f172a",
+                    outline: "none",
+                  }}
+                >
+                  <option value="">-- Sin tipo asignado --</option>
+                  <optgroup label="Eventos Generales">
+                    {tiposEventoConfig
+                      .filter((t) => t.categoria === "general" || !t.categoria)
+                      .map((t) => (
+                        <option key={t.codigo} value={t.codigo}>
+                          {t.codigo} - {t.nombre}
+                        </option>
+                      ))}
+                  </optgroup>
+                  <optgroup label="Eventos Específicos">
+                    {tiposEventoConfig
+                      .filter((t) => t.categoria === "especifico")
+                      .map((t) => (
+                        <option key={t.codigo} value={t.codigo}>
+                          {t.codigo} - {t.nombre}
+                        </option>
+                      ))}
+                  </optgroup>
+                </select>
+                {matchedTipo && (
+                  <span
+                    style={{
+                      padding: "4px 8px",
+                      borderRadius: "4px",
+                      fontSize: "11px",
+                      fontWeight: 900,
+                      background: matchedTipo.bg,
+                      color: matchedTipo.color,
+                      border: `1px solid ${matchedTipo.border}`,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {matchedTipo.codigo}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <label style={{ display: "block", fontSize: "10.5px", fontWeight: 800, color: "#475569", marginBottom: "4px" }}>
+                Hora
+              </label>
+              <input
+                type="text"
+                placeholder="ej. 10:30 o 17:00"
+                value={hora}
+                onChange={(e) => setHora(e.target.value)}
+                style={{ width: "100%", padding: "7px 10px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "12px", fontWeight: 700 }}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: "block", fontSize: "10.5px", fontWeight: 800, color: "#475569", marginBottom: "4px" }}>
+                Lugar / Campo
+              </label>
+              <input
+                type="text"
+                placeholder="ej. Campo 1, Gimnasio"
+                value={lugar}
+                onChange={(e) => setLugar(e.target.value)}
+                style={{ width: "100%", padding: "7px 10px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "12px", fontWeight: 700 }}
+              />
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr 1fr 1fr", gap: "10px", marginBottom: "10px" }}>
+            <div>
+              <label style={{ display: "block", fontSize: "10.5px", fontWeight: 800, color: "#475569", marginBottom: "4px" }}>
+                Duración (min)
+              </label>
+              <input
+                type="number"
+                placeholder="75"
+                value={duracion}
+                onChange={(e) => setDuracion(e.target.value)}
+                style={{ width: "100%", padding: "7px 10px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "12px", fontWeight: 700 }}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: "block", fontSize: "10.5px", fontWeight: 800, color: "#475569", marginBottom: "4px" }}>
+                Orientación / Fase
+              </label>
+              <input
+                type="text"
+                placeholder="ej. Táctico, Fuerza, ABP"
+                value={orientacion}
+                onChange={(e) => setOrientacion(e.target.value)}
+                style={{ width: "100%", padding: "7px 10px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "12px", fontWeight: 700 }}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: "block", fontSize: "10.5px", fontWeight: 800, color: "#475569", marginBottom: "4px" }}>
+                Carga
+              </label>
+              <input
+                type="text"
+                placeholder="ej. Media, 4, Alta"
+                value={carga}
+                onChange={(e) => setCarga(e.target.value)}
+                style={{ width: "100%", padding: "7px 10px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "12px", fontWeight: 700 }}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: "block", fontSize: "10.5px", fontWeight: 800, color: "#475569", marginBottom: "4px" }}>
+                Competición
+              </label>
+              <input
+                type="text"
+                placeholder="ej. Liga, Amistoso"
+                value={competicion}
+                onChange={(e) => setCompeticion(e.target.value)}
+                style={{ width: "100%", padding: "7px 10px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "12px", fontWeight: 700 }}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label style={{ display: "block", fontSize: "10.5px", fontWeight: 800, color: "#475569", marginBottom: "4px" }}>
+              Comentario / Contenido de la Sesión
+            </label>
+            <textarea
+              rows={2}
+              placeholder="Objetivos de la sesión, ejercicios principales o notas..."
+              value={comentario}
+              onChange={(e) => setComentario(e.target.value)}
+              style={{ width: "100%", padding: "7px 10px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "12px", fontWeight: 600, resize: "vertical" }}
+            />
+          </div>
+        </div>
+
+        {/* CONVOCATORIA DE JUGADORES */}
+        <div style={{ background: "#ffffff", padding: "14px", borderRadius: "12px", border: "1px solid #cbd5e1" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px", flexWrap: "wrap", gap: "8px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <span style={{ fontSize: "12px", fontWeight: 900, color: "#0f172a", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                👥 Convocatoria de Jugadores
+              </span>
+              <span style={{ padding: "2px 8px", borderRadius: "12px", background: "#e0f2fe", color: "#0284c7", fontSize: "11px", fontWeight: 900 }}>
+                {assignedPlayerIds.size} de {jugadoresList.length} convocados
+              </span>
+            </div>
+
+            <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+              <input
+                type="text"
+                placeholder="Buscar jugador..."
+                value={playerSearch}
+                onChange={(e) => setPlayerSearch(e.target.value)}
+                style={{ padding: "4px 8px", borderRadius: "4px", border: "1px solid #cbd5e1", fontSize: "11px" }}
+              />
+              <button
+                type="button"
+                onClick={selectAll}
+                style={{ padding: "4px 8px", borderRadius: "4px", border: "1px solid #cbd5e1", background: "#f8fafc", fontSize: "10.5px", fontWeight: 800, color: "#166534", cursor: "pointer" }}
+              >
+                ✓ Todos
+              </button>
+              <button
+                type="button"
+                onClick={deselectAll}
+                style={{ padding: "4px 8px", borderRadius: "4px", border: "1px solid #cbd5e1", background: "#f8fafc", fontSize: "10.5px", fontWeight: 800, color: "#991b1b", cursor: "pointer" }}
+              >
+                ✕ Ninguno
+              </button>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "6px", maxHeight: "200px", overflowY: "auto", padding: "4px" }}>
+            {filteredPlayers.map((j) => {
+              const isSelected = assignedPlayerIds.has(j.id);
+              return (
+                <div
+                  key={j.id}
+                  onClick={() => togglePlayer(j.id)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "6px 8px",
+                    borderRadius: "6px",
+                    border: isSelected ? "1.5px solid #0284c7" : "1px solid #e2e8f0",
+                    background: isSelected ? "#f0f9ff" : "#ffffff",
+                    cursor: "pointer",
+                    userSelect: "none",
+                    transition: "all 0.1s ease",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() => {}}
+                    style={{ cursor: "pointer", accentColor: "#0284c7" }}
+                  />
+                  <div style={{ minWidth: "22px", textAlign: "center", fontSize: "10px", fontWeight: 900, color: "#64748b" }}>
+                    {j.dorsal ? `#${j.dorsal}` : ""}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: "11.5px", fontWeight: isSelected ? 900 : 700, color: isSelected ? "#0369a1" : "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {j.apodo || j.nombre}
+                    </div>
+                  </div>
+                  {j.posicion && (
+                    <span style={{ fontSize: "9px", fontWeight: 800, color: "#475569", background: "#f1f5f9", padding: "1px 4px", borderRadius: "3px" }}>
+                      {j.posicion}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* PIE DE ACCIONES */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid #e2e8f0", paddingTop: "14px" }}>
+          <button
+            type="button"
+            disabled={isSaving || isDeleting}
+            onClick={handleDelete}
+            style={{
+              padding: "8px 14px",
+              borderRadius: "6px",
+              border: "1px solid #fecaca",
+              background: "#fef2f2",
+              color: "#dc2626",
+              fontSize: "12px",
+              fontWeight: 800,
+              cursor: isDeleting ? "not-allowed" : "pointer",
+            }}
+          >
+            {isDeleting ? "Borrando..." : "🗑️ Eliminar Sesión"}
+          </button>
+
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button
+              type="button"
+              disabled={isSaving || isDeleting}
+              onClick={onClose}
+              style={{
+                padding: "8px 16px",
+                borderRadius: "6px",
+                border: "1px solid #cbd5e1",
+                background: "#ffffff",
+                color: "#475569",
+                fontSize: "12px",
+                fontWeight: 800,
+                cursor: "pointer",
+              }}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              disabled={isSaving || isDeleting}
+              onClick={handleSave}
+              style={{
+                padding: "8px 20px",
+                borderRadius: "6px",
+                border: "none",
+                background: "#1e3a8a",
+                color: "#ffffff",
+                fontSize: "12px",
+                fontWeight: 900,
+                cursor: isSaving ? "not-allowed" : "pointer",
+                boxShadow: "0 2px 4px rgba(30, 58, 138, 0.25)",
+              }}
+            >
+              {isSaving ? "Guardando en BBDD..." : "💾 Guardar y Aplicar"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function CalendarGrid({
- initialDays, tiposEvento, initialJugadores = [], initialEstados = [], initialBloques = {}, bbddPlayerAssignments = {}, initialComentarios = [], initialDisponibilidadMap = {} }: Props) {
+ initialDays, tiposEvento, initialJugadores = [], initialEstados = [], initialBloques = {}, bbddPlayerAssignments = {}, initialComentarios = [], initialDisponibilidadMap = {}, initialTiposEventoConfig }: Props) {
 
   useEffect(() => {
     try {
@@ -1677,8 +2155,11 @@ export function CalendarGrid({
     }
   }, [filterEventoTipo]);
 
-  // Tipos de Eventos configurables (Image 2 + Editable)
+  // Tipos de Eventos configurables (Image 2 + Editable + Sincronizados con BBDD)
   const [tiposEventoConfig, setTiposEventoConfig] = useState<TipoEventoConfig[]>(() => {
+    if (initialTiposEventoConfig && initialTiposEventoConfig.length > 0) {
+      return initialTiposEventoConfig;
+    }
     if (typeof window !== "undefined") {
       try {
         const saved = localStorage.getItem("tipos_evento_config_v1");
@@ -1698,6 +2179,12 @@ export function CalendarGrid({
     }
     return DEFAULT_TIPOS_EVENTO_CONFIG;
   });
+
+  useEffect(() => {
+    if (initialTiposEventoConfig && initialTiposEventoConfig.length > 0) {
+      setTiposEventoConfig(initialTiposEventoConfig);
+    }
+  }, [initialTiposEventoConfig]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -1947,7 +2434,35 @@ export function CalendarGrid({
 
     for (let r = minR; r <= maxR; r++) {
       const rowKey = allInteractiveRows[r];
-      if (rowKey && rowKey.startsWith("evento_")) {
+      if (rowKey === "evento") {
+        const rowBlocks: EventoBloque[] = [];
+        const textCols: string[] = [];
+
+        for (let d = minD; d <= maxD; d++) {
+          const day = filteredDays[d];
+          if (day) {
+            const evVal = day.evento || "";
+            const block: EventoBloque = {
+              id: `ev_gen_${day.id}`,
+              day_id: day.id,
+              fecha: day.fecha,
+              slot: -1,
+              tipo: evVal,
+              hora: "",
+              lugar: "",
+              duracion: "",
+              orientacion: "",
+              carga: "",
+              comentario: "",
+              num_jugadores: "",
+            };
+            rowBlocks.push(block);
+            textCols.push(evVal);
+          }
+        }
+        matrix.push(rowBlocks);
+        textRows.push(textCols.join("\t"));
+      } else if (rowKey && rowKey.startsWith("evento_")) {
         const slotIdx = parseInt(rowKey.replace("evento_", "")) - 1;
         const rowBlocks: EventoBloque[] = [];
         const textCols: string[] = [];
@@ -2005,7 +2520,18 @@ export function CalendarGrid({
         if (targetR >= allInteractiveRows.length) return;
         const rowKey = allInteractiveRows[targetR];
 
-        if (rowKey && rowKey.startsWith("evento_")) {
+        if (rowKey === "evento") {
+          rowBlocks.forEach((srcBlock, cOffset) => {
+            const targetD = startD + cOffset;
+            if (targetD >= filteredDays.length) return;
+            const targetDay = filteredDays[targetD];
+            if (!targetDay) return;
+
+            const correctedVal = autoCorrectEventoTipo(srcBlock.tipo, tiposEventoConfig);
+            handleCellUpdate(targetDay.id, "evento", correctedVal);
+            updated = true;
+          });
+        } else if (rowKey && rowKey.startsWith("evento_")) {
           const slotIdx = parseInt(rowKey.replace("evento_", "")) - 1;
 
           rowBlocks.forEach((srcBlock, cOffset) => {
@@ -2079,8 +2605,20 @@ export function CalendarGrid({
         if (targetR >= allInteractiveRows.length) return;
         const rowKey = allInteractiveRows[targetR];
 
-        // Caso A: Pegar en filas de evento general (evento_1, evento_2...)
-        if (rowKey && rowKey.startsWith("evento_")) {
+        // Caso A: Pegar en filas de evento general (evento_1, evento_2...) o evento general global
+        if (rowKey === "evento") {
+          const cols = line.split("\t");
+          cols.forEach((colVal, cOffset) => {
+            const targetD = startD + cOffset;
+            if (targetD >= filteredDays.length) return;
+            const targetDay = filteredDays[targetD];
+            if (!targetDay) return;
+
+            const correctedVal = autoCorrectEventoTipo(colVal, tiposEventoConfig);
+            handleCellUpdate(targetDay.id, "evento", correctedVal);
+            updated = true;
+          });
+        } else if (rowKey && rowKey.startsWith("evento_")) {
           const slotIdx = parseInt(rowKey.replace("evento_", "")) - 1;
           const cols = line.split("\t");
           cols.forEach((colVal, cOffset) => {
@@ -2227,6 +2765,7 @@ export function CalendarGrid({
   const [newTipoColor, setNewTipoColor] = useState<string>("#78350f");
   const [newTipoBg, setNewTipoBg] = useState<string>("#fef3c7");
   const [newTipoBorder, setNewTipoBorder] = useState<string>("#fde68a");
+  const [newTipoCategoria, setNewTipoCategoria] = useState<"general" | "especifico">("especifico");
 
 
 
@@ -2736,6 +3275,192 @@ export function CalendarGrid({
     setPaConfigModalData(null);
   };
 
+  const handleSaveEventoDetail = async (updatedBlock: EventoBloque, assignedPlayerIds: Set<string>) => {
+    const dayId = updatedBlock.day_id;
+    const fecha = updatedBlock.fecha;
+    const slotIdx = updatedBlock.slot;
+
+    // 1. Actualizar el mapa de bloques en memoria y localStorage
+    const key = `${dayId}_slot_${slotIdx}`;
+    const keyFecha = `${fecha}_slot_${slotIdx}`;
+    setEventosBloquesMap((prev) => {
+      const next = {
+        ...prev,
+        [key]: updatedBlock,
+        [keyFecha]: updatedBlock,
+      };
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("eventos_bloques_map_v5", JSON.stringify(next));
+          window.dispatchEvent(new Event("eventos_bloques_updated"));
+          window.dispatchEvent(new Event("storage"));
+        } catch (e) {}
+      }
+      return next;
+    });
+
+    // 2. Si cambió el tipo o slot, sincronizar fila evento_X en days
+    if (slotIdx >= 0 && slotIdx < 6) {
+      const evKey = `evento_${slotIdx + 1}` as keyof SesionDia;
+      setDays((prev) =>
+        prev.map((d) => (d.id === dayId || d.fecha === fecha ? { ...d, [evKey]: updatedBlock.tipo } : d))
+      );
+    }
+
+    // 3. Guardar directamente en BBDD Supabase (sesiones_dia_bloques)
+    try {
+      await saveSingleBloqueBBDD({
+        dayId,
+        fecha,
+        slot: slotIdx,
+        block: updatedBlock,
+      });
+    } catch (err: any) {
+      console.error("Error guardando bloque en BBDD:", err?.message || err);
+    }
+
+    // 4. Actualizar asignación de jugadores convocados
+    const dailyInfo = getDailyTeamEventsMap(dayId, fecha);
+    const codeItem = dailyInfo.availableCodesList.find((item) => item.event.slot === slotIdx);
+    const targetCode = (codeItem?.codeLabel || updatedBlock.tipo || "").trim();
+
+    if (targetCode && jugadoresList.length > 0) {
+      const assignmentRows: Array<{ jugador_id: string; fecha: string; evento_asignado: string | null }> = [];
+      const nextPlayerMap = { ...playerEventsMap };
+
+      jugadoresList.forEach((j) => {
+        const isSelected = assignedPlayerIds.has(j.id);
+        const pKey = `${j.id}_${dayId}`;
+        const pKeyFecha = `${j.id}_${fecha}`;
+        const existingVal = playerEventsMap[pKey] !== undefined ? playerEventsMap[pKey] : playerEventsMap[pKeyFecha] || "";
+        let codes = existingVal ? existingVal.split(",").map((c) => c.trim()).filter(Boolean) : [];
+
+        if (isSelected) {
+          if (!codes.some((c) => c.toLowerCase() === targetCode.toLowerCase())) {
+            codes.push(targetCode);
+          }
+        } else {
+          codes = codes.filter(
+            (c) =>
+              c.toLowerCase() !== targetCode.toLowerCase() &&
+              c.toLowerCase() !== (updatedBlock.tipo || "").toLowerCase() &&
+              c.toLowerCase() !== `${(updatedBlock.tipo || "").toLowerCase()}${slotIdx + 1}`
+          );
+        }
+
+        const newVal = codes.join(", ");
+        nextPlayerMap[pKey] = newVal;
+        nextPlayerMap[pKeyFecha] = newVal;
+        assignmentRows.push({
+          jugador_id: j.id,
+          fecha,
+          evento_asignado: newVal || null,
+        });
+      });
+
+      setPlayerEventsMap(nextPlayerMap);
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("player_events_map_v1", JSON.stringify(nextPlayerMap));
+          window.dispatchEvent(new Event("player_events_updated"));
+        } catch (e) {}
+      }
+
+      savePlayerEventAssignments(assignmentRows).catch((err) =>
+        console.error("Error guardando asignaciones de jugadores en BBDD:", err)
+      );
+    }
+
+    setEventoDetailModalTarget(null);
+    setHasUnsavedChanges(false);
+    setLastSavedTime(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+  };
+
+  const handleDeleteEventoDetail = async () => {
+    if (!eventoDetailModalTarget) return;
+    const { day_id, fecha, slot } = eventoDetailModalTarget;
+
+    // 1. Limpiar de eventosBloquesMap
+    setEventosBloquesMap((prev) => {
+      const next = removeBlockFromBloquesMap(prev, day_id, fecha, slot);
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("eventos_bloques_map_v5", JSON.stringify(next));
+          window.dispatchEvent(new Event("eventos_bloques_updated"));
+          window.dispatchEvent(new Event("storage"));
+        } catch (e) {}
+      }
+      return next;
+    });
+
+    // 2. Limpiar fila evento_X en days
+    if (slot >= 0 && slot < 6) {
+      const evKey = `evento_${slot + 1}` as keyof SesionDia;
+      setDays((prev) =>
+        prev.map((d) => (d.id === day_id || d.fecha === fecha ? { ...d, [evKey]: "" } : d))
+      );
+    }
+
+    // 3. Guardar vaciado en BBDD
+    try {
+      await saveSingleBloqueBBDD({
+        dayId: day_id,
+        fecha,
+        slot,
+        block: { tipo: "" },
+      });
+    } catch (err: any) {
+      console.error("Error borrando bloque en BBDD:", err?.message || err);
+    }
+
+    // 4. Desconvocar a los jugadores asignados a este evento
+    const dailyInfo = getDailyTeamEventsMap(day_id, fecha);
+    const codeItem = dailyInfo.availableCodesList.find((item) => item.event.slot === slot);
+    const targetCode = (codeItem?.codeLabel || eventoDetailModalTarget.tipo || "").trim();
+
+    if (targetCode && jugadoresList.length > 0) {
+      const assignmentRows: Array<{ jugador_id: string; fecha: string; evento_asignado: string | null }> = [];
+      const nextPlayerMap = { ...playerEventsMap };
+
+      jugadoresList.forEach((j) => {
+        const pKey = `${j.id}_${day_id}`;
+        const pKeyFecha = `${j.id}_${fecha}`;
+        const existingVal = playerEventsMap[pKey] !== undefined ? playerEventsMap[pKey] : playerEventsMap[pKeyFecha] || "";
+        if (existingVal) {
+          const codes = existingVal
+            .split(",")
+            .map((c) => c.trim())
+            .filter(
+              (c) =>
+                c.toLowerCase() !== targetCode.toLowerCase() &&
+                c.toLowerCase() !== (eventoDetailModalTarget.tipo || "").toLowerCase()
+            );
+          const newVal = codes.join(", ");
+          nextPlayerMap[pKey] = newVal;
+          nextPlayerMap[pKeyFecha] = newVal;
+          assignmentRows.push({
+            jugador_id: j.id,
+            fecha,
+            evento_asignado: newVal || null,
+          });
+        }
+      });
+
+      setPlayerEventsMap(nextPlayerMap);
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("player_events_map_v1", JSON.stringify(nextPlayerMap));
+          window.dispatchEvent(new Event("player_events_updated"));
+        } catch (e) {}
+      }
+      savePlayerEventAssignments(assignmentRows).catch(console.error);
+    }
+
+    setEventoDetailModalTarget(null);
+    setHasUnsavedChanges(false);
+    setLastSavedTime(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+  };
+
   // Obtener eventos activos de un día ordenados por hora y resolver sus códigos asignados (ej. Co1, Co2, Op)
   const getDailyTeamEventsMap = React.useCallback(
     (dayId: string, fecha?: string) => {
@@ -2967,7 +3692,7 @@ export function CalendarGrid({
   }, [initialDays]);
 
   // Debounce refs para guardar datos en BBDD
-  const rivalEventoDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const daySaveDebounceRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const autoSaveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRivalEventoDaysRef = useRef<SesionDia[] | null>(null);
   const blockSaveDebounceRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
@@ -3144,11 +3869,9 @@ export function CalendarGrid({
 
   // Función para guardar toda la información en Almacenamiento Local + Base de Datos Supabase BBDD
   const handleSaveAllToBBDD = async () => {
-    // Cancelar cualquier debounce pendiente de rival/evento: saveFullPlanificacionBBDD lo cubre todo
-    if (rivalEventoDebounceRef.current) {
-      clearTimeout(rivalEventoDebounceRef.current);
-      rivalEventoDebounceRef.current = null;
-    }
+    // Cancelar cualquier debounce pendiente de días: saveFullPlanificacionBBDD lo cubre todo
+    daySaveDebounceRef.current.forEach((timer) => clearTimeout(timer));
+    daySaveDebounceRef.current.clear();
     pendingRivalEventoDaysRef.current = null;
 
     setIsSavingBBDD(true);
@@ -3529,12 +4252,13 @@ export function CalendarGrid({
         // El recálculo de MD de los días adyacentes se persiste en el siguiente "Guardar todo".
         const changedDay = recalculated.find((d) => d.id === dayId);
         if (changedDay) {
-          if (rivalEventoDebounceRef.current) {
-            clearTimeout(rivalEventoDebounceRef.current);
+          const existingTimer = daySaveDebounceRef.current.get(dayId);
+          if (existingTimer) {
+            clearTimeout(existingTimer);
           }
-          rivalEventoDebounceRef.current = setTimeout(async () => {
+          daySaveDebounceRef.current.set(dayId, setTimeout(async () => {
             try {
-              if (fieldKey === "evento" || fieldKey === "rival") {
+              if (fieldKey === "evento" || fieldKey === "rival" || fieldKey === "evento_am" || fieldKey === "evento_pm") {
                 const rivalVal = changedDay.rival && changedDay.rival.trim() ? changedDay.rival.trim() : null;
                 const eventoVal = changedDay.evento && changedDay.evento.trim() ? changedDay.evento.trim() : null;
                 await updateSesionDia(dayId, {
@@ -3598,13 +4322,14 @@ export function CalendarGrid({
                   }
                 }
               }
+              daySaveDebounceRef.current.delete(dayId);
               pendingRivalEventoDaysRef.current = null;
               setHasUnsavedChanges(false);
               setLastSavedTime(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
             } catch (e: any) {
               console.error("Error guardando rival/evento en BBDD:", e.message);
             }
-          }, 400);
+          }, 400));
         }
       } else if (VALID_DB_COLUMNS.includes(fieldKey as string)) {
         const changedDay = recalculated.find((d) => d.id === dayId);
@@ -4936,9 +5661,9 @@ export function CalendarGrid({
                 const isSel = selectedCell?.rowKey === "evento" && selectedCell?.dayId === d.id;
                 const isDrag = isDragging && activeDragRow === "evento" && dragStartIdx !== null && dragCurrentIdx !== null && idx >= Math.min(dragStartIdx, dragCurrentIdx) && idx <= Math.max(dragStartIdx, dragCurrentIdx);
                 const isHovered = hoverCell?.rowKey === "evento" && hoverCell?.dayId === d.id;
-                const matchedTipo = isPre ? null : tiposEvento.find((t) => t.codigo.toLowerCase() === evVal.toLowerCase());
-                const cellBg = matchedTipo ? matchedTipo.color : isDrag ? "#bfdbfe" : isSel ? "#eff6ff" : "#ffffff";
-                const textColor = matchedTipo ? "#ffffff" : "#64748b";
+                const matchedTipo = isPre ? null : tiposEventoConfig.find((t) => t.codigo.toLowerCase() === evVal.toLowerCase());
+                const cellBg = matchedTipo ? matchedTipo.bg : isDrag ? "#bfdbfe" : isSel ? "#eff6ff" : (evVal ? "#f8fafc" : "#ffffff");
+                const textColor = matchedTipo ? matchedTipo.color : "#0f172a";
                 const showControls = !isPre && Boolean(evVal || isSel || isHovered);
 
                 return (
@@ -4995,12 +5720,25 @@ export function CalendarGrid({
                         WebkitAppearance: matchedTipo ? "none" : undefined,
                       }}
                     >
-                      <option value="" style={{ color: "#0f172a", background: "#ffffff" }} />
-                      {tiposEvento.map((t) => (
-                        <option key={t.codigo} value={t.codigo} style={{ color: "#0f172a", background: "#ffffff", fontWeight: 800 }}>
-                          {t.codigo}
-                        </option>
-                      ))}
+                      <option value="" style={{ color: "#0f172a", background: "#ffffff" }}>-- Sin evento --</option>
+                      <optgroup label="Eventos Generales">
+                        {tiposEventoConfig
+                          .filter((t) => t.categoria === "general" || !t.categoria)
+                          .map((t) => (
+                            <option key={t.codigo} value={t.codigo} style={{ color: t.color, background: "#ffffff", fontWeight: 800 }}>
+                              {t.codigo} - {t.nombre}
+                            </option>
+                          ))}
+                      </optgroup>
+                      <optgroup label="Eventos Específicos">
+                        {tiposEventoConfig
+                          .filter((t) => t.categoria === "especifico")
+                          .map((t) => (
+                            <option key={t.codigo} value={t.codigo} style={{ color: t.color, background: "#ffffff", fontWeight: 800 }}>
+                              {t.codigo} - {t.nombre}
+                            </option>
+                          ))}
+                      </optgroup>
                     </select>
 
                     {isCorner && (
@@ -5062,10 +5800,6 @@ export function CalendarGrid({
                   const slotKeyFecha = `${d.fecha}_slot_${eventoIdx}`;
                   const evBlock = isPre ? null : (eventosBloquesMap[slotKey] || eventosBloquesMap[slotKeyFecha]);
                   let rawVal = isPre ? "" : (evBlock?.tipo || (d as any)[eventoKey] || "").trim();
-                  const EXCLUDED_SPECIFIC = new Set(["E", "PAL", "PV", "PL", "V", "PAV", "P"]);
-                  if (EXCLUDED_SPECIFIC.has(rawVal.toUpperCase()) || isPre) {
-                    rawVal = "";
-                  }
                   const currentVal = rawVal;
 
                   const matchedTipo = tiposEventoConfig.find(
@@ -8370,7 +9104,7 @@ export function CalendarGrid({
               <div style={{ fontSize: "12px", fontWeight: 800, color: "#1e3a8a", marginBottom: "10px", textTransform: "uppercase" }}>
                 {editingTipoItem ? `✏️ Editar Tipo: ${editingTipoItem.codigo}` : "➕ Añadir Nuevo Tipo de Evento"}
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "10px", marginBottom: "10px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr 1.2fr", gap: "10px", marginBottom: "10px" }}>
                 <div>
                   <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Código (Corta) *</label>
                   <input
@@ -8390,6 +9124,17 @@ export function CalendarGrid({
                     onChange={(e) => setNewTipoNombre(e.target.value)}
                     style={{ width: "100%", padding: "6px", borderRadius: "4px", border: "1px solid #cbd5e1", fontSize: "12px", fontWeight: 700 }}
                   />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>Categoría</label>
+                  <select
+                    value={newTipoCategoria}
+                    onChange={(e) => setNewTipoCategoria(e.target.value as "general" | "especifico")}
+                    style={{ width: "100%", padding: "6px", borderRadius: "4px", border: "1px solid #cbd5e1", fontSize: "12px", fontWeight: 700, background: "#ffffff" }}
+                  >
+                    <option value="especifico">Específico</option>
+                    <option value="general">General</option>
+                  </select>
                 </div>
               </div>
 
@@ -8463,23 +9208,30 @@ export function CalendarGrid({
                     if (!newTipoCodigo.trim() || !newTipoNombre.trim()) return;
                     const cleanCode = newTipoCodigo.trim();
 
+                    let nextList: TipoEventoConfig[];
                     if (editingTipoItem) {
-                      setTiposEventoConfig((prev) =>
-                        prev.map((t) =>
-                          t.codigo === editingTipoItem.codigo
-                            ? { codigo: cleanCode, nombre: newTipoNombre.trim(), color: newTipoColor, bg: newTipoBg, border: newTipoBorder }
-                            : t
-                        )
+                      nextList = tiposEventoConfig.map((t) =>
+                        t.codigo === editingTipoItem.codigo
+                          ? { codigo: cleanCode, nombre: newTipoNombre.trim(), color: newTipoColor, bg: newTipoBg, border: newTipoBorder, categoria: newTipoCategoria }
+                          : t
                       );
                       setEditingTipoItem(null);
                     } else {
-                      setTiposEventoConfig((prev) => [
-                        ...prev.filter((t) => t.codigo.toLowerCase() !== cleanCode.toLowerCase()),
-                        { codigo: cleanCode, nombre: newTipoNombre.trim(), color: newTipoColor, bg: newTipoBg, border: newTipoBorder },
-                      ]);
+                      nextList = [
+                        ...tiposEventoConfig.filter((t) => t.codigo.toLowerCase() !== cleanCode.toLowerCase()),
+                        { codigo: cleanCode, nombre: newTipoNombre.trim(), color: newTipoColor, bg: newTipoBg, border: newTipoBorder, categoria: newTipoCategoria },
+                      ];
                     }
+                    setTiposEventoConfig(nextList);
+                    if (typeof window !== "undefined") {
+                      try {
+                        localStorage.setItem("tipos_evento_config_v1", JSON.stringify(nextList));
+                      } catch (e) {}
+                    }
+                    saveTiposEventoConfig(nextList).catch(console.error);
                     setNewTipoCodigo("");
                     setNewTipoNombre("");
+                    setNewTipoCategoria("especifico");
                   }}
                   style={{ padding: "6px 14px", borderRadius: "4px", border: "none", background: "#1e3a8a", color: "#ffffff", fontSize: "11px", fontWeight: 800, cursor: "pointer" }}
                 >
@@ -8535,6 +9287,7 @@ export function CalendarGrid({
                         setNewTipoColor(t.color);
                         setNewTipoBg(t.bg);
                         setNewTipoBorder(t.border);
+                        setNewTipoCategoria(t.categoria || "especifico");
                       }}
                       style={{ padding: "4px 8px", borderRadius: "4px", border: "1px solid #cbd5e1", background: "#f8fafc", fontSize: "10.5px", fontWeight: 700, cursor: "pointer", color: "#0284c7" }}
                     >
@@ -8543,7 +9296,14 @@ export function CalendarGrid({
                     <button
                       type="button"
                       onClick={() => {
-                        setTiposEventoConfig((prev) => prev.filter((item) => item.codigo !== t.codigo));
+                        const nextList = tiposEventoConfig.filter((item) => item.codigo !== t.codigo);
+                        setTiposEventoConfig(nextList);
+                        if (typeof window !== "undefined") {
+                          try {
+                            localStorage.setItem("tipos_evento_config_v1", JSON.stringify(nextList));
+                          } catch (e) {}
+                        }
+                        saveTiposEventoConfig(nextList).catch(console.error);
                       }}
                       style={{ padding: "4px 8px", borderRadius: "4px", border: "1px solid #fecaca", background: "#fef2f2", fontSize: "10.5px", fontWeight: 700, cursor: "pointer", color: "#dc2626" }}
                     >
@@ -8558,8 +9318,14 @@ export function CalendarGrid({
               <button
                 type="button"
                 onClick={() => {
-                  if (window.confirm("¿Restablecer los tipos de evento a los valores predeterminados de la imagen de referencia?")) {
+                  if (window.confirm("¿Restablecer los tipos de evento a los valores predeterminados?")) {
                     setTiposEventoConfig(DEFAULT_TIPOS_EVENTO_CONFIG);
+                    if (typeof window !== "undefined") {
+                      try {
+                        localStorage.setItem("tipos_evento_config_v1", JSON.stringify(DEFAULT_TIPOS_EVENTO_CONFIG));
+                      } catch (e) {}
+                    }
+                    saveTiposEventoConfig(DEFAULT_TIPOS_EVENTO_CONFIG).catch(console.error);
                   }
                 }}
                 style={{ padding: "6px 10px", borderRadius: "4px", border: "1px solid #cbd5e1", background: "#ffffff", fontSize: "11px", fontWeight: 700, color: "#64748b", cursor: "pointer" }}
@@ -8578,112 +9344,17 @@ export function CalendarGrid({
         </div>
       )}
 
-      {/* MODAL 2: ACCEDER DENTRO DEL EVENTO / DETALLE DE SESIÓN (BOTÓN 🔲 EN FILA 9) */}
+      {/* MODAL 2: ACCEDER DENTRO DEL EVENTO / DETALLE Y EDICIÓN DE SESIÓN (BOTÓN 🔲 EN FILA 9) */}
       {eventoDetailModalTarget && (
-        <div
-          className="no-print"
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            width: "100vw",
-            height: "100vh",
-            background: "rgba(15, 23, 42, 0.6)",
-            backdropFilter: "blur(4px)",
-            zIndex: 9999,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "16px",
-          }}
-          onClick={() => setEventoDetailModalTarget(null)}
-        >
-          <div
-            style={{
-              background: "#ffffff",
-              borderRadius: "14px",
-              padding: "24px",
-              width: "100%",
-              maxWidth: "520px",
-              boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
-              border: "1px solid #cbd5e1",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px", borderBottom: "1px solid #e2e8f0", paddingBottom: "8px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <span style={{ fontSize: "18px" }}>🔲</span>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 900, color: "#0f172a" }}>
-                    Acceso al Interior del Evento
-                  </h3>
-                  <p style={{ margin: "2px 0 0", fontSize: "11.5px", color: "#64748b", fontWeight: 700 }}>
-                    Fecha: {formatDiaCorto(eventoDetailModalTarget.fecha)} · Bloque #{eventoDetailModalTarget.slot + 1}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setEventoDetailModalTarget(null)}
-                style={{ border: "none", background: "transparent", fontSize: "18px", cursor: "pointer", color: "#64748b" }}
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* RESUMEN DE LAS 9 CELDAS DEL EVENTO */}
-            <div style={{ background: "#f8fafc", padding: "14px", borderRadius: "10px", border: "1px solid #e2e8f0", marginBottom: "16px" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "10px", fontSize: "12px" }}>
-                <div>
-                  <strong style={{ color: "#64748b", fontSize: "10.5px", display: "block" }}>1. TIPO SESIÓN</strong>
-                  <span style={{ fontWeight: 900, color: "#1e3a8a" }}>{eventoDetailModalTarget.tipo || "Sin asignar"}</span>
-                </div>
-                <div>
-                  <strong style={{ color: "#64748b", fontSize: "10.5px", display: "block" }}>2. HORA</strong>
-                  <span style={{ fontWeight: 800, color: "#0f172a" }}>{eventoDetailModalTarget.hora || "—"}</span>
-                </div>
-                <div>
-                  <strong style={{ color: "#64748b", fontSize: "10.5px", display: "block" }}>3. LUGAR</strong>
-                  <span style={{ fontWeight: 800, color: "#0f172a" }}>{eventoDetailModalTarget.lugar || "—"}</span>
-                </div>
-                <div>
-                  <strong style={{ color: "#64748b", fontSize: "10.5px", display: "block" }}>4. DURACIÓN</strong>
-                  <span style={{ fontWeight: 800, color: "#0f172a" }}>{eventoDetailModalTarget.duracion ? `${eventoDetailModalTarget.duracion} min` : "—"}</span>
-                </div>
-                <div>
-                  <strong style={{ color: "#64748b", fontSize: "10.5px", display: "block" }}>5. ORIENTACIÓN</strong>
-                  <span style={{ fontWeight: 800, color: "#0f172a" }}>{eventoDetailModalTarget.orientacion || "—"}</span>
-                </div>
-                <div>
-                  <strong style={{ color: "#64748b", fontSize: "10.5px", display: "block" }}>6. CARGA</strong>
-                  <span style={{ fontWeight: 800, color: "#0f172a" }}>{eventoDetailModalTarget.carga || "—"}</span>
-                </div>
-                <div>
-                  <strong style={{ color: "#64748b", fontSize: "10.5px", display: "block" }}>7. COMENTARIO</strong>
-                  <span style={{ fontWeight: 800, color: "#0f172a" }}>{eventoDetailModalTarget.comentario || "—"}</span>
-                </div>
-                <div>
-                  <strong style={{ color: "#64748b", fontSize: "10.5px", display: "block" }}>8. Nº JUGADORES</strong>
-                  <span style={{ fontWeight: 800, color: "#0f172a" }}>{eventoDetailModalTarget.num_jugadores || "—"}</span>
-                </div>
-              </div>
-            </div>
-
-            <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", padding: "10px 12px", borderRadius: "8px", color: "#1e40af", fontSize: "11.5px", fontWeight: 700, marginBottom: "16px" }}>
-              💡 Esta casilla interactiva (celda 9 de Sesión) está preparada para acceder a la gestión detallada del evento (tareas, ejercicios, convocados y contenidos tácticos).
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px" }}>
-              <button
-                type="button"
-                onClick={() => setEventoDetailModalTarget(null)}
-                style={{ padding: "8px 16px", borderRadius: "6px", border: "none", background: "#1e3a8a", color: "#ffffff", fontSize: "12px", fontWeight: 800, cursor: "pointer" }}
-              >
-                Aceptar
-              </button>
-            </div>
-          </div>
-        </div>
+        <EventoDetailEditModal
+          target={eventoDetailModalTarget}
+          tiposEventoConfig={tiposEventoConfig}
+          jugadoresList={jugadoresList}
+          playerEventsMap={playerEventsMap}
+          onClose={() => setEventoDetailModalTarget(null)}
+          onSave={handleSaveEventoDetail}
+          onDelete={handleDeleteEventoDetail}
+        />
       )}
 
       {/* POPOVER SELECTOR DE EVENTO GLOBAL ÚNICO */}
