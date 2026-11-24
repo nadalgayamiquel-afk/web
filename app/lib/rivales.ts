@@ -35,10 +35,10 @@ export const PRIMERA_RFEF_G2_2627: RivalConfig[] = [
   { id: "sd-huesca", nombre: "SD HUESCA", escudoUrl: "https://tmssl.akamaized.net/images/wappen/head/5358.png" },
   { id: "ud-ibiza", nombre: "UD IBIZA", escudoUrl: "https://tmssl.akamaized.net/images/wappen/head/13241.png" },
   { id: "ue-sant-andreu", nombre: "UE SANT ANDREU", escudoUrl: "https://tmssl.akamaized.net/images/wappen/head/12697.png" },
-  { id: "villarreal-b", nombre: "VILLARREAL CF B", escudoUrl: "/villarreal.png" },
-  { id: "villareal-b", nombre: "VILLAREAL B", escudoUrl: "/villarreal.png" },
-  { id: "villareal-cf-b", nombre: "VILLAREAL CF B", escudoUrl: "/villarreal.png" },
-  { id: "villarreal-cf", nombre: "VILLARREAL CF", escudoUrl: "/villarreal.png" }
+  { id: "villarreal-b", nombre: "VILLARREAL CF B", escudoUrl: "https://tmssl.akamaized.net/images/wappen/head/1050.png" },
+  { id: "villareal-b", nombre: "VILLAREAL B", escudoUrl: "https://tmssl.akamaized.net/images/wappen/head/1050.png" },
+  { id: "villareal-cf-b", nombre: "VILLAREAL CF B", escudoUrl: "https://tmssl.akamaized.net/images/wappen/head/1050.png" },
+  { id: "villarreal-cf", nombre: "VILLARREAL CF", escudoUrl: "https://tmssl.akamaized.net/images/wappen/head/1050.png" }
 ];
 
 
@@ -147,7 +147,7 @@ export function findRivalEscudoUrl(rivalName: string, rivalesList?: RivalConfig[
 
   // 1. Reglas prioritarias absolutas para clubes específicos
   if (target.includes("villarreal") || target.includes("villareal")) {
-    return "/villarreal.png";
+    return "https://tmssl.akamaized.net/images/wappen/head/1050.png";
   }
   if (target.includes("antequera")) {
     return "https://tmssl.akamaized.net/images/wappen/head/16022.png";
