@@ -1095,7 +1095,7 @@ export default function EventosCalendarPage() {
 
       const diaAbrev = day.dayName.slice(0, 3).toUpperCase();
       if (!rivalName) {
-        rivalName = `RIVAL (${diaAbrev})`;
+        rivalName = "RIVAL";
       }
 
       const matchEv = dayMatches[0];
@@ -3247,7 +3247,7 @@ export default function EventosCalendarPage() {
                           </div>
                         )}
                         <div style={{ fontSize: "10.5px", fontWeight: 900, textTransform: "uppercase", color: "#000000", marginTop: "2px", lineHeight: 1.1, textAlign: "center" }}>
-                          {item.rival.replace(/\s*\([A-ZÁÉÍÓÚa-záéíóú]{3}\)\s*$/gi, "").trim()} {weekRivals.length > 1 ? `(${item.diaSemana})` : ""} <span className="no-print" style={{ fontSize: "9px" }}>✏️</span>
+                          {item.rival.replace(/\s*\([A-ZÁÉÍÓÚa-záéíóú0-9\s-]+\)\s*$/gi, "").trim()} <span className="no-print" style={{ fontSize: "9px" }}>✏️</span>
                         </div>
                       </div>
                     ))}
