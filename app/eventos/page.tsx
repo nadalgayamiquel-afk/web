@@ -227,6 +227,24 @@ const HOUR_SLOTS = [
 ];
 const HOUR_HEIGHT = 60;
 
+function toggleVideoTag(currentVal: string, tag: string): string {
+  const upper = (currentVal || "").toUpperCase().trim();
+  const tagsOrder = ["ABP", "RIVAL", "PROPIO", "INDIVIDUAL"];
+  let activeTags = tagsOrder.filter((t) => new RegExp(`\\b${t}\\b`, "i").test(upper));
+
+  if (activeTags.includes(tag)) {
+    activeTags = activeTags.filter((t) => t !== tag);
+  } else {
+    activeTags = [...activeTags, tag];
+    activeTags.sort((a, b) => tagsOrder.indexOf(a) - tagsOrder.indexOf(b));
+  }
+
+  if (activeTags.length === 0) return "";
+  if (activeTags.length === 1) return activeTags[0];
+  if (activeTags.length === 2) return `${activeTags[0]} Y ${activeTags[1]}`;
+  return activeTags.join(", ");
+}
+
 export default function EventosCalendarPage() {
   const clubConfig = useClubConfig();
   const [viewMode, setViewMode] = useState<"dia" | "microciclo" | "mesociclo" | "cronograma">("microciclo");
@@ -1451,7 +1469,7 @@ export default function EventosCalendarPage() {
         padding: "4px 2px",
         lineHeight: 1.25,
       }}>
-        <div style={{ fontSize: "11px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.2px" }}>
+        <div style={{ fontSize: mainTitle.length > 14 ? "9.5px" : "11px", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.2px", lineHeight: 1.15 }}>
           {mainTitle}
         </div>
         {subTitle && (
@@ -3431,57 +3449,49 @@ export default function EventosCalendarPage() {
               </tbody>
             </table>
 
-            {/* SECCIÓN INFERIOR OBSERVACIONES */}
+            {/* SECCIÓN INFERIOR OBSERVACIONES DIRECTAS */}
             <div
               className="programacio-obs"
               style={{
                 marginTop: "6px",
-                padding: "4px 2px",
+                padding: "6px 8px",
+                border: "1px solid #7f99b8",
+                background: "#ffffff",
                 color: "#000000",
                 boxSizing: "border-box",
+                borderRadius: "2px",
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <div style={{ fontSize: "11.5px", fontWeight: 900, color: "#000000" }}>
-                  Observaciones:
-                </div>
-                <button
-                  type="button"
-                  className="no-print"
-                  onClick={() => {
-                    const newObs = window.prompt("Editar observaciones de la semana:", pdfComment);
-                    if (newObs !== null) {
-                      setPdfComment(newObs);
-                      try { localStorage.setItem("programacio_obs_v1", newObs); } catch(e) {}
-                    }
-                  }}
-                  style={{ background: "none", border: "none", color: "#0284c7", fontSize: "11px", fontWeight: 800, cursor: "pointer" }}
-                >
-                  ✏️ Editar observaciones
-                </button>
+              <div style={{ fontSize: "11.5px", fontWeight: 900, color: "#000000", marginBottom: "3px" }}>
+                Observaciones:
               </div>
-              <div
-                onClick={() => {
-                  const newObs = window.prompt("Editar observaciones de la semana:", pdfComment);
-                  if (newObs !== null) {
-                    setPdfComment(newObs);
-                    try { localStorage.setItem("programacio_obs_v1", newObs); } catch(e) {}
-                  }
+              <textarea
+                value={pdfComment}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setPdfComment(val);
+                  try {
+                    localStorage.setItem("programacio_obs_v1", val);
+                  } catch (err) {}
                 }}
+                placeholder="Escribe aquí las observaciones directamente..."
+                rows={2}
                 style={{
-                  fontSize: "10.5px",
+                  width: "100%",
+                  fontSize: "11px",
                   fontWeight: 600,
-                  marginTop: "3px",
-                  lineHeight: 1.3,
-                  whiteSpace: "pre-wrap",
+                  lineHeight: 1.35,
                   color: "#000000",
-                  cursor: "pointer",
-                  minHeight: "22px",
+                  border: "none",
+                  outline: "none",
+                  resize: "vertical",
+                  background: "transparent",
+                  padding: "0",
+                  fontFamily: "inherit",
+                  boxSizing: "border-box",
+                  minHeight: "36px",
                 }}
-                title="Clic para editar observaciones"
-              >
-                {pdfComment.trim() || <span className="no-print" style={{ color: "#94a3b8", fontStyle: "italic" }}>Clic aquí para escribir observaciones de la semana...</span>}
-              </div>
+              />
             </div>
           </div>
         )}
@@ -3974,26 +3984,56 @@ export default function EventosCalendarPage() {
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "3px" }}>
                     <label style={{ fontWeight: 800, fontSize: "11px" }}>Orientación Táctica / Nombre de Sesión:</label>
                     {(editTipoCat === "charla" || /VD|VIDEO/i.test(editCodigo)) && (
-                      <div style={{ display: "flex", gap: "4px" }}>
-                        {["ABP", "RIVAL", "PROPIO", "INDIVIDUAL"].map((tag) => (
-                          <button
-                            key={tag}
-                            type="button"
-                            onClick={() => setEditOrientacion(tag)}
-                            style={{
-                              background: editOrientacion.toUpperCase() === tag ? "#1e3a8a" : "#f1f5f9",
-                              color: editOrientacion.toUpperCase() === tag ? "#ffffff" : "#475569",
-                              border: "1px solid #cbd5e1",
-                              borderRadius: "4px",
-                              padding: "2px 6px",
-                              fontSize: "10px",
-                              fontWeight: 800,
-                              cursor: "pointer",
-                            }}
-                          >
-                            {tag}
-                          </button>
-                        ))}
+                      <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", alignItems: "center" }}>
+                        {["ABP", "RIVAL", "PROPIO", "INDIVIDUAL"].map((tag) => {
+                          const isSelected = new RegExp(`\\b${tag}\\b`, "i").test(editOrientacion);
+                          return (
+                            <button
+                              key={tag}
+                              type="button"
+                              onClick={() => {
+                                const next = toggleVideoTag(editOrientacion, tag);
+                                setEditOrientacion(next);
+                              }}
+                              style={{
+                                background: isSelected ? "#1e3a8a" : "#f1f5f9",
+                                color: isSelected ? "#ffffff" : "#475569",
+                                border: isSelected ? "1px solid #1e3a8a" : "1px solid #cbd5e1",
+                                borderRadius: "4px",
+                                padding: "2px 7px",
+                                fontSize: "10px",
+                                fontWeight: 800,
+                                cursor: "pointer",
+                                transition: "all 0.15s ease",
+                              }}
+                              title={`Pulsar para añadir o quitar ${tag}`}
+                            >
+                              {isSelected ? `✓ ${tag}` : `+ ${tag}`}
+                            </button>
+                          );
+                        })}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (/ABP.*RIVAL|RIVAL.*ABP/i.test(editOrientacion)) {
+                              setEditOrientacion("");
+                            } else {
+                              setEditOrientacion("ABP Y RIVAL");
+                            }
+                          }}
+                          style={{
+                            background: /ABP.*RIVAL|RIVAL.*ABP/i.test(editOrientacion) ? "#1e3a8a" : "#e0e7ff",
+                            color: /ABP.*RIVAL|RIVAL.*ABP/i.test(editOrientacion) ? "#ffffff" : "#3730a3",
+                            border: "1px solid #818cf8",
+                            borderRadius: "4px",
+                            padding: "2px 7px",
+                            fontSize: "10px",
+                            fontWeight: 800,
+                            cursor: "pointer",
+                          }}
+                        >
+                          {/ABP.*RIVAL|RIVAL.*ABP/i.test(editOrientacion) ? "✓ ABP Y RIVAL" : "+ ABP Y RIVAL"}
+                        </button>
                       </div>
                     )}
                   </div>
@@ -4360,26 +4400,56 @@ export default function EventosCalendarPage() {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "3px" }}>
                   <label style={{ fontWeight: 800 }}>Orientación Táctica / Notas de Sesión:</label>
                   {(formTipoCat === "charla" || /VD|VIDEO/i.test(formCodigo)) && (
-                    <div style={{ display: "flex", gap: "4px" }}>
-                      {["ABP", "RIVAL", "PROPIO", "INDIVIDUAL"].map((tag) => (
-                        <button
-                          key={tag}
-                          type="button"
-                          onClick={() => setFormOrientacion(tag)}
-                          style={{
-                            background: formOrientacion.toUpperCase() === tag ? "#1e3a8a" : "#f1f5f9",
-                            color: formOrientacion.toUpperCase() === tag ? "#ffffff" : "#475569",
-                            border: "1px solid #cbd5e1",
-                            borderRadius: "4px",
-                            padding: "1px 5px",
-                            fontSize: "9.5px",
-                            fontWeight: 800,
-                            cursor: "pointer",
-                          }}
-                        >
-                          {tag}
-                        </button>
-                      ))}
+                    <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", alignItems: "center" }}>
+                      {["ABP", "RIVAL", "PROPIO", "INDIVIDUAL"].map((tag) => {
+                        const isSelected = new RegExp(`\\b${tag}\\b`, "i").test(formOrientacion);
+                        return (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => {
+                              const next = toggleVideoTag(formOrientacion, tag);
+                              setFormOrientacion(next);
+                            }}
+                            style={{
+                              background: isSelected ? "#1e3a8a" : "#f1f5f9",
+                              color: isSelected ? "#ffffff" : "#475569",
+                              border: isSelected ? "1px solid #1e3a8a" : "1px solid #cbd5e1",
+                              borderRadius: "4px",
+                              padding: "2px 7px",
+                              fontSize: "10px",
+                              fontWeight: 800,
+                              cursor: "pointer",
+                              transition: "all 0.15s ease",
+                            }}
+                            title={`Pulsar para añadir o quitar ${tag}`}
+                          >
+                            {isSelected ? `✓ ${tag}` : `+ ${tag}`}
+                          </button>
+                        );
+                      })}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (/ABP.*RIVAL|RIVAL.*ABP/i.test(formOrientacion)) {
+                            setFormOrientacion("");
+                          } else {
+                            setFormOrientacion("ABP Y RIVAL");
+                          }
+                        }}
+                        style={{
+                          background: /ABP.*RIVAL|RIVAL.*ABP/i.test(formOrientacion) ? "#1e3a8a" : "#e0e7ff",
+                          color: /ABP.*RIVAL|RIVAL.*ABP/i.test(formOrientacion) ? "#ffffff" : "#3730a3",
+                          border: "1px solid #818cf8",
+                          borderRadius: "4px",
+                          padding: "2px 7px",
+                          fontSize: "10px",
+                          fontWeight: 800,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {/ABP.*RIVAL|RIVAL.*ABP/i.test(formOrientacion) ? "✓ ABP Y RIVAL" : "+ ABP Y RIVAL"}
+                      </button>
                     </div>
                   )}
                 </div>
