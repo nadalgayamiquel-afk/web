@@ -1016,6 +1016,16 @@ export default function EventosCalendarPage() {
     const result: Array<{ fecha: string; diaSemana: string; rival: string; escudoUrl: string; isHome: boolean; matchEvent?: EventoItem }> = [];
     const seenFechas = new Set<string>();
 
+    // Comprobar si hay partidos reales en la programación de la semana
+    const hasMatchesInFiltered = filteredEventos.some((ev) => {
+      if (!microcicloDays.some((d) => d.dateStr === ev.fecha)) return false;
+      const code = (ev.codigo || "").toUpperCase();
+      const name = (ev.nombreCompleto || "").toUpperCase();
+      const isMatchCode = /^(?:PA|PAL|PAV|PL|PV|PAAM|PARTIDO|PARTIT)$/i.test(code);
+      const isMatchName = /PARTIT|PARTIDO/i.test(code + " " + name) && !/PRE|POST|CAMPO|VIDEO|CHARLA|GYM/i.test(code + " " + name);
+      return ev.tipoCat === "partido" || isMatchCode || isMatchName;
+    });
+
     microcicloDays.forEach((day) => {
       const f = day.dateStr;
       const dayMatches = filteredEventos.filter((ev) => {
@@ -1027,20 +1037,29 @@ export default function EventosCalendarPage() {
         return ev.tipoCat === "partido" || isMatchCode || isMatchName;
       });
 
+      // Si la semana tiene partidos en la programación, SOLAMENTE los días con evento de partido tienen escudo
+      if (hasMatchesInFiltered) {
+        if (dayMatches.length === 0) {
+          return; // No es día de partido -> no añadir escudo
+        }
+      } else {
+        // Si aún no se han creado eventos en la semana, comprobar únicamente si sábado o domingo son partido
+        const isWeekend = day.dateStr === microcicloDays[5]?.dateStr || day.dateStr === microcicloDays[6]?.dateStr;
+        if (!isWeekend) {
+          return;
+        }
+        const dbDay = dbDays.find((d: any) => d.fecha === f);
+        const planDay = planDaysMap[f] || dbDay;
+        const planCode = (planDay?.evento || planDay?.evento_am || dbDay?.evento || dbDay?.evento_am || "").toUpperCase();
+        const isExplicit = /^(?:PA|PAL|PAV|PL|PV|PAAM|PARTIDO|PARTIT)$/i.test(planCode) || planDay?.md === "MD" || dbDay?.md === "MD";
+        if (!isExplicit) {
+          return;
+        }
+      }
+
       const dbDay = dbDays.find((d: any) => d.fecha === f);
       const planDay = planDaysMap[f] || dbDay;
       const rivalMapEntry = rivalEventoMap[f];
-
-      // Un día tiene partido SÓLO SI hay un evento de partido real ese día en la programación
-      // o, si la programación está vacía, si el calendario marca explícitamente PL, PV, PA, PARTIDO o md="MD"
-      const planCode = (planDay?.evento || planDay?.evento_am || dbDay?.evento || dbDay?.evento_am || "").toUpperCase();
-      const isExplicitPlanMatch = /^(?:PA|PAL|PAV|PL|PV|PAAM|PARTIDO|PARTIT)$/i.test(planCode) || planDay?.md === "MD" || dbDay?.md === "MD";
-      const hasEventsThisDay = filteredEventos.some((e) => e.fecha === f);
-      const hasActualMatch = dayMatches.length > 0 || (!hasEventsThisDay && isExplicitPlanMatch);
-
-      if (!hasActualMatch) {
-        return; // No hay partido este día -> no se genera ningún escudo
-      }
 
       let rivalName = "";
       if (customRivalByDate[f]) {
@@ -3228,7 +3247,7 @@ export default function EventosCalendarPage() {
                           </div>
                         )}
                         <div style={{ fontSize: "10.5px", fontWeight: 900, textTransform: "uppercase", color: "#000000", marginTop: "2px", lineHeight: 1.1, textAlign: "center" }}>
-                          {item.rival} {weekRivals.length > 1 ? `(${item.diaSemana})` : ""} <span className="no-print" style={{ fontSize: "9px" }}>✏️</span>
+                          {item.rival.replace(/\s*\([A-ZÁÉÍÓÚa-záéíóú]{3}\)\s*$/gi, "").trim()} {weekRivals.length > 1 ? `(${item.diaSemana})` : ""} <span className="no-print" style={{ fontSize: "9px" }}>✏️</span>
                         </div>
                       </div>
                     ))}
