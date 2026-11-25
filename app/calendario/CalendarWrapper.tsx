@@ -48,6 +48,12 @@ export function CalendarWrapper(props: {
                     return { ...t, color: "#ffffff", bg: "#1e3a8a", border: "#172554" };
                   }
                 }
+                if (["PL", "PV", "PAL", "PAV"].includes((t.codigo || "").toUpperCase())) {
+                  if (t.bg !== "#dc2626" || t.color !== "#ffffff") {
+                    changed = true;
+                    return { ...t, color: "#ffffff", bg: "#dc2626", border: "#b91c1c" };
+                  }
+                }
                 return t;
               });
               if (changed) {

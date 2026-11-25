@@ -1761,10 +1761,10 @@ const DEFAULT_TIPOS_EVENTO_CONFIG: TipoEventoConfig[] = [
   // Generales
   { codigo: "E", nombre: "Entrenamiento (E)", color: "#ffffff", bg: "#1e3a8a", border: "#172554", categoria: "general" },
   { codigo: "D", nombre: "Descanso (D)", color: "#334155", bg: "#e2e8f0", border: "#94a3b8", categoria: "general" },
-  { codigo: "PL", nombre: "Partido Liga (PL)", color: "#881337", bg: "#fecdd3", border: "#fda4af", categoria: "general" },
-  { codigo: "PAL", nombre: "Partido Amistoso Local (PAL)", color: "#881337", bg: "#fecdd3", border: "#fda4af", categoria: "general" },
-  { codigo: "PV", nombre: "Partido Viaje (PV)", color: "#881337", bg: "#fecdd3", border: "#fda4af", categoria: "general" },
-  { codigo: "PAV", nombre: "Partido Amistoso Visitante (PAV)", color: "#881337", bg: "#fecdd3", border: "#fda4af", categoria: "general" },
+  { codigo: "PL", nombre: "Partido Liga (PL)", color: "#ffffff", bg: "#dc2626", border: "#b91c1c", categoria: "general" },
+  { codigo: "PAL", nombre: "Partido Amistoso Local (PAL)", color: "#ffffff", bg: "#dc2626", border: "#b91c1c", categoria: "general" },
+  { codigo: "PV", nombre: "Partido Viaje (PV)", color: "#ffffff", bg: "#dc2626", border: "#b91c1c", categoria: "general" },
+  { codigo: "PAV", nombre: "Partido Amistoso Visitante (PAV)", color: "#ffffff", bg: "#dc2626", border: "#b91c1c", categoria: "general" },
   { codigo: "Vi", nombre: "Viaje (Vi)", color: "#ffffff", bg: "#475569", border: "#334155", categoria: "general" },
   // Específicos
   { codigo: "Co", nombre: "Coadyuvante (Co)", color: "#713f12", bg: "#fde047", border: "#eab308", categoria: "especifico" },
@@ -1802,6 +1802,16 @@ export async function getTiposEventoConfig(): Promise<TipoEventoConfig[]> {
             color: "#ffffff",
             bg: "#1e3a8a",
             border: "#172554",
+            categoria: "general" as const,
+          };
+        }
+        if (["PL", "PV", "PAL", "PAV"].includes(row.codigo.toUpperCase())) {
+          return {
+            codigo: row.codigo,
+            nombre: row.texto || found?.nombre || row.codigo,
+            color: "#ffffff",
+            bg: "#dc2626",
+            border: "#b91c1c",
             categoria: "general" as const,
           };
         }

@@ -114,9 +114,9 @@ export default async function CalendarioPage() {
     tiposEvento = [
       { codigo: "E", texto: "Entrenamiento", color: "#1e3a8a" },
       { codigo: "PL", texto: "Partido Liga", color: "#dc2626" },
-      { codigo: "PAL", texto: "Partido Amistoso Local", color: "#b91c1c" },
-      { codigo: "PV", texto: "Partido Viaje", color: "#d97706" },
-      { codigo: "PAV", texto: "Partido Amistoso Visitante", color: "#ea580c" },
+      { codigo: "PAL", texto: "Partido Amistoso Local", color: "#dc2626" },
+      { codigo: "PV", texto: "Partido Viaje", color: "#dc2626" },
+      { codigo: "PAV", texto: "Partido Amistoso Visitante", color: "#dc2626" },
       { codigo: "D", texto: "Descanso", color: "#64748b" },
     ];
   }

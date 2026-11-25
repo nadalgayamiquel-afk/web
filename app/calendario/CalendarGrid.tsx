@@ -173,10 +173,10 @@ export type JugadorItem = {
 export const DEFAULT_TIPOS_EVENTO_CONFIG: TipoEventoConfig[] = [
   { codigo: "E", nombre: "Entrenamiento (E)", color: "#ffffff", bg: "#1e3a8a", border: "#172554", categoria: "general" },
   { codigo: "D", nombre: "Descanso (D)", color: "#1e293b", bg: "#f1f5f9", border: "#cbd5e1", categoria: "general" },
-  { codigo: "PL", nombre: "Partido Local (PL)", color: "#881337", bg: "#fecdd3", border: "#fda4af", categoria: "general" },
-  { codigo: "PAL", nombre: "Partido Local (PAL)", color: "#881337", bg: "#fecdd3", border: "#fda4af", categoria: "general" },
-  { codigo: "PV", nombre: "Partido Visitante (PV)", color: "#881337", bg: "#fecdd3", border: "#fda4af", categoria: "general" },
-  { codigo: "PAV", nombre: "Partido Visitante (PAV)", color: "#881337", bg: "#fecdd3", border: "#fda4af", categoria: "general" },
+  { codigo: "PL", nombre: "Partido Local (PL)", color: "#ffffff", bg: "#dc2626", border: "#b91c1c", categoria: "general" },
+  { codigo: "PAL", nombre: "Partido Local (PAL)", color: "#ffffff", bg: "#dc2626", border: "#b91c1c", categoria: "general" },
+  { codigo: "PV", nombre: "Partido Visitante (PV)", color: "#ffffff", bg: "#dc2626", border: "#b91c1c", categoria: "general" },
+  { codigo: "PAV", nombre: "Partido Visitante (PAV)", color: "#ffffff", bg: "#dc2626", border: "#b91c1c", categoria: "general" },
   { codigo: "Vi", nombre: "Viaje (Vi)", color: "#ffffff", bg: "#475569", border: "#334155", categoria: "general" },
   { codigo: "Co", nombre: "Coadyuvante (Co)", color: "#713f12", bg: "#fde047", border: "#eab308", categoria: "especifico" },
   { codigo: "Op", nombre: "Campo (Op)", color: "#1e3a8a", bg: "#93c5fd", border: "#60a5fa", categoria: "especifico" },
@@ -2169,6 +2169,9 @@ export function CalendarGrid({
             if (t.codigo === "E" || t.codigo.toLowerCase() === "e") {
               return { ...t, color: "#ffffff", bg: "#1e3a8a", border: "#172554" };
             }
+            if (["PL", "PV", "PAL", "PAV"].includes(t.codigo.toUpperCase())) {
+              return { ...t, color: "#ffffff", bg: "#dc2626", border: "#b91c1c" };
+            }
             if (t.codigo === "Co" && (t.bg === "#fef3c7" || !t.bg)) {
               return { ...t, color: "#713f12", bg: "#fde047", border: "#eab308" };
             }
@@ -2189,6 +2192,9 @@ export function CalendarGrid({
         initialTiposEventoConfig.map((t) => {
           if (t.codigo === "E" || t.codigo.toLowerCase() === "e") {
             return { ...t, color: "#ffffff", bg: "#1e3a8a", border: "#172554" };
+          }
+          if (["PL", "PV", "PAL", "PAV"].includes(t.codigo.toUpperCase())) {
+            return { ...t, color: "#ffffff", bg: "#dc2626", border: "#b91c1c" };
           }
           return t;
         })
@@ -5677,6 +5683,9 @@ export function CalendarGrid({
                 if (evVal.toUpperCase() === "E") {
                   cellBg = "#1e3a8a";
                   textColor = "#ffffff";
+                } else if (["PL", "PV", "PAL", "PAV"].includes(evVal.toUpperCase())) {
+                  cellBg = "#dc2626";
+                  textColor = "#ffffff";
                 }
                 const showControls = !isPre && Boolean(evVal || isSel || isHovered);
 
@@ -5736,19 +5745,23 @@ export function CalendarGrid({
                       }}
                     >
                       <option value="" style={{ color: "#0f172a", background: "#ffffff" }} />
-                      {(tiposEventoConfig && tiposEventoConfig.length > 0 ? tiposEventoConfig : tiposEvento).map((t) => (
-                        <option
-                          key={t.codigo}
-                          value={t.codigo}
-                          style={{
-                            color: t.codigo.toUpperCase() === "E" ? "#ffffff" : ((t as any).color || "#0f172a"),
-                            background: t.codigo.toUpperCase() === "E" ? "#1e3a8a" : "#ffffff",
-                            fontWeight: 800,
-                          }}
-                        >
-                          {t.codigo}
-                        </option>
-                      ))}
+                      {(tiposEventoConfig && tiposEventoConfig.length > 0 ? tiposEventoConfig : tiposEvento).map((t) => {
+                        const isE = t.codigo.toUpperCase() === "E";
+                        const isMatchGen = ["PL", "PV", "PAL", "PAV"].includes(t.codigo.toUpperCase());
+                        return (
+                          <option
+                            key={t.codigo}
+                            value={t.codigo}
+                            style={{
+                              color: isE || isMatchGen ? "#ffffff" : ((t as any).color || "#0f172a"),
+                              background: isE ? "#1e3a8a" : isMatchGen ? "#dc2626" : "#ffffff",
+                              fontWeight: 800,
+                            }}
+                          >
+                            {t.codigo}
+                          </option>
+                        );
+                      })}
                     </select>
 
                     {isCorner && (
