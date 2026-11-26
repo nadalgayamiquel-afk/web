@@ -283,7 +283,7 @@ export function getVariableDisplayName(key: string, vDef?: GpsVariableDef): { sh
     kLower.includes("sprint (m)") ||
     (lLower.includes("sprint") && !lLower.includes("nº") && !lLower.includes("count"))
   ) {
-    return { short: "Sprint 24", full: "Distancia Sprint (+24 km/h) (m)" };
+    return { short: "Dist. +24", full: "Distancia +24 km/h (Sprint) (m)" };
   }
 
   // 4. Aceleraciones + Desaceleraciones (+3 m/s²)
@@ -372,7 +372,7 @@ function getCompactMetricHeader(key: string, rawLabel?: string): string {
   if (kLower.includes("17 - 19") || lLower.includes("17 - 19") || lLower.includes("17-20") || lLower.includes("z3")) return "Z3 (17-20)";
   if (kLower.includes("19,8 - 21") || kLower.includes("19.8 - 21") || lLower.includes("19,8 - 21") || lLower.includes("19.8 - 21") || lLower.includes("z4")) return "Z4 (20-21)";
   if (kLower.includes("21 - 24") || lLower.includes("21 - 24") || lLower.includes("z5")) return "Z5 (21-24)";
-  if (kLower.includes("+ 24") || kLower.includes("+24") || lLower.includes("+ 24") || lLower.includes("+24") || lLower.includes("z6")) return "Z6 (+24)";
+  if (kLower.includes("+ 24") || kLower.includes("+24") || lLower.includes("+ 24") || lLower.includes("+24") || lLower.includes("z6") || lLower.includes("sprint 24") || lLower.includes("sprint (+24")) return "Dist. +24";
   if (kLower.includes("+ 28") || kLower.includes("+28") || lLower.includes("+ 28") || lLower.includes("+28")) return "Max (+28)";
 
   // Distancia 19,8 Km/h -> HSR estándar
@@ -838,7 +838,7 @@ export default function CargaExternaSection({
   const [openTableLast5Md, setOpenTableLast5Md] = useState<boolean>(true);
 
   // ── 2. ESTADOS PARA PERFIL COMPETITIVO (CON VARIABLES FAVORITAS DISCRETAS) ──
-  const { favoriteKeys, favoriteVariables, derivedVariables, allVariables } = useFavoriteGpsVariables();
+  const { favoriteKeys, favoriteVariables, derivedVariables, allVariables, toggleFavorite } = useFavoriteGpsVariables();
 
   const getGpsVariableDef = (key: string): GpsVariableDef | undefined => {
     if (!key) return undefined;
@@ -982,9 +982,14 @@ export default function CargaExternaSection({
   // Lista de métricas favoritas activas (excluyendo Duration(min))
   const availableFavVariables = useMemo(() => {
     const list = favoriteVariables.filter((v) => v.key !== "Duration(min)");
-    if (list.length > 0) return list;
-    return ALL_GPS_VARIABLES.filter((v) => DEFAULT_FAVORITE_GPS_VARIABLES.includes(v.key) && v.key !== "Duration(min)");
-  }, [favoriteVariables]);
+    let baseList = list.length > 0 ? list : ALL_GPS_VARIABLES.filter((v) => DEFAULT_FAVORITE_GPS_VARIABLES.includes(v.key) && v.key !== "Duration(min)");
+    // Asegurar que "+ 24 km/h (Distancia)" siempre esté disponible en favoritas
+    if (!baseList.some((v) => v.key === "+ 24 km/h (Distancia)")) {
+      const v24 = allVariables.find((v) => v.key === "+ 24 km/h (Distancia)") || ALL_GPS_VARIABLES.find((v) => v.key === "+ 24 km/h (Distancia)");
+      if (v24) baseList = [...baseList, v24];
+    }
+    return baseList;
+  }, [favoriteVariables, allVariables]);
 
   const [selectedProfileKeys, setSelectedProfileKeys] = useState<string[]>(() => {
     if (typeof window !== "undefined") {
@@ -1014,6 +1019,10 @@ export default function CargaExternaSection({
       }
       return next;
     });
+    // Si la variable seleccionada no está en favoritas generales, la añadimos para mantener sincronía
+    if (!favoriteKeys.includes(key)) {
+      toggleFavorite(key);
+    }
   };
 
   const handleSetPresetColumns = (keys: string[]) => {
@@ -1065,17 +1074,60 @@ export default function CargaExternaSection({
   const [columnPickerTab, setColumnPickerTab] = useState<"favoritas" | "todas">("favoritas");
 
   const pickerVariablesList = useMemo(() => {
-    const base = columnPickerTab === "favoritas" ? availableFavVariables : allVariables;
-    if (!columnPickerSearch.trim()) return base;
-    const q = columnPickerSearch.toLowerCase().trim();
-    return base.filter(
-      (v) =>
-        v.label?.toLowerCase().includes(q) ||
-        v.shortLabel?.toLowerCase().includes(q) ||
-        v.key?.toLowerCase().includes(q) ||
-        v.categoria?.toLowerCase().includes(q) ||
-        v.unit?.toLowerCase().includes(q)
-    );
+    const hasSearch = Boolean(columnPickerSearch.trim());
+    // Si el usuario escribe una búsqueda, buscamos en TODO el catálogo de Ajustes para que encuentre siempre cualquier variable
+    const base = hasSearch
+      ? allVariables
+      : columnPickerTab === "favoritas"
+      ? availableFavVariables
+      : allVariables;
+
+    if (!hasSearch) return base;
+
+    const clean = (s: string) =>
+      (s || "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[+>]/g, " + ")
+        .replace(/[,.]/g, " ")
+        .replace(/\s+/g, " ");
+
+    const tokens = clean(columnPickerSearch).split(" ").filter(Boolean);
+
+    const filtered = base.filter((v) => {
+      const extraKeywords =
+        v.key.includes("24") || (v.label && v.label.includes("24"))
+          ? "distancia +24 distancia 24 distancia sprint 24 sprint +24 dist +24 +24 km/h >24 sprint "
+          : v.key.includes("21") || (v.label && v.label.includes("21"))
+          ? "distancia +21 distancia 21 dist +21 >21 "
+          : v.key.includes("19") || (v.label && v.label.includes("19"))
+          ? "distancia 19 8 hsr 19 8 "
+          : "";
+
+      const searchable = clean(
+        `${v.label || ""} ${v.shortLabel || ""} ${v.key || ""} ${v.categoria || ""} ${v.descripcion || ""} ${v.unit || ""} ${extraKeywords}`
+      );
+
+      return tokens.every((token) => {
+        if (token === "+24" || token === "24" || token === "+ 24") {
+          return searchable.includes("24");
+        }
+        if (token === "distanci" || token === "distancia" || token === "dist") {
+          return searchable.includes("dist");
+        }
+        return searchable.includes(token);
+      });
+    });
+
+    // Al buscar, priorizar las que ya son favoritas en la parte superior
+    return [...filtered].sort((a, b) => {
+      const aIsFav = availableFavVariables.some((fv) => fv.key === a.key);
+      const bIsFav = availableFavVariables.some((fv) => fv.key === b.key);
+      if (aIsFav && !bIsFav) return -1;
+      if (!aIsFav && bIsFav) return 1;
+      return 0;
+    });
   }, [columnPickerTab, availableFavVariables, allVariables, columnPickerSearch]);
 
   const [ratioFormat, setRatioFormat] = useState<"real" | "multiplier" | "remaining">(() => {
@@ -5915,7 +5967,7 @@ export default function CargaExternaSection({
                     </div>
 
                     {/* Presets rápidos */}
-                    <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+                    <div style={{ display: "flex", gap: "4px", alignItems: "center", flexWrap: "wrap" }}>
                       <span style={{ fontSize: "10px", color: "#64748b", fontWeight: 600 }}>Presets:</span>
                       <button
                         type="button"
@@ -5923,6 +5975,14 @@ export default function CargaExternaSection({
                         style={{ padding: "2px 6px", borderRadius: "3px", border: "1px solid #e2e8f0", background: "#ffffff", fontSize: "10px", color: "#334155", cursor: "pointer", fontWeight: 700 }}
                       >
                         Top 5
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSetPresetColumns(["Distance(m)", "+ 24 km/h (Distancia)", "Distance +21 (m)", "Acc+Dec", "Player Load"])}
+                        style={{ padding: "2px 6px", borderRadius: "3px", border: "1px solid #bfdbfe", background: "#eff6ff", fontSize: "10px", color: "#1e40af", cursor: "pointer", fontWeight: 800 }}
+                        title="Incluye Distancia +24 km/h"
+                      >
+                        + Sprint 24
                       </button>
                       <button
                         type="button"
@@ -6028,7 +6088,7 @@ export default function CargaExternaSection({
                       PART.
                     </th>
                     {displayedProfileKeys.map((key) => {
-                      const v = availableFavVariables.find((item) => item.key === key);
+                      const v = allVariables.find((item) => item.key === key) || availableFavVariables.find((item) => item.key === key);
                       const label = getCompactMetricHeader(key, v ? v.label : key);
                       return (
                         <th
@@ -6041,6 +6101,7 @@ export default function CargaExternaSection({
                             whiteSpace: "nowrap",
                             minWidth: "75px",
                           }}
+                          title={v ? `${v.label} (${v.unit})` : key}
                         >
                           {label}
                         </th>

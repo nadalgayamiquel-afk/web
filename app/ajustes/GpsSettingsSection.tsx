@@ -54,15 +54,42 @@ export default function GpsSettingsSection() {
   const filteredVariables = useMemo(() => {
     return allVariables.filter((v) => {
       const matchCat = selectedCategory === "Todas" || v.categoria === selectedCategory;
+      if (!matchCat) return false;
       const q = searchQuery.toLowerCase().trim();
-      const matchSearch =
-        !q ||
-        v.label.toLowerCase().includes(q) ||
-        v.key.toLowerCase().includes(q) ||
-        (v.shortLabel && v.shortLabel.toLowerCase().includes(q)) ||
-        (v.descripcion && v.descripcion.toLowerCase().includes(q)) ||
-        v.unit.toLowerCase().includes(q);
-      return matchCat && matchSearch;
+      if (!q) return true;
+
+      const clean = (s: string) =>
+        (s || "")
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/[+>]/g, " + ")
+          .replace(/[,.]/g, " ")
+          .replace(/\s+/g, " ");
+
+      const extraKeywords =
+        v.key.includes("24") || (v.label && v.label.includes("24"))
+          ? "distancia +24 distancia 24 distancia sprint 24 sprint +24 dist +24 +24 km/h >24 sprint "
+          : v.key.includes("21") || (v.label && v.label.includes("21"))
+          ? "distancia +21 distancia 21 dist +21 >21 "
+          : v.key.includes("19") || (v.label && v.label.includes("19"))
+          ? "distancia 19 8 hsr 19 8 "
+          : "";
+
+      const searchable = clean(
+        `${v.label || ""} ${v.key || ""} ${v.shortLabel || ""} ${v.descripcion || ""} ${v.unit || ""} ${extraKeywords}`
+      );
+
+      const tokens = clean(q).split(" ").filter(Boolean);
+      return tokens.every((token) => {
+        if (token === "+24" || token === "24" || token === "+ 24") {
+          return searchable.includes("24");
+        }
+        if (token === "distanci" || token === "distancia" || token === "dist") {
+          return searchable.includes("dist");
+        }
+        return searchable.includes(token);
+      });
     });
   }, [allVariables, selectedCategory, searchQuery]);
 
