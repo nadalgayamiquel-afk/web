@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useState, useEffect } from "react";
+import { getLesionesDataServer, saveLesionesDataServer } from "@/app/actions";
 import {
   LesionFormData,
   CONTEXTOS_OPTIONS,
@@ -160,6 +161,9 @@ export default function HistorialLesionesView({
   // Claves de lesiones eliminadas por el usuario
   const [deletedLesionKeys, setDeletedLesionKeys] = useState<Set<string>>(new Set());
 
+  // Estado de sincronización con la base de datos
+  const [bbddStatus, setBbddStatus] = useState<string>("Sincronizando BBDD...");
+
   // 1. Estado local de registros clasificados detallados (filtrado estricto por temporada activa y sin 30-08-2026)
   const [localRecords, setLocalRecords] = useState<LesionFormData[]>([]);
 
@@ -170,26 +174,91 @@ export default function HistorialLesionesView({
       if (savedChart !== null) setShowChart(JSON.parse(savedChart));
     } catch (e) {}
 
+    // Cargar caché inmediata local para evitar parpadeos
+    let initialLocal: LesionFormData[] = [];
+    try {
+      const raw = localStorage.getItem("lesiones_registro_detallado_v1");
+      if (raw) {
+        const parsed: LesionFormData[] = JSON.parse(raw);
+        initialLocal = parsed.filter((r) => !isFechaCuestionarioOInvalida(r.fecha));
+        setLocalRecords(initialLocal);
+      }
+    } catch (e) {}
+
     try {
       const rawDeleted = localStorage.getItem("lesiones_eliminadas_v1");
       if (rawDeleted) setDeletedLesionKeys(new Set(JSON.parse(rawDeleted)));
     } catch (e) {}
 
-    try {
-      const raw = localStorage.getItem("lesiones_registro_detallado_v1");
-      if (raw) {
-        const parsed: LesionFormData[] = JSON.parse(raw);
-        const cleaned = parsed.filter((r) => !isFechaCuestionarioOInvalida(r.fecha));
-        if (cleaned.length !== parsed.length) {
-          localStorage.setItem("lesiones_registro_detallado_v1", JSON.stringify(cleaned));
+    // Cargar de forma persistente desde Supabase (db_testing) y servidor
+    let isMounted = true;
+    getLesionesDataServer()
+      .then(({ records: serverRecords, deletedKeys: serverDeleted }) => {
+        if (!isMounted) return;
+
+        let activeDeleted = new Set<string>();
+        if (Array.isArray(serverDeleted)) {
+          activeDeleted = new Set(serverDeleted);
+          setDeletedLesionKeys((prev) => new Set([...prev, ...serverDeleted]));
+          if (typeof window !== "undefined") {
+            try {
+              localStorage.setItem("lesiones_eliminadas_v1", JSON.stringify(serverDeleted));
+            } catch (e) {}
+          }
         }
-        setLocalRecords(cleaned);
-      }
-    } catch (e) {}
+
+        if (Array.isArray(serverRecords) && serverRecords.length > 0) {
+          setLocalRecords((prev) => {
+            // Unir servidor (fuente de verdad) con registros locales existentes
+            const serverMap = new Map<string, LesionFormData>();
+            serverRecords.forEach((r) => {
+              if (r && r.jugador_id && r.fecha) {
+                serverMap.set(`${r.jugador_id}_${r.fecha}`, r);
+              }
+            });
+
+            prev.forEach((r) => {
+              const k = `${r.jugador_id}_${r.fecha}`;
+              if (!serverMap.has(k)) {
+                serverMap.set(k, r);
+              }
+            });
+
+            const merged = Array.from(serverMap.values()).filter(
+              (r) => !isFechaCuestionarioOInvalida(r.fecha)
+            );
+
+            if (typeof window !== "undefined") {
+              try {
+                localStorage.setItem("lesiones_registro_detallado_v1", JSON.stringify(merged));
+              } catch (e) {}
+            }
+            return merged;
+          });
+          setBbddStatus("✓ BBDD Sincronizada");
+        } else if (initialLocal.length > 0) {
+          // Si el servidor estaba vacío pero el navegador tenía registros locales, subirlos a la BBDD
+          saveLesionesDataServer({
+            records: initialLocal,
+            deletedKeys: Array.from(activeDeleted),
+          }).catch(() => {});
+          setBbddStatus("✓ BBDD Guardada");
+        } else {
+          setBbddStatus("✓ BBDD Conectada");
+        }
+      })
+      .catch((err) => {
+        console.warn("Error cargando lesiones desde servidor/BBDD:", err);
+        if (isMounted) setBbddStatus("Modo local (Offline)");
+      });
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  // Guardar en localStorage cada vez que localRecords cambia
-  const saveRecordsToStorage = (updatedList: LesionFormData[]) => {
+  // Guardar en localStorage y en la Base de Datos (Supabase + Servidor)
+  const saveRecordsToStorage = (updatedList: LesionFormData[], currentDeleted?: Set<string>) => {
     const cleaned = updatedList.filter((r) => !isFechaCuestionarioOInvalida(r.fecha));
     setLocalRecords(cleaned);
     if (typeof window !== "undefined") {
@@ -197,6 +266,23 @@ export default function HistorialLesionesView({
         localStorage.setItem("lesiones_registro_detallado_v1", JSON.stringify(cleaned));
       } catch (e) {}
     }
+
+    // Persistir de forma permanente en Supabase db_testing y servidor
+    setBbddStatus("💾 Guardando en BBDD...");
+    const delArr = currentDeleted ? Array.from(currentDeleted) : Array.from(deletedLesionKeys);
+    saveLesionesDataServer({ records: cleaned, deletedKeys: delArr })
+      .then((res) => {
+        if (res.success) {
+          setBbddStatus("✓ Guardado en BBDD");
+          setTimeout(() => setBbddStatus("✓ BBDD Sincronizada"), 2000);
+        } else {
+          setBbddStatus("⚠️ Error BBDD (guardado local)");
+        }
+      })
+      .catch((err) => {
+        console.warn("Error guardando en BBDD:", err);
+        setBbddStatus("⚠️ Error BBDD (guardado local)");
+      });
   };
 
   // 2. Leer comentarios de fisioterapia / médico de localStorage
@@ -449,17 +535,15 @@ export default function HistorialLesionesView({
 
   // Guardar desde el modal de edición/añadir
   const handleSaveModalRecord = (data: LesionFormData) => {
-    setDeletedLesionKeys((prev) => {
-      const next = new Set(prev);
-      next.delete(`${data.jugador_id}_${data.fecha}`);
-      if (data.id) next.delete(data.id);
-      if (typeof window !== "undefined") {
-        try {
-          localStorage.setItem("lesiones_eliminadas_v1", JSON.stringify(Array.from(next)));
-        } catch (e) {}
-      }
-      return next;
-    });
+    const nextDeletedSet = new Set(deletedLesionKeys);
+    nextDeletedSet.delete(`${data.jugador_id}_${data.fecha}`);
+    if (data.id) nextDeletedSet.delete(data.id);
+    setDeletedLesionKeys(nextDeletedSet);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("lesiones_eliminadas_v1", JSON.stringify(Array.from(nextDeletedSet)));
+      } catch (e) {}
+    }
 
     let nextList = [...localRecords];
     const idx = nextList.findIndex((r) => r.jugador_id === data.jugador_id && r.fecha === data.fecha);
@@ -468,7 +552,7 @@ export default function HistorialLesionesView({
     } else {
       nextList.unshift(data);
     }
-    saveRecordsToStorage(nextList);
+    saveRecordsToStorage(nextList, nextDeletedSet);
 
     if (typeof window !== "undefined") {
       try {
@@ -500,21 +584,20 @@ export default function HistorialLesionesView({
     const nextList = localRecords.filter(
       (r) => !(r.jugador_id === ep.jugador_id && r.fecha === ep.fecha)
     );
-    saveRecordsToStorage(nextList);
 
     const key1 = `${ep.jugador_id}_${ep.fecha}`;
     const key2 = ep.id || "";
-    setDeletedLesionKeys((prev) => {
-      const next = new Set(prev);
-      if (key1) next.add(key1);
-      if (key2) next.add(key2);
-      if (typeof window !== "undefined") {
-        try {
-          localStorage.setItem("lesiones_eliminadas_v1", JSON.stringify(Array.from(next)));
-        } catch (e) {}
-      }
-      return next;
-    });
+    const nextDeletedSet = new Set(deletedLesionKeys);
+    if (key1) nextDeletedSet.add(key1);
+    if (key2) nextDeletedSet.add(key2);
+    setDeletedLesionKeys(nextDeletedSet);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("lesiones_eliminadas_v1", JSON.stringify(Array.from(nextDeletedSet)));
+      } catch (e) {}
+    }
+
+    saveRecordsToStorage(nextList, nextDeletedSet);
 
     if (typeof window !== "undefined") {
       try {
@@ -1005,6 +1088,26 @@ export default function HistorialLesionesView({
             </option>
           ))}
         </select>
+
+        {/* Indicador de persistencia BBDD */}
+        <div
+          style={{
+            fontSize: "11px",
+            fontWeight: 700,
+            padding: "4px 9px",
+            borderRadius: "6px",
+            background: bbddStatus.includes("✓") ? "#dcfce7" : bbddStatus.includes("Guardando") ? "#fef3c7" : "#f1f5f9",
+            color: bbddStatus.includes("✓") ? "#15803d" : bbddStatus.includes("Guardando") ? "#b45309" : "#475569",
+            border: `1px solid ${bbddStatus.includes("✓") ? "#86efac" : bbddStatus.includes("Guardando") ? "#fde047" : "#cbd5e1"}`,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "5px",
+          }}
+          title="Estado de sincronización permanente con la base de datos Supabase"
+        >
+          <span>{bbddStatus.includes("✓") ? "💾" : bbddStatus.includes("Guardando") ? "⏳" : "🔄"}</span>
+          <span>{bbddStatus}</span>
+        </div>
 
         {/* Botón Añadir Incidencia Manual */}
         <button

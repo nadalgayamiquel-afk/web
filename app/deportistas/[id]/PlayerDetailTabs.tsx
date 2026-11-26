@@ -39,7 +39,7 @@ import {
   Legend,
 } from "recharts";
 
-import { checkDuplicateJugadorNombre, addLesion, getFullExcelBBDDRows, savePlayerProfileConfigServer, getAllGpsDatos } from "../../actions";
+import { checkDuplicateJugadorNombre, addLesion, saveLesionesDataServer, getFullExcelBBDDRows, savePlayerProfileConfigServer, getAllGpsDatos } from "../../actions";
 import {
   CONTEXTOS_OPTIONS,
   CONTACTO_OPTIONS,
@@ -2402,12 +2402,20 @@ export default function PlayerDetailTabs({
 
         // Desbloquear de eliminadas si estuviese
         const rawDel = localStorage.getItem("lesiones_eliminadas_v1");
+        let activeDelList: string[] = [];
         if (rawDel) {
           const delSet = new Set<string>(JSON.parse(rawDel));
           delSet.delete(`${jugador.id}_${nuevaLesion.fechaInicio}`);
           delSet.delete(newId);
-          localStorage.setItem("lesiones_eliminadas_v1", JSON.stringify(Array.from(delSet)));
+          activeDelList = Array.from(delSet);
+          localStorage.setItem("lesiones_eliminadas_v1", JSON.stringify(activeDelList));
         }
+
+        // Persistir registro completo en Supabase db_testing y servidor
+        saveLesionesDataServer({
+          records: list,
+          deletedKeys: activeDelList,
+        }).catch((e) => console.warn("Error guardando lesión en BBDD:", e));
 
         // Sincronizar comentario clínico
         if (nuevaLesion.comentario && nuevaLesion.comentario.trim()) {
@@ -2482,7 +2490,14 @@ export default function PlayerDetailTabs({
         const delSet = new Set<string>(rawDel ? JSON.parse(rawDel) : []);
         delSet.add(`${jugador.id}_${les.fechaInicio}`);
         if (les.id) delSet.add(les.id);
-        localStorage.setItem("lesiones_eliminadas_v1", JSON.stringify(Array.from(delSet)));
+        const delList = Array.from(delSet);
+        localStorage.setItem("lesiones_eliminadas_v1", JSON.stringify(delList));
+
+        // Persistir en BBDD Supabase y servidor
+        saveLesionesDataServer({
+          records: nextList,
+          deletedKeys: delList,
+        }).catch((e) => console.warn("Error guardando eliminación en BBDD:", e));
 
         // Eliminar comentario clínico
         const rawCom = localStorage.getItem("comentarios_jugadores_v2");

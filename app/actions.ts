@@ -5337,6 +5337,113 @@ export async function saveMultasRecordsServer(
   }
 }
 
+const LESIONES_RECORDS_UUID = "00000000-0000-0000-0000-000000000007";
+
+export async function getLesionesDataServer(): Promise<{ records: any[]; deletedKeys: string[] }> {
+  try {
+    const supabase = getServerSupabase();
+    const { data: dbRow } = await supabase
+      .from("db_testing")
+      .select("data")
+      .eq("id", LESIONES_RECORDS_UUID)
+      .eq("test_type_id", "lesiones_records")
+      .maybeSingle();
+
+    if (dbRow?.data && typeof dbRow.data === "object") {
+      const records = (dbRow.data as any).records;
+      const deletedKeys = (dbRow.data as any).deletedKeys || [];
+      if (Array.isArray(records)) {
+        return { records, deletedKeys: Array.isArray(deletedKeys) ? deletedKeys : [] };
+      }
+    }
+
+    const path = require("path");
+    const filePath = path.join(process.cwd(), "public", "lesiones_records.json");
+    if (fs.existsSync(filePath)) {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+        if (Array.isArray(parsed?.records)) {
+          return {
+            records: parsed.records,
+            deletedKeys: Array.isArray(parsed.deletedKeys) ? parsed.deletedKeys : [],
+          };
+        }
+      } catch (err) {}
+    }
+  } catch (e) {
+    console.error("Error reading lesiones records from server:", e);
+  }
+  return { records: [], deletedKeys: [] };
+}
+
+export async function saveLesionesDataServer(payloadIn: {
+  records?: any[];
+  deletedKeys?: string[];
+}): Promise<{ success: boolean; count: number }> {
+  try {
+    const validRecords = Array.isArray(payloadIn?.records) ? payloadIn.records : [];
+    const validDeleted = Array.isArray(payloadIn?.deletedKeys) ? payloadIn.deletedKeys : [];
+
+    const payload = {
+      records: validRecords,
+      deletedKeys: validDeleted,
+      count: validRecords.length,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const supabase = getServerSupabase();
+    await supabase.from("db_testing").upsert({
+      id: LESIONES_RECORDS_UUID,
+      name: "Registro Oficial de Lesiones",
+      test_type_id: "lesiones_records",
+      structure: "REGISTRO",
+      data: payload,
+    });
+
+    try {
+      const path = require("path");
+      const filePath = path.join(process.cwd(), "public", "lesiones_records.json");
+      fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), "utf8");
+    } catch (e) {}
+
+    // Sincronizar en segundo plano con la tabla relacional 'lesiones' de Supabase
+    try {
+      for (const r of validRecords.slice(0, 100)) {
+        if (r && r.jugador_id && r.fecha) {
+          const rowPayload: any = {
+            jugador_id: r.jugador_id,
+            fecha_inicio: r.fecha,
+            tipo: r.tipo_disponibilidad || r.resultado || null,
+            zona: r.region_corporal || null,
+            gravedad: r.gravedad || null,
+          };
+          if (r.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(r.id)) {
+            rowPayload.id = r.id;
+          }
+          await supabase.from("lesiones").upsert(rowPayload, { onConflict: "id" }).catch(() => {});
+        }
+      }
+    } catch (err) {}
+
+    revalidatePath("/disponibilidad");
+    revalidatePath("/calendario");
+
+    return { success: true, count: validRecords.length };
+  } catch (e) {
+    console.error("Error saving lesiones records to server:", e);
+    return { success: false, count: 0 };
+  }
+}
+
+export async function getLesionesRecordsServer(): Promise<any[]> {
+  const data = await getLesionesDataServer();
+  return data.records;
+}
+
+export async function saveLesionesRecordsServer(records: any[], deletedKeys?: string[]) {
+  return saveLesionesDataServer({ records, deletedKeys });
+}
+
 export async function getExternalLinksBBDD(): Promise<ExternalDatabaseLinks> {
   try {
     const supabase = getServerSupabase();

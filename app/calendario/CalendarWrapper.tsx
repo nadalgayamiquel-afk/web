@@ -110,6 +110,9 @@ export function CalendarWrapper(props: {
           ];
           for (const k of mapKeys) {
             if (bd[k] !== undefined) {
+              if (k === "lesiones_registro_detallado_v1" && localStorage.getItem("lesiones_registro_detallado_v1")) {
+                continue; // Proteger el historial de lesiones del usuario de ser sobreescrito
+              }
               localStorage.setItem(k, JSON.stringify(bd[k]));
             }
           }

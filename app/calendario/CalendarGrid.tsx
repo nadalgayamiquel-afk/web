@@ -2,7 +2,7 @@
 
 import { pruneStaleFutureLocalStorage } from "@/app/lib/cleanStorage";
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { updateSesionDia, batchUpdateSesionesDia, saveFullPlanificacionBBDD, updateEstadoDiarioJugador, fetchLiveWellnessSheet, updateFullBBDDRow, addLesion, forceBackupSyncDataLocal, getEventosBloquesBBDD, saveClubConfig, upsertSingleRivalBBDD, getRivalesBBDD, saveSingleBloqueBBDD, getPlayerEventsBBDD, updatePlayerEventAssignmentBBDD, savePlayerEventAssignments, savePlayerCommentBBDD, deletePlayerCommentBBDD, syncWellnessCommentsBatchBBDD, saveTiposEventoConfig } from "../actions";
+import { updateSesionDia, batchUpdateSesionesDia, saveFullPlanificacionBBDD, updateEstadoDiarioJugador, fetchLiveWellnessSheet, updateFullBBDDRow, addLesion, saveLesionesDataServer, forceBackupSyncDataLocal, getEventosBloquesBBDD, saveClubConfig, upsertSingleRivalBBDD, getRivalesBBDD, saveSingleBloqueBBDD, getPlayerEventsBBDD, updatePlayerEventAssignmentBBDD, savePlayerEventAssignments, savePlayerCommentBBDD, deletePlayerCommentBBDD, syncWellnessCommentsBatchBBDD, saveTiposEventoConfig } from "../actions";
 import { getDisponibilidadInfo, CODIGOS_MANUALES, normalizeDisponibilidadCodigo } from "@/app/lib/disponibilidad";
 import LesionControlModal, { LesionFormData } from "./LesionControlModal";
 import { findRivalEscudoUrl, getStoredRivales, saveStoredRivales, RivalConfig, syncRivalesFromBBDD } from "@/app/lib/rivales";
@@ -1444,7 +1444,12 @@ export function CalendarGrid({
         console.warn("LocalStorage lleno, ignorando guardado local de comentarios.");
       }
 
-      // 3. Sincronizar con Supabase lesiones
+      // 3. Sincronizar con Supabase db_testing y servidor
+      saveLesionesDataServer({ records: list }).catch((err) => {
+        console.warn("Error guardando lesiones en BBDD:", err);
+      });
+
+      // 4. Sincronizar con Supabase tabla lesiones
       await addLesion(data.jugador_id, {
         fecha_inicio: data.fecha,
         tipo: data.tipo_disponibilidad,
