@@ -1230,9 +1230,37 @@ export default function MultasPage() {
 
       // 2. Cargar lista negra y registros guardados
       const blacklist = getDeletedBlacklist();
-      let rawList: Multa[] = Array.isArray(serverRecords) ? serverRecords : multas;
+      const currentMultas = multas.length > 0 ? multas : (Array.isArray(serverRecords) ? serverRecords : []);
+      let rawList: Multa[] = cleanMultas(currentMultas, blacklist, ses || planificacionEventos, bloquesRes ? Object.values(bloquesRes) : bloquesEventos, activeIds, activeNames);
 
-      // 3. Procesar respuestas del sheet y generar multas de wellness automáticas para fechas activas
+      // Calcular rango de fechas permitido para la sincronización:
+      // "solo actualizar del ultimo dia registradas hasta el dia marcado, ya que si he borrado multas anteriores, no vuelvan"
+      const todayStr = new Date().toISOString().split("T")[0];
+      const targetMarkedDate = wellnessDate || todayStr;
+
+      // Obtener la fecha más reciente con multas ya registradas
+      const registeredDates = rawList.map((m) => m.fecha).filter(Boolean).sort();
+      const cycleStartDate = serverConfig?.wellnessFechaInicioCiclo || wellnessFechaInicioCiclo || "2026-11-23";
+
+      const lastRegisteredDate = registeredDates.length > 0
+        ? registeredDates[registeredDates.length - 1]
+        : cycleStartDate;
+
+      // Rango de fechas a actualizar:
+      let minScanDate = lastRegisteredDate;
+      let maxScanDate = targetMarkedDate;
+
+      if (targetMarkedDate < lastRegisteredDate) {
+        // Si el usuario marcó un día anterior específico en el detector, auditar solo ese día marcado
+        minScanDate = targetMarkedDate;
+        maxScanDate = targetMarkedDate;
+      } else {
+        // Desde el último día registrado hasta el día marcado
+        minScanDate = lastRegisteredDate;
+        maxScanDate = targetMarkedDate;
+      }
+
+      // 3. Procesar respuestas del sheet y generar multas de wellness automáticas solo dentro del rango permitido
       const newAutoMultas: Multa[] = [];
       const datesInSheet = new Set<string>();
       sheetRecords.forEach((r) => {
@@ -1240,13 +1268,18 @@ export default function MultasPage() {
         if (iso) datesInSheet.add(iso);
       });
 
-      const todayStr = new Date().toISOString().split("T")[0];
       if (todayStr) datesInSheet.add(todayStr);
 
       const horaLimiteToCheck = serverConfig?.wellnessHoraLimite || wellnessHoraLimite || "12:30";
       const wellnessTipo = (serverConfig?.tipos || tiposMultaCatalogo).find((t: any) => t.id.includes("well") || t.esAutomatica) || DEFAULT_TIPOS_MULTA[0];
 
       datesInSheet.forEach((dStr) => {
+        // REGLA SOLICITADA: Solo actualizar desde el último día registrado hasta el día marcado
+        // Las fechas anteriores ya registradas/auditadas o donde se borraron multas se omiten estrictamente
+        if (dStr < minScanDate || dStr > maxScanDate) {
+          return;
+        }
+
         // Los días de partido NUNCA se multan
         if (isMatchDateOrEvent(dStr, ses || planificacionEventos)) return;
         
@@ -1326,8 +1359,10 @@ export default function MultasPage() {
       saveMultasToStorage(cleaned);
 
       const timeNow = new Date().toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-      const addedMsg = newAutoMultas.length > 0 ? ` (+${newAutoMultas.length} multas nuevas detectadas)` : "";
-      setRefreshSuccessMessage(`✓ Multas actualizadas correctamente (${timeNow})${addedMsg} — ${cleaned.length} registros cargados`);
+      const addedMsg = newAutoMultas.length > 0 ? ` (+${newAutoMultas.length} multas nuevas detectadas)` : " (sin multas nuevas)";
+      setRefreshSuccessMessage(
+        `✓ Multas actualizadas del ${formatDateDDMM(minScanDate)} al ${formatDateDDMM(maxScanDate)} (${timeNow})${addedMsg} — ${cleaned.length} multas en registro`
+      );
       setTimeout(() => {
         setRefreshSuccessMessage(null);
       }, 5000);
@@ -1337,7 +1372,7 @@ export default function MultasPage() {
     } finally {
       setIsRefreshingAll(false);
     }
-  }, [excelUrl, team, todosJugadores, tiposMultaCatalogo, planificacionEventos, bloquesEventos, multas, wellnessHoraLimite, wellnessFechaInicioCiclo]);
+  }, [excelUrl, team, todosJugadores, tiposMultaCatalogo, planificacionEventos, bloquesEventos, multas, wellnessHoraLimite, wellnessFechaInicioCiclo, wellnessDate]);
 
   // Comprobar si el día tiene eventos asignados Co o Op y si es día de partido
   const hasPlanificacionEventsForDate = useCallback(
