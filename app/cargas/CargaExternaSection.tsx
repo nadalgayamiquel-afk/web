@@ -7371,19 +7371,35 @@ export default function CargaExternaSection({
                         type="button"
                         onClick={handleShowAllPlayers}
                         style={{
-                          height: "25px",
-                          padding: "0 6px",
-                          borderRadius: "4px",
-                          border: "1px solid #cbd5e1",
-                          background: "#ffffff",
-                          color: "#dc2626",
-                          fontSize: "11px",
-                          fontWeight: 800,
+                          width: "18px",
+                          height: "18px",
+                          padding: 0,
+                          borderRadius: "50%",
+                          border: "1px solid #e2e8f0",
+                          background: "#f8fafc",
+                          color: "#64748b",
                           cursor: "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          transition: "all 0.15s ease",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = "#fca5a5";
+                          e.currentTarget.style.color = "#dc2626";
+                          e.currentTarget.style.background = "#fef2f2";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = "#e2e8f0";
+                          e.currentTarget.style.color = "#64748b";
+                          e.currentTarget.style.background = "#f8fafc";
                         }}
                         title="Restablecer y mostrar todos los jugadores"
                       >
-                        ✕
+                        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <line x1="18" y1="6" x2="6" y2="18" />
+                          <line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
                       </button>
                     )}
                   </div>
@@ -7620,18 +7636,35 @@ export default function CargaExternaSection({
                                     type="button"
                                     onClick={() => handleIsolatePlayer(j.id)}
                                     style={{
-                                      padding: "1px 5px",
+                                      width: "20px",
+                                      height: "20px",
+                                      padding: 0,
                                       borderRadius: "3px",
-                                      border: "1px solid #cbd5e1",
+                                      border: "1px solid #e2e8f0",
                                       background: "#ffffff",
-                                      fontSize: "9.5px",
-                                      fontWeight: 700,
-                                      color: "#0369a1",
+                                      color: "#64748b",
                                       cursor: "pointer",
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      transition: "all 0.15s ease",
                                     }}
-                                    title={`Ver solo a ${j.apodo || j.nombre}`}
+                                    onMouseEnter={(e) => {
+                                      e.currentTarget.style.borderColor = "#0284c7";
+                                      e.currentTarget.style.color = "#0284c7";
+                                      e.currentTarget.style.background = "#f0f9ff";
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.currentTarget.style.borderColor = "#e2e8f0";
+                                      e.currentTarget.style.color = "#64748b";
+                                      e.currentTarget.style.background = "#ffffff";
+                                    }}
+                                    title={`Ver únicamente a ${j.apodo || j.nombre}`}
                                   >
-                                    Solo
+                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                                      <circle cx="12" cy="12" r="3" />
+                                    </svg>
                                   </button>
                                 </div>
                               </div>
@@ -8242,8 +8275,15 @@ export default function CargaExternaSection({
                       const hasCustom = Boolean(pCustom && Object.keys(pCustom).length > 0);
 
                       return (
-                        <tr key={j.id || idx} style={{ borderBottom: "1px solid #f1f5f9", background: idx % 2 === 0 ? "#ffffff" : "#fcfcfd" }}>
-                          <td style={{ padding: "10px 12px" }}>
+                        <tr
+                          key={j.id || idx}
+                          className="group"
+                          style={{
+                            borderBottom: "1px solid #f1f5f9",
+                            background: idx % 2 === 0 ? "#ffffff" : "#fcfcfd",
+                          }}
+                        >
+                          <td style={{ padding: "8px 12px" }}>
                             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
                               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                                 {renderDisponibilidadBadge && renderDisponibilidadBadge(j)}
@@ -8275,18 +8315,27 @@ export default function CargaExternaSection({
                                 </div>
                               </div>
 
-                              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                              {/* Acciones discretas por fila (aparecen sutilmente al pasar el ratón) */}
+                              <div
+                                className="opacity-0 group-hover:opacity-100 transition-opacity duration-150"
+                                style={{ display: "flex", alignItems: "center", gap: "3px" }}
+                              >
                                 <button
                                   type="button"
                                   onClick={() => setSelectedPlayerForTarget(j)}
                                   style={{
-                                    padding: "3px 6px",
-                                    borderRadius: "4px",
-                                    border: hasCustom ? "1px solid #d97706" : "1px solid #cbd5e1",
+                                    width: "20px",
+                                    height: "20px",
+                                    padding: 0,
+                                    borderRadius: "3px",
+                                    border: hasCustom ? "1px solid #d97706" : "1px solid #e2e8f0",
                                     background: hasCustom ? "#fef3c7" : "#ffffff",
-                                    fontSize: "11px",
+                                    fontSize: "10px",
                                     cursor: "pointer",
                                     color: hasCustom ? "#b45309" : "#64748b",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
                                   }}
                                   title={"Modificar ratios exigidos para " + (j.apodo || j.nombre)}
                                 >
@@ -8296,54 +8345,69 @@ export default function CargaExternaSection({
                                   type="button"
                                   onClick={() => handleIsolatePlayer(j.id)}
                                   style={{
-                                    padding: "2px 5px",
-                                    borderRadius: "4px",
-                                    border: "1px solid #cbd5e1",
+                                    width: "20px",
+                                    height: "20px",
+                                    padding: 0,
+                                    borderRadius: "3px",
+                                    border: "1px solid #e2e8f0",
                                     background: "#ffffff",
-                                    fontSize: "10px",
-                                    fontWeight: 700,
+                                    color: "#64748b",
                                     cursor: "pointer",
-                                    color: "#0369a1",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
                                     transition: "all 0.15s ease",
                                   }}
                                   onMouseEnter={(e) => {
                                     e.currentTarget.style.borderColor = "#0284c7";
+                                    e.currentTarget.style.color = "#0284c7";
                                     e.currentTarget.style.background = "#f0f9ff";
                                   }}
                                   onMouseLeave={(e) => {
-                                    e.currentTarget.style.borderColor = "#cbd5e1";
+                                    e.currentTarget.style.borderColor = "#e2e8f0";
+                                    e.currentTarget.style.color = "#64748b";
                                     e.currentTarget.style.background = "#ffffff";
                                   }}
-                                  title={"Ver solo a " + (j.apodo || j.nombre) + " (ocultar los demás)"}
+                                  title={"Ver únicamente a " + (j.apodo || j.nombre)}
                                 >
-                                  Solo
+                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                                    <circle cx="12" cy="12" r="3" />
+                                  </svg>
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => handleHidePlayer(j.id)}
                                   style={{
-                                    padding: "3px 6px",
-                                    borderRadius: "4px",
-                                    border: "1px solid #cbd5e1",
+                                    width: "20px",
+                                    height: "20px",
+                                    padding: 0,
+                                    borderRadius: "3px",
+                                    border: "1px solid #e2e8f0",
                                     background: "#ffffff",
-                                    fontSize: "11px",
-                                    cursor: "pointer",
                                     color: "#94a3b8",
+                                    cursor: "pointer",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
                                     transition: "all 0.15s ease",
                                   }}
                                   onMouseEnter={(e) => {
-                                    e.currentTarget.style.color = "#dc2626";
                                     e.currentTarget.style.borderColor = "#fca5a5";
+                                    e.currentTarget.style.color = "#dc2626";
                                     e.currentTarget.style.background = "#fef2f2";
                                   }}
                                   onMouseLeave={(e) => {
+                                    e.currentTarget.style.borderColor = "#e2e8f0";
                                     e.currentTarget.style.color = "#94a3b8";
-                                    e.currentTarget.style.borderColor = "#cbd5e1";
                                     e.currentTarget.style.background = "#ffffff";
                                   }}
-                                  title={"Ocultar a " + (j.apodo || j.nombre) + " de la tabla"}
+                                  title={"Ocultar a " + (j.apodo || j.nombre)}
                                 >
-                                  ✕
+                                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <line x1="18" y1="6" x2="6" y2="18" />
+                                    <line x1="6" y1="6" x2="18" y2="18" />
+                                  </svg>
                                 </button>
                               </div>
                             </div>
