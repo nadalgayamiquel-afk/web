@@ -4714,6 +4714,151 @@ export async function savePlayerProfileConfigServer(
   }
 }
 
+export async function getAllPlayerRatioTargetsServer(): Promise<Record<string, Record<string, number>>> {
+  const result: Record<string, Record<string, number>> = {};
+  try {
+    // 1. Supabase db_testing: todas las configuraciones de jugadores guardadas
+    const supabase = getServerSupabase();
+    const { data: dbRows } = await supabase
+      .from("db_testing")
+      .select("id, data")
+      .eq("test_type_id", "player_profile_config");
+
+    if (dbRows && Array.isArray(dbRows)) {
+      dbRows.forEach((row) => {
+        if (row.id && row.data && typeof row.data === "object" && (row.data as any).ratios) {
+          result[row.id] = (row.data as any).ratios;
+        }
+      });
+    }
+
+    // 2. Archivo dedicado public/player_ratio_targets.json
+    const path = require("path");
+    const filePathDedicated = path.join(process.cwd(), "public", "player_ratio_targets.json");
+    if (fs.existsSync(filePathDedicated)) {
+      try {
+        const raw = fs.readFileSync(filePathDedicated, "utf8");
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object") {
+          Object.entries(parsed).forEach(([pId, ratios]) => {
+            if (pId && ratios && typeof ratios === "object") {
+              result[pId] = { ...(result[pId] || {}), ...(ratios as Record<string, number>) };
+            }
+          });
+        }
+      } catch (err) {}
+    }
+
+    // 3. Archivo public/player_ratios_config.json
+    const filePathProfile = path.join(process.cwd(), "public", "player_ratios_config.json");
+    if (fs.existsSync(filePathProfile)) {
+      try {
+        const raw = fs.readFileSync(filePathProfile, "utf8");
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object") {
+          Object.entries(parsed).forEach(([pId, conf]: [string, any]) => {
+            if (pId && conf?.ratios && typeof conf.ratios === "object") {
+              result[pId] = { ...(result[pId] || {}), ...(conf.ratios as Record<string, number>) };
+            }
+          });
+        }
+      } catch (err) {}
+    }
+  } catch (e) {
+    console.error("Error reading all player ratio targets from server:", e);
+  }
+  return result;
+}
+
+export async function savePlayerRatioTargetsServer(
+  playerId: string,
+  ratios: Record<string, number>,
+  allMap?: Record<string, Record<string, number>>
+): Promise<{ success: boolean }> {
+  try {
+    const existing = await getPlayerProfileConfigServer(playerId);
+    await savePlayerProfileConfigServer(playerId, {
+      ratios: ratios,
+      variables: existing?.variables,
+      hsriVariableKey: existing?.hsriVariableKey,
+      benchmarkOverrides: existing?.benchmarkOverrides,
+    });
+
+    try {
+      const path = require("path");
+      const filePath = path.join(process.cwd(), "public", "player_ratio_targets.json");
+      let allTargets: Record<string, Record<string, number>> = allMap || {};
+      if (!allMap && fs.existsSync(filePath)) {
+        try {
+          allTargets = JSON.parse(fs.readFileSync(filePath, "utf8")) || {};
+        } catch (err) {}
+      }
+      allTargets[playerId] = ratios;
+      fs.writeFileSync(filePath, JSON.stringify(allTargets, null, 2), "utf8");
+    } catch (err) {}
+
+    return { success: true };
+  } catch (e) {
+    console.error("Error saving player ratio target:", e);
+    return { success: false };
+  }
+}
+
+export async function deletePlayerRatioTargetsServer(
+  playerId: string,
+  allMap?: Record<string, Record<string, number>>
+): Promise<{ success: boolean }> {
+  try {
+    const existing = await getPlayerProfileConfigServer(playerId);
+    await savePlayerProfileConfigServer(playerId, {
+      ratios: {},
+      variables: existing?.variables,
+      hsriVariableKey: existing?.hsriVariableKey,
+      benchmarkOverrides: existing?.benchmarkOverrides,
+    });
+
+    try {
+      const path = require("path");
+      const filePath = path.join(process.cwd(), "public", "player_ratio_targets.json");
+      let allTargets: Record<string, Record<string, number>> = allMap || {};
+      if (!allMap && fs.existsSync(filePath)) {
+        try {
+          allTargets = JSON.parse(fs.readFileSync(filePath, "utf8")) || {};
+        } catch (err) {}
+      }
+      delete allTargets[playerId];
+      fs.writeFileSync(filePath, JSON.stringify(allTargets, null, 2), "utf8");
+    } catch (err) {}
+
+    return { success: true };
+  } catch (e) {
+    console.error("Error deleting player ratio target:", e);
+    return { success: false };
+  }
+}
+
+export async function getTeamRatioTargetsServer(): Promise<Record<string, number>> {
+  try {
+    const path = require("path");
+    const filePath = path.join(process.cwd(), "public", "team_ratio_targets.json");
+    if (fs.existsSync(filePath)) {
+      return JSON.parse(fs.readFileSync(filePath, "utf8"));
+    }
+  } catch (e) {}
+  return {};
+}
+
+export async function saveTeamRatioTargetsServer(targets: Record<string, number>): Promise<{ success: boolean }> {
+  try {
+    const path = require("path");
+    const filePath = path.join(process.cwd(), "public", "team_ratio_targets.json");
+    fs.writeFileSync(filePath, JSON.stringify(targets, null, 2), "utf8");
+    return { success: true };
+  } catch (e) {
+    return { success: false };
+  }
+}
+
 export async function getExternalLinksBBDD(): Promise<ExternalDatabaseLinks> {
   try {
     const supabase = getServerSupabase();

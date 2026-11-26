@@ -20,6 +20,13 @@ import {
 import { computeCompetitiveProfiles, isMatchHalfTask, isFirstHalfTask, isSecondHalfTask, isRateOrPeak, formatProfileMatchDate, CompetitiveProfilePlayer, getAllTeamMatches } from "../lib/competitiveProfile";
 import EditCompetitiveProfileModal from "../components/EditCompetitiveProfileModal";
 import {
+  getAllPlayerRatioTargetsServer,
+  savePlayerRatioTargetsServer,
+  deletePlayerRatioTargetsServer,
+  getTeamRatioTargetsServer,
+  saveTeamRatioTargetsServer,
+} from "@/app/actions";
+import {
   useFavoriteGpsVariables,
   calculateGpsMetricValue,
   DEFAULT_FAVORITE_GPS_VARIABLES,
@@ -1321,6 +1328,49 @@ export default function CargaExternaSection({
 
   const [selectedPlayerForTarget, setSelectedPlayerForTarget] = useState<any | null>(null);
   const [showAllIndividualTargetsModal, setShowAllIndividualTargetsModal] = useState<boolean>(false);
+  const [saveTargetStatus, setSaveTargetStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    getAllPlayerRatioTargetsServer()
+      .then((serverMap) => {
+        if (!isMounted || !serverMap || typeof serverMap !== "object") return;
+        setPlayerCustomTargets((prev) => {
+          const merged: Record<string, Record<string, number>> = { ...prev };
+          Object.entries(serverMap).forEach(([pId, ratios]) => {
+            if (pId && ratios && typeof ratios === "object" && Object.keys(ratios).length > 0) {
+              merged[pId] = { ...(merged[pId] || {}), ...ratios };
+            }
+          });
+          if (typeof window !== "undefined") {
+            try {
+              localStorage.setItem("gps_player_custom_targets_map", JSON.stringify(merged));
+            } catch (e) {}
+          }
+          return merged;
+        });
+      })
+      .catch((err) => console.warn("Error cargando targets individuales de servidor:", err));
+
+    getTeamRatioTargetsServer()
+      .then((teamTargets) => {
+        if (!isMounted || !teamTargets || typeof teamTargets !== "object" || Object.keys(teamTargets).length === 0) return;
+        setTeamRatioTargets((prev) => {
+          const next = { ...prev, ...teamTargets };
+          if (typeof window !== "undefined") {
+            try {
+              localStorage.setItem("gps_team_ratio_targets_map", JSON.stringify(next));
+            } catch (e) {}
+          }
+          return next;
+        });
+      })
+      .catch(() => {});
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleUpdateTeamTarget = (metricKey: string, val: number) => {
     if (isNaN(val) || val <= 0) return;
@@ -1329,19 +1379,25 @@ export default function CargaExternaSection({
     if (typeof window !== "undefined") {
       localStorage.setItem("gps_team_ratio_targets_map", JSON.stringify(updated));
     }
+    saveTeamRatioTargetsServer(updated).catch(console.error);
   };
 
   const handleUpdatePlayerTarget = (playerId: string, metricKey: string, val: number) => {
     if (isNaN(val) || val <= 0) return;
     const current = playerCustomTargets[playerId] || {};
+    const updatedCurrent = { ...current, [metricKey]: val };
     const updated = {
       ...playerCustomTargets,
-      [playerId]: { ...current, [metricKey]: val },
+      [playerId]: updatedCurrent,
     };
     setPlayerCustomTargets(updated);
     if (typeof window !== "undefined") {
       localStorage.setItem("gps_player_custom_targets_map", JSON.stringify(updated));
     }
+    setSaveTargetStatus("Guardando...");
+    savePlayerRatioTargetsServer(playerId, updatedCurrent, updated)
+      .then(() => setSaveTargetStatus("Guardado ✓"))
+      .catch(() => setSaveTargetStatus("Error al guardar"));
   };
 
   const handleResetPlayerTarget = (playerId: string) => {
@@ -1351,6 +1407,10 @@ export default function CargaExternaSection({
     if (typeof window !== "undefined") {
       localStorage.setItem("gps_player_custom_targets_map", JSON.stringify(updated));
     }
+    setSaveTargetStatus("Restableciendo...");
+    deletePlayerRatioTargetsServer(playerId, updated)
+      .then(() => setSaveTargetStatus("Restablecido ✓"))
+      .catch(() => setSaveTargetStatus("Error"));
   };
   const [selectedWeekIdx, setSelectedWeekIdx] = useState<number>(0);
   const [ratioDataSource, setRatioDataSource] = useState<"reales" | "todos">(() => {
@@ -9474,16 +9534,37 @@ export default function CargaExternaSection({
               }}
             >
               <div>
-                <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 900, color: "#0f172a" }}>
-                  🎯 Ratios Exigidos: {selectedPlayerForTarget.dorsal ? "#" + selectedPlayerForTarget.dorsal + " " : ""}{selectedPlayerForTarget.apodo || selectedPlayerForTarget.nombre}
-                </h3>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 900, color: "#0f172a" }}>
+                    🎯 Ratios Exigidos: {selectedPlayerForTarget.dorsal ? "#" + selectedPlayerForTarget.dorsal + " " : ""}{selectedPlayerForTarget.apodo || selectedPlayerForTarget.nombre}
+                  </h3>
+                  <span style={{ fontSize: "10.5px", color: "#166534", background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "2px 8px", borderRadius: "12px", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                    💾 BBDD Conectada
+                  </span>
+                  {saveTargetStatus && (
+                    <span style={{
+                      fontSize: "10.5px",
+                      fontWeight: 700,
+                      padding: "2px 8px",
+                      borderRadius: "12px",
+                      background: saveTargetStatus.includes("✓") ? "#dcfce7" : saveTargetStatus.includes("Guardando") ? "#fef3c7" : "#fee2e2",
+                      color: saveTargetStatus.includes("✓") ? "#15803d" : saveTargetStatus.includes("Guardando") ? "#b45309" : "#b91c1c",
+                      border: `1px solid ${saveTargetStatus.includes("✓") ? "#bbf7d0" : saveTargetStatus.includes("Guardando") ? "#fde047" : "#fca5a5"}`
+                    }}>
+                      {saveTargetStatus}
+                    </span>
+                  )}
+                </div>
                 <p style={{ margin: "2px 0 0 0", fontSize: "11.5px", color: "#64748b" }}>
-                  Personaliza los multiplicadores de partido exigidos para este jugador en el microciclo activo.
+                  Personaliza los multiplicadores de partido exigidos para este jugador. Se guardan automáticamente de forma permanente en la base de datos.
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => setSelectedPlayerForTarget(null)}
+                onClick={() => {
+                  setSelectedPlayerForTarget(null);
+                  setSaveTargetStatus(null);
+                }}
                 style={{ background: "none", border: "none", fontSize: "18px", color: "#64748b", cursor: "pointer", fontWeight: 700 }}
               >
                 ✕
@@ -9571,6 +9652,10 @@ export default function CargaExternaSection({
                             if (typeof window !== "undefined") {
                               localStorage.setItem("gps_player_custom_targets_map", JSON.stringify(next));
                             }
+                            setSaveTargetStatus("Guardando...");
+                            savePlayerRatioTargetsServer(selectedPlayerForTarget.id, current, next)
+                              .then(() => setSaveTargetStatus("Guardado ✓"))
+                              .catch(() => setSaveTargetStatus("Error"));
                           }}
                           style={{
                             background: "none",
@@ -9620,19 +9705,25 @@ export default function CargaExternaSection({
 
               <button
                 type="button"
-                onClick={() => setSelectedPlayerForTarget(null)}
+                onClick={() => {
+                  setSelectedPlayerForTarget(null);
+                  setSaveTargetStatus(null);
+                }}
                 style={{
                   padding: "6px 16px",
                   borderRadius: "6px",
                   border: "none",
-                  background: "#0f172a",
+                  background: "#0284c7",
                   color: "#ffffff",
                   fontSize: "12px",
                   fontWeight: 800,
                   cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
                 }}
               >
-                Listo
+                ✓ Guardar y Cerrar
               </button>
             </div>
           </div>
