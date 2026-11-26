@@ -4956,6 +4956,195 @@ export async function saveMicrocyclesConfigServer(
   }
 }
 
+const COMPETITIVE_PROFILE_COLUMNS_UUID = "00000000-0000-0000-0000-000000000002";
+const WEEKLY_RATIO_COLUMNS_UUID = "00000000-0000-0000-0000-000000000003";
+
+const DEFAULT_PROFILE_COLUMNS = [
+  "Distance(m)",
+  "+ 24 km/h (Distancia)",
+  "Distance +21 (m)",
+  "Acc+Dec",
+  "Player Load",
+];
+
+const DEFAULT_RATIO_COLUMNS = [
+  "Distance(m)",
+  "Distance +21 (m)",
+  "+ 24 km/h (Distancia)",
+  "Acc+Dec",
+  "Player Load",
+];
+
+export async function getCompetitiveProfileColumnsServer(): Promise<string[]> {
+  try {
+    // 1. Supabase db_testing
+    const supabase = getServerSupabase();
+    const { data: dbRow } = await supabase
+      .from("db_testing")
+      .select("data")
+      .eq("id", COMPETITIVE_PROFILE_COLUMNS_UUID)
+      .eq("test_type_id", "competitive_profile_columns")
+      .maybeSingle();
+
+    if (dbRow?.data && typeof dbRow.data === "object") {
+      const cols = (dbRow.data as any).columns;
+      if (Array.isArray(cols) && cols.length > 0) {
+        return cols;
+      }
+    }
+
+    // 2. configuracion_club
+    const { data: clubRow } = await supabase
+      .from("configuracion_club")
+      .select("config_json")
+      .eq("id", "default")
+      .maybeSingle();
+
+    if (clubRow?.config_json?.gpsConfig?.competitiveProfileColumns) {
+      const cols = clubRow.config_json.gpsConfig.competitiveProfileColumns;
+      if (Array.isArray(cols) && cols.length > 0) return cols;
+    }
+
+    // 3. Archivo JSON local
+    const path = require("path");
+    const filePath = path.join(process.cwd(), "public", "competitive_profile_columns.json");
+    if (fs.existsSync(filePath)) {
+      const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+      if (Array.isArray(parsed?.columns) && parsed.columns.length > 0) {
+        return parsed.columns;
+      }
+    }
+  } catch (e) {
+    console.error("Error reading competitive profile columns from server:", e);
+  }
+  return DEFAULT_PROFILE_COLUMNS;
+}
+
+export async function saveCompetitiveProfileColumnsServer(
+  columns: string[]
+): Promise<{ success: boolean; columns: string[] }> {
+  try {
+    const valid = Array.isArray(columns) && columns.length > 0 ? columns : DEFAULT_PROFILE_COLUMNS;
+    const payload = {
+      columns: valid,
+      updatedAt: new Date().toISOString(),
+    };
+
+    // 1. Guardar en Supabase db_testing
+    const supabase = getServerSupabase();
+    await supabase.from("db_testing").upsert({
+      id: COMPETITIVE_PROFILE_COLUMNS_UUID,
+      name: "Columnas Perfil Competitivo GPS",
+      test_type_id: "competitive_profile_columns",
+      structure: "CONFIG",
+      data: payload,
+    });
+
+    // 2. Guardar en configuracion_club
+    try {
+      const { data: clubRow } = await supabase
+        .from("configuracion_club")
+        .select("config_json")
+        .eq("id", "default")
+        .maybeSingle();
+
+      const existingConfig = clubRow?.config_json || {};
+      const updatedConfig = {
+        ...existingConfig,
+        gpsConfig: {
+          ...(existingConfig.gpsConfig || {}),
+          competitiveProfileColumns: valid,
+        },
+      };
+
+      await supabase.from("configuracion_club").upsert(
+        {
+          id: "default",
+          config_json: updatedConfig,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "id" }
+      );
+    } catch (e) {}
+
+    // 3. Guardar archivo local
+    try {
+      const path = require("path");
+      const filePath = path.join(process.cwd(), "public", "competitive_profile_columns.json");
+      fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), "utf8");
+    } catch (e) {}
+
+    return { success: true, columns: valid };
+  } catch (e) {
+    console.error("Error saving competitive profile columns to server:", e);
+    return { success: false, columns };
+  }
+}
+
+export async function getWeeklyRatioColumnsServer(): Promise<string[]> {
+  try {
+    const supabase = getServerSupabase();
+    const { data: dbRow } = await supabase
+      .from("db_testing")
+      .select("data")
+      .eq("id", WEEKLY_RATIO_COLUMNS_UUID)
+      .eq("test_type_id", "weekly_ratio_columns")
+      .maybeSingle();
+
+    if (dbRow?.data && typeof dbRow.data === "object") {
+      const cols = (dbRow.data as any).columns;
+      if (Array.isArray(cols) && cols.length > 0) {
+        return cols;
+      }
+    }
+
+    const path = require("path");
+    const filePath = path.join(process.cwd(), "public", "weekly_ratio_columns.json");
+    if (fs.existsSync(filePath)) {
+      const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+      if (Array.isArray(parsed?.columns) && parsed.columns.length > 0) {
+        return parsed.columns;
+      }
+    }
+  } catch (e) {
+    console.error("Error reading weekly ratio columns from server:", e);
+  }
+  return DEFAULT_RATIO_COLUMNS;
+}
+
+export async function saveWeeklyRatioColumnsServer(
+  columns: string[]
+): Promise<{ success: boolean; columns: string[] }> {
+  try {
+    const valid = Array.isArray(columns) && columns.length > 0 ? columns : DEFAULT_RATIO_COLUMNS;
+    const withDt = ["Distance(m)", ...valid.filter((k) => k !== "Distance(m)")];
+    const payload = {
+      columns: withDt,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const supabase = getServerSupabase();
+    await supabase.from("db_testing").upsert({
+      id: WEEKLY_RATIO_COLUMNS_UUID,
+      name: "Columnas Ratios Semanales GPS",
+      test_type_id: "weekly_ratio_columns",
+      structure: "CONFIG",
+      data: payload,
+    });
+
+    try {
+      const path = require("path");
+      const filePath = path.join(process.cwd(), "public", "weekly_ratio_columns.json");
+      fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), "utf8");
+    } catch (e) {}
+
+    return { success: true, columns: withDt };
+  } catch (e) {
+    console.error("Error saving weekly ratio columns to server:", e);
+    return { success: false, columns };
+  }
+}
+
 export async function getExternalLinksBBDD(): Promise<ExternalDatabaseLinks> {
   try {
     const supabase = getServerSupabase();

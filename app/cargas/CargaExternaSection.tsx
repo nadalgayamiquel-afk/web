@@ -27,6 +27,10 @@ import {
   saveTeamRatioTargetsServer,
   getMicrocyclesConfigServer,
   saveMicrocyclesConfigServer,
+  getCompetitiveProfileColumnsServer,
+  saveCompetitiveProfileColumnsServer,
+  getWeeklyRatioColumnsServer,
+  saveWeeklyRatioColumnsServer,
 } from "@/app/actions";
 import {
   useFavoriteGpsVariables,
@@ -991,6 +995,9 @@ export default function CargaExternaSection({
     return baseList;
   }, [favoriteVariables, allVariables]);
 
+  const [columnSaveStatus, setColumnSaveStatus] = useState<string | null>(null);
+  const [ratioColumnSaveStatus, setRatioColumnSaveStatus] = useState<string | null>(null);
+
   const [selectedProfileKeys, setSelectedProfileKeys] = useState<string[]>(() => {
     if (typeof window !== "undefined") {
       try {
@@ -1001,9 +1008,43 @@ export default function CargaExternaSection({
         }
       } catch {}
     }
-    // 4-5 variables favoritas estándar y discretas
-    return ["Distance(m)", "Distancia / Min", "Distance +21 (m)", "Acc+Dec", "Player Load"];
+    // Variables estándar del perfil (incluye Distancia +24 km/h por defecto)
+    return ["Distance(m)", "+ 24 km/h (Distancia)", "Distance +21 (m)", "Acc+Dec", "Player Load"];
   });
+
+  // Carga inicial persistente desde Supabase / Servidor para garantizar sincronización entre dispositivos y recargas
+  useEffect(() => {
+    getCompetitiveProfileColumnsServer()
+      .then((cols) => {
+        if (Array.isArray(cols) && cols.length > 0) {
+          setSelectedProfileKeys((prev) => {
+            const hasChange = cols.length !== prev.length || cols.some((k, idx) => k !== prev[idx]);
+            if (!hasChange) return prev;
+            try {
+              localStorage.setItem("gps_profile_selected_fav_keys", JSON.stringify(cols));
+            } catch (e) {}
+            return cols;
+          });
+        }
+      })
+      .catch(() => {});
+
+    getWeeklyRatioColumnsServer()
+      .then((cols) => {
+        if (Array.isArray(cols) && cols.length > 0) {
+          setSelectedRatioKeys((prev) => {
+            const withDt = ["Distance(m)", ...cols.filter((k) => k !== "Distance(m)")];
+            const hasChange = withDt.length !== prev.length || withDt.some((k, idx) => k !== prev[idx]);
+            if (!hasChange) return prev;
+            try {
+              localStorage.setItem("gps_ratio_selected_variables", JSON.stringify(withDt));
+            } catch (e) {}
+            return withDt;
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const handleToggleColumn = (key: string) => {
     if (!key) return;
@@ -1018,8 +1059,20 @@ export default function CargaExternaSection({
       if (typeof window !== "undefined") {
         try {
           localStorage.setItem("gps_profile_selected_fav_keys", JSON.stringify(next));
+          window.dispatchEvent(new CustomEvent("gps_profile_columns_updated", { detail: next }));
         } catch (e) {}
       }
+      // Guardar de inmediato en la base de datos (Supabase) y servidor
+      setColumnSaveStatus("Guardando...");
+      saveCompetitiveProfileColumnsServer(next)
+        .then(() => {
+          setColumnSaveStatus("✓ Guardado");
+          setTimeout(() => setColumnSaveStatus(null), 3500);
+        })
+        .catch(() => {
+          setColumnSaveStatus("✓ Guardado local");
+          setTimeout(() => setColumnSaveStatus(null), 3500);
+        });
       return next;
     });
   };
@@ -1030,8 +1083,19 @@ export default function CargaExternaSection({
     if (typeof window !== "undefined") {
       try {
         localStorage.setItem("gps_profile_selected_fav_keys", JSON.stringify(keys));
+        window.dispatchEvent(new CustomEvent("gps_profile_columns_updated", { detail: keys }));
       } catch (e) {}
     }
+    setColumnSaveStatus("Guardando...");
+    saveCompetitiveProfileColumnsServer(keys)
+      .then(() => {
+        setColumnSaveStatus("✓ Guardado");
+        setTimeout(() => setColumnSaveStatus(null), 3500);
+      })
+      .catch(() => {
+        setColumnSaveStatus("✓ Guardado local");
+        setTimeout(() => setColumnSaveStatus(null), 3500);
+      });
   };
 
   const [showHsriColumn, setShowHsriColumn] = useState<boolean>(() => {
@@ -1298,8 +1362,19 @@ export default function CargaExternaSection({
       if (typeof window !== "undefined") {
         try {
           localStorage.setItem("gps_ratio_selected_variables", JSON.stringify(next));
+          window.dispatchEvent(new CustomEvent("gps_ratio_columns_updated", { detail: next }));
         } catch (e) {}
       }
+      setRatioColumnSaveStatus("Guardando...");
+      saveWeeklyRatioColumnsServer(next)
+        .then(() => {
+          setRatioColumnSaveStatus("✓ Guardado");
+          setTimeout(() => setRatioColumnSaveStatus(null), 3500);
+        })
+        .catch(() => {
+          setRatioColumnSaveStatus("✓ Guardado local");
+          setTimeout(() => setRatioColumnSaveStatus(null), 3500);
+        });
       return next;
     });
   };
@@ -1311,8 +1386,19 @@ export default function CargaExternaSection({
     if (typeof window !== "undefined") {
       try {
         localStorage.setItem("gps_ratio_selected_variables", JSON.stringify(withDt));
+        window.dispatchEvent(new CustomEvent("gps_ratio_columns_updated", { detail: withDt }));
       } catch (e) {}
     }
+    setRatioColumnSaveStatus("Guardando...");
+    saveWeeklyRatioColumnsServer(withDt)
+      .then(() => {
+        setRatioColumnSaveStatus("✓ Guardado");
+        setTimeout(() => setRatioColumnSaveStatus(null), 3500);
+      })
+      .catch(() => {
+        setRatioColumnSaveStatus("✓ Guardado local");
+        setTimeout(() => setRatioColumnSaveStatus(null), 3500);
+      });
   };
 
   const formatRatioCellDisplay = (metricData: any) => {
@@ -5894,10 +5980,31 @@ export default function CargaExternaSection({
                     }}
                   >
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #f1f5f9", paddingBottom: "6px" }}>
-                      <strong style={{ fontSize: "12px", color: "#0f172a" }}>Variables del Perfil</strong>
-                      <span style={{ fontSize: "10px", color: "#64748b", fontWeight: 700 }}>
-                        {selectedProfileKeys.length} seleccionadas
-                      </span>
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        <strong style={{ fontSize: "12px", color: "#0f172a" }}>Variables del Perfil</strong>
+                        <span style={{ fontSize: "10px", color: "#64748b", fontWeight: 700 }}>
+                          ({selectedProfileKeys.length} seleccionadas)
+                        </span>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        {columnSaveStatus ? (
+                          <span style={{
+                            fontSize: "10px",
+                            fontWeight: 800,
+                            padding: "2px 7px",
+                            borderRadius: "10px",
+                            background: columnSaveStatus.includes("✓") ? "#dcfce7" : "#fef3c7",
+                            color: columnSaveStatus.includes("✓") ? "#15803d" : "#b45309",
+                            border: `1px solid ${columnSaveStatus.includes("✓") ? "#bbf7d0" : "#fde047"}`,
+                          }}>
+                            {columnSaveStatus}
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: "9.5px", color: "#059669", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: "3px" }}>
+                            💾 Autoguardado BBDD
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     {/* Buscador de variable */}
@@ -6074,16 +6181,31 @@ export default function CargaExternaSection({
                       )}
                     </div>
 
-                    <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "6px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ fontSize: "10px", color: "#94a3b8" }}>
+                    <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "8px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: "10px", color: "#64748b" }}>
                         Misma nomenclatura que Ajustes
                       </span>
                       <button
                         type="button"
-                        onClick={() => setShowColumnPicker(false)}
-                        style={{ padding: "3px 8px", borderRadius: "4px", background: "#0f172a", color: "#ffffff", fontSize: "10.5px", fontWeight: 700, border: "none", cursor: "pointer" }}
+                        onClick={() => {
+                          saveCompetitiveProfileColumnsServer(selectedProfileKeys);
+                          setShowColumnPicker(false);
+                        }}
+                        style={{
+                          padding: "4px 12px",
+                          borderRadius: "5px",
+                          background: "#0284c7",
+                          color: "#ffffff",
+                          fontSize: "11px",
+                          fontWeight: 800,
+                          border: "none",
+                          cursor: "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "4px",
+                        }}
                       >
-                        Cerrar
+                        ✓ Guardar y Cerrar
                       </button>
                     </div>
                   </div>
@@ -7244,12 +7366,33 @@ export default function CargaExternaSection({
                     >
                       {/* Encabezado */}
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #f1f5f9", paddingBottom: "6px" }}>
-                        <strong style={{ fontSize: "12px", color: "#0f172a" }}>
-                          {ratioPickerScope === "favoritas" ? "Variables Favoritas" : "Catálogo Completo GPS"}
-                        </strong>
-                        <span style={{ fontSize: "10px", color: "#0369a1", fontWeight: 800, background: "#e0f2fe", padding: "1px 6px", borderRadius: "4px" }}>
-                          {selectedRatioKeys.length} activas
-                        </span>
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                          <strong style={{ fontSize: "12px", color: "#0f172a" }}>
+                            {ratioPickerScope === "favoritas" ? "Variables Favoritas" : "Catálogo Completo GPS"}
+                          </strong>
+                          <span style={{ fontSize: "10px", color: "#0369a1", fontWeight: 800, background: "#e0f2fe", padding: "1px 6px", borderRadius: "4px" }}>
+                            {selectedRatioKeys.length} activas
+                          </span>
+                        </div>
+                        <div>
+                          {ratioColumnSaveStatus ? (
+                            <span style={{
+                              fontSize: "10px",
+                              fontWeight: 800,
+                              padding: "2px 7px",
+                              borderRadius: "10px",
+                              background: ratioColumnSaveStatus.includes("✓") ? "#dcfce7" : "#fef3c7",
+                              color: ratioColumnSaveStatus.includes("✓") ? "#15803d" : "#b45309",
+                              border: `1px solid ${ratioColumnSaveStatus.includes("✓") ? "#bbf7d0" : "#fde047"}`,
+                            }}>
+                              {ratioColumnSaveStatus}
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: "9.5px", color: "#059669", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: "3px" }}>
+                              💾 BBDD
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       {/* Selector de ámbito: Favoritas vs Catálogo */}
@@ -7386,25 +7529,31 @@ export default function CargaExternaSection({
                         })}
                       </div>
 
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid #f1f5f9", paddingTop: "6px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid #f1f5f9", paddingTop: "8px" }}>
                         <span style={{ fontSize: "10px", color: "#64748b" }}>
-                          {ratioPickerScope === "favoritas" ? "Variables favoritas" : "Todas las variables"}
+                          💾 Guardado permanente
                         </span>
                         <button
                           type="button"
-                          onClick={() => setShowRatioColumnPicker(false)}
+                          onClick={() => {
+                            saveWeeklyRatioColumnsServer(selectedRatioKeys);
+                            setShowRatioColumnPicker(false);
+                          }}
                           style={{
-                            padding: "4px 12px",
+                            padding: "4px 14px",
                             borderRadius: "5px",
-                            background: "#0f172a",
+                            background: "#0284c7",
                             color: "#ffffff",
                             fontSize: "11px",
                             fontWeight: 800,
                             cursor: "pointer",
                             border: "none",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "4px",
                           }}
                         >
-                          Listo
+                          ✓ Guardar y Cerrar
                         </button>
                       </div>
                     </div>
