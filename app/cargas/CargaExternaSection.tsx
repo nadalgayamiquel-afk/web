@@ -31,6 +31,8 @@ import {
   saveCompetitiveProfileColumnsServer,
   getWeeklyRatioColumnsServer,
   saveWeeklyRatioColumnsServer,
+  getCustomVariableNamesServer,
+  saveCustomVariableNamesServer,
 } from "@/app/actions";
 import {
   useFavoriteGpsVariables,
@@ -244,7 +246,35 @@ export const DEFAULT_CUSTOM_MICROCICLOS: CustomMicrocycleDef[] = [
 ];
 
 
-export function getVariableDisplayName(key: string, vDef?: GpsVariableDef): { short: string; full: string } {
+let _cachedCustomVariableNames: Record<string, string> = {};
+
+if (typeof window !== "undefined") {
+  try {
+    const raw = localStorage.getItem("gps_custom_variable_names");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        _cachedCustomVariableNames = parsed;
+      }
+    }
+  } catch (e) {}
+}
+
+export function setCachedCustomVariableNames(names: Record<string, string>) {
+  _cachedCustomVariableNames = { ...names };
+}
+
+export function getVariableDisplayName(
+  key: string,
+  vDef?: GpsVariableDef,
+  customNames?: Record<string, string>
+): { short: string; full: string } {
+  const namesMap = customNames || _cachedCustomVariableNames;
+  if (namesMap && namesMap[key]) {
+    const custom = namesMap[key];
+    return { short: custom, full: vDef?.label || custom };
+  }
+
   const label = vDef?.label || "";
   const short = vDef?.shortLabel || "";
   const kLower = (key || "").toLowerCase();
@@ -347,7 +377,16 @@ export function getVariableDisplayName(key: string, vDef?: GpsVariableDef): { sh
   return { short: key, full: key };
 }
 
-function getCompactMetricHeader(key: string, rawLabel?: string): string {
+function getCompactMetricHeader(
+  key: string,
+  rawLabel?: string,
+  customNames?: Record<string, string>
+): string {
+  const namesMap = customNames || _cachedCustomVariableNames;
+  if (namesMap && namesMap[key]) {
+    return namesMap[key];
+  }
+
   let l = (rawLabel || "").trim();
   let k = (key || "").trim();
 
@@ -998,6 +1037,54 @@ export default function CargaExternaSection({
   const [columnSaveStatus, setColumnSaveStatus] = useState<string | null>(null);
   const [ratioColumnSaveStatus, setRatioColumnSaveStatus] = useState<string | null>(null);
 
+  // ── ESTADO PARA NOMBRES PERSONALIZADOS DE VARIABLES (COMPARTIDOS EN RATIOS Y PERFIL COMPETITIVO) ──
+  const [customVariableNames, setCustomVariableNames] = useState<Record<string, string>>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("gps_custom_variable_names");
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            setCachedCustomVariableNames(parsed);
+            return parsed;
+          }
+        }
+      } catch {}
+    }
+    return {};
+  });
+
+  const [editingVarKey, setEditingVarKey] = useState<string | null>(null);
+  const [editingVarText, setEditingVarText] = useState<string>("");
+
+  const handleSaveCustomVariableName = async (key: string, newName: string) => {
+    const trimmed = newName.trim();
+    const updated = { ...customVariableNames };
+    if (trimmed) {
+      updated[key] = trimmed;
+    } else {
+      delete updated[key];
+    }
+    setCustomVariableNames(updated);
+    setCachedCustomVariableNames(updated);
+    try {
+      localStorage.setItem("gps_custom_variable_names", JSON.stringify(updated));
+      window.dispatchEvent(new CustomEvent("gps_custom_variable_names_updated", { detail: updated }));
+    } catch (e) {}
+    await saveCustomVariableNamesServer(updated);
+  };
+
+  useEffect(() => {
+    const handleUpdate = (e: any) => {
+      if (e?.detail && typeof e.detail === "object") {
+        setCustomVariableNames(e.detail);
+        setCachedCustomVariableNames(e.detail);
+      }
+    };
+    window.addEventListener("gps_custom_variable_names_updated", handleUpdate);
+    return () => window.removeEventListener("gps_custom_variable_names_updated", handleUpdate);
+  }, []);
+
   const [selectedProfileKeys, setSelectedProfileKeys] = useState<string[]>(() => {
     if (typeof window !== "undefined") {
       try {
@@ -1014,6 +1101,22 @@ export default function CargaExternaSection({
 
   // Carga inicial persistente desde Supabase / Servidor para garantizar sincronización entre dispositivos y recargas
   useEffect(() => {
+    getCustomVariableNamesServer()
+      .then((names) => {
+        if (names && typeof names === "object" && !Array.isArray(names)) {
+          setCustomVariableNames((prev) => {
+            const hasChange = JSON.stringify(names) !== JSON.stringify(prev);
+            if (!hasChange) return prev;
+            setCachedCustomVariableNames(names);
+            try {
+              localStorage.setItem("gps_custom_variable_names", JSON.stringify(names));
+            } catch (e) {}
+            return names;
+          });
+        }
+      })
+      .catch(() => {});
+
     getCompetitiveProfileColumnsServer()
       .then((cols) => {
         if (Array.isArray(cols) && cols.length > 0) {
@@ -6251,12 +6354,13 @@ export default function CargaExternaSection({
                     </th>
                     {displayedProfileKeys.map((key) => {
                       const v = allVariables.find((item) => item.key === key) || availableFavVariables.find((item) => item.key === key) || ALL_GPS_VARIABLES.find((item) => item.key === key);
-                      const label = getCompactMetricHeader(key, v ? v.label : key);
+                      const label = getCompactMetricHeader(key, v ? v.label : key, customVariableNames);
+                      const isEditing = editingVarKey === key;
                       return (
                         <th
                           key={key}
                           style={{
-                            padding: "8px 10px",
+                            padding: "6px 8px",
                             textAlign: "right",
                             color: "#334155",
                             fontWeight: 800,
@@ -6265,14 +6369,95 @@ export default function CargaExternaSection({
                           }}
                           title={v ? `${v.label} (${v.unit || ""})` : key}
                         >
-                          {label}
+                          {isEditing ? (
+                            <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end", gap: "2px" }}>
+                              <input
+                                autoFocus
+                                type="text"
+                                value={editingVarText}
+                                onChange={(e) => setEditingVarText(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    handleSaveCustomVariableName(key, editingVarText);
+                                    setEditingVarKey(null);
+                                  } else if (e.key === "Escape") {
+                                    e.preventDefault();
+                                    setEditingVarKey(null);
+                                  }
+                                }}
+                                onBlur={() => {
+                                  handleSaveCustomVariableName(key, editingVarText);
+                                  setEditingVarKey(null);
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                placeholder="Nombre..."
+                                style={{
+                                  width: "82px",
+                                  padding: "2px 5px",
+                                  fontSize: "11px",
+                                  fontWeight: 800,
+                                  textAlign: "right",
+                                  borderRadius: "4px",
+                                  border: "1.5px solid #0284c7",
+                                  outline: "none",
+                                  background: "#ffffff",
+                                  color: "#0f172a",
+                                  boxShadow: "0 0 0 2px rgba(2, 132, 199, 0.2)",
+                                }}
+                              />
+                              <span style={{ fontSize: "8px", color: "#64748b", textTransform: "none", fontWeight: 500 }}>↵ Guardar</span>
+                            </div>
+                          ) : (
+                            <div
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingVarKey(key);
+                                setEditingVarText(label);
+                              }}
+                              title="Pulsar para editar nombre de la variable"
+                              style={{
+                                cursor: "pointer",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "flex-end",
+                                gap: "3px",
+                                padding: "2px 5px",
+                                borderRadius: "4px",
+                                transition: "all 0.15s ease",
+                              }}
+                              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#e2e8f0")}
+                              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                            >
+                              <span>{label}</span>
+                              <svg
+                                style={{
+                                  width: "10px",
+                                  height: "10px",
+                                  color: "#94a3b8",
+                                  flexShrink: 0,
+                                  opacity: 0.6,
+                                }}
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                                />
+                              </svg>
+                            </div>
+                          )}
                         </th>
                       );
                     })}
                     {showHsriColumn && (
                       <th
                         style={{
-                          padding: "8px 10px",
+                          padding: "6px 8px",
                           textAlign: "right",
                           color: "#166534",
                           fontWeight: 800,
@@ -6282,7 +6467,88 @@ export default function CargaExternaSection({
                         }}
                         title="High Speed Running Individualizada por jugador"
                       >
-                        ⚡ HSRI
+                        {editingVarKey === "hsri" ? (
+                          <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end", gap: "2px" }}>
+                            <input
+                              autoFocus
+                              type="text"
+                              value={editingVarText}
+                              onChange={(e) => setEditingVarText(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  handleSaveCustomVariableName("hsri", editingVarText);
+                                  setEditingVarKey(null);
+                                } else if (e.key === "Escape") {
+                                  e.preventDefault();
+                                  setEditingVarKey(null);
+                                }
+                              }}
+                              onBlur={() => {
+                                handleSaveCustomVariableName("hsri", editingVarText);
+                                setEditingVarKey(null);
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              placeholder="Nombre..."
+                              style={{
+                                width: "82px",
+                                padding: "2px 5px",
+                                fontSize: "11px",
+                                fontWeight: 800,
+                                textAlign: "right",
+                                borderRadius: "4px",
+                                border: "1.5px solid #16a34a",
+                                outline: "none",
+                                background: "#ffffff",
+                                color: "#0f172a",
+                                boxShadow: "0 0 0 2px rgba(22, 163, 74, 0.2)",
+                              }}
+                            />
+                            <span style={{ fontSize: "8px", color: "#64748b", textTransform: "none", fontWeight: 500 }}>↵ Guardar</span>
+                          </div>
+                        ) : (
+                          <div
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingVarKey("hsri");
+                              setEditingVarText(customVariableNames["hsri"] || "⚡ HSRI");
+                            }}
+                            title="Pulsar para editar nombre de la variable"
+                            style={{
+                              cursor: "pointer",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "flex-end",
+                              gap: "3px",
+                              padding: "2px 5px",
+                              borderRadius: "4px",
+                              transition: "all 0.15s ease",
+                            }}
+                            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#dcfce7")}
+                            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                          >
+                            <span>{customVariableNames["hsri"] || "⚡ HSRI"}</span>
+                            <svg
+                              style={{
+                                width: "10px",
+                                height: "10px",
+                                color: "#16a34a",
+                                flexShrink: 0,
+                                opacity: 0.6,
+                              }}
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                              />
+                            </svg>
+                          </div>
+                        )}
                       </th>
                     )}
                     <th style={{ padding: "8px 8px", textAlign: "center", width: "40px", minWidth: "40px" }}>Edit</th>
@@ -8056,7 +8322,7 @@ export default function CargaExternaSection({
 
                 {activeRatioKeys.map((key) => {
                   const vDef = getGpsVariableDef(key);
-                  const nameObj = getVariableDisplayName(key, vDef);
+                  const nameObj = getVariableDisplayName(key, vDef, customVariableNames);
                   const currentVal = teamRatioTargets[key] ?? getDefaultRatioTargetForKey(key);
                   const isDt = key === "Distance(m)";
 
@@ -8073,9 +8339,21 @@ export default function CargaExternaSection({
                         gap: "2px",
                         height: "23px",
                       }}
-                      title={"Objetivo de ratio semanal para " + nameObj.full}
+                      title={"Objetivo de ratio semanal para " + nameObj.full + " · Clic en nombre para editar"}
                     >
-                      <span style={{ fontSize: "10px", fontWeight: 700, color: isDt ? "#1d4ed8" : "#334155" }}>
+                      <span
+                        onClick={() => {
+                          setEditingVarKey(key);
+                          setEditingVarText(nameObj.short);
+                        }}
+                        style={{
+                          fontSize: "10px",
+                          fontWeight: 700,
+                          color: isDt ? "#1d4ed8" : "#334155",
+                          cursor: "pointer",
+                        }}
+                        title="Clic para editar nombre de la variable"
+                      >
                         {nameObj.short}
                       </span>
                       <input
@@ -8223,14 +8501,15 @@ export default function CargaExternaSection({
                     <th style={{ padding: "8px 2px", textAlign: "center", width: "56px", minWidth: "52px", maxWidth: "62px" }}>Sesiones</th>
                     {activeRatioKeys.map((key) => {
                       const vDef = getGpsVariableDef(key);
-                      const nameObj = getVariableDisplayName(key, vDef);
+                      const nameObj = getVariableDisplayName(key, vDef, customVariableNames);
                       const targetVal = teamRatioTargets[key] ?? getDefaultRatioTargetForKey(key);
                       const isDt = key === "Distance(m)";
+                      const isEditing = editingVarKey === key;
                       return (
                         <th
                           key={key}
                           style={{
-                            padding: "8px 4px",
+                            padding: "6px 4px",
                             textAlign: "center",
                             minWidth: "80px",
                             background: isDt ? "#e0f2fe" : undefined,
@@ -8239,7 +8518,91 @@ export default function CargaExternaSection({
                           }}
                           title={nameObj.full}
                         >
-                          <div style={{ fontWeight: 800, color: isDt ? "#0369a1" : "#1e293b", fontSize: "11px", whiteSpace: "nowrap" }}>{nameObj.short}</div>
+                          {isEditing ? (
+                            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
+                              <input
+                                autoFocus
+                                type="text"
+                                value={editingVarText}
+                                onChange={(e) => setEditingVarText(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    handleSaveCustomVariableName(key, editingVarText);
+                                    setEditingVarKey(null);
+                                  } else if (e.key === "Escape") {
+                                    e.preventDefault();
+                                    setEditingVarKey(null);
+                                  }
+                                }}
+                                onBlur={() => {
+                                  handleSaveCustomVariableName(key, editingVarText);
+                                  setEditingVarKey(null);
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                placeholder="Nombre..."
+                                style={{
+                                  width: "90%",
+                                  maxWidth: "92px",
+                                  padding: "2px 4px",
+                                  fontSize: "11px",
+                                  fontWeight: 800,
+                                  textAlign: "center",
+                                  borderRadius: "4px",
+                                  border: "1.5px solid #0284c7",
+                                  outline: "none",
+                                  background: "#ffffff",
+                                  color: isDt ? "#0369a1" : "#0f172a",
+                                  boxShadow: "0 0 0 2px rgba(2, 132, 199, 0.2)",
+                                }}
+                              />
+                              <span style={{ fontSize: "8px", color: "#64748b", textTransform: "none", fontWeight: 500 }}>↵ Guardar</span>
+                            </div>
+                          ) : (
+                            <div
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingVarKey(key);
+                                setEditingVarText(nameObj.short);
+                              }}
+                              title="Pulsar para editar nombre de la variable"
+                              style={{
+                                cursor: "pointer",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                gap: "3px",
+                                padding: "2px 5px",
+                                borderRadius: "4px",
+                                transition: "all 0.15s ease",
+                              }}
+                              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = isDt ? "#bae6fd" : "#e2e8f0")}
+                              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                            >
+                              <span style={{ fontWeight: 800, color: isDt ? "#0369a1" : "#1e293b", fontSize: "11px", whiteSpace: "nowrap" }}>
+                                {nameObj.short}
+                              </span>
+                              <svg
+                                style={{
+                                  width: "10px",
+                                  height: "10px",
+                                  color: isDt ? "#0284c7" : "#94a3b8",
+                                  flexShrink: 0,
+                                  opacity: 0.6,
+                                }}
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                                />
+                              </svg>
+                            </div>
+                          )}
                           <div style={{ fontSize: "9.5px", fontWeight: 700, color: isDt ? "#0284c7" : "#0284c7", textTransform: "none", whiteSpace: "nowrap" }}>
                             Obj: {targetVal}x
                           </div>
@@ -8247,7 +8610,90 @@ export default function CargaExternaSection({
                       );
                     })}
                     <th style={{ padding: "8px 4px", textAlign: "center", width: "84px", minWidth: "80px", maxWidth: "92px" }}>
-                      <div style={{ fontSize: "10.5px", fontWeight: 800, whiteSpace: "nowrap" }}>Vmax Sem</div>
+                      {editingVarKey === "vmax_sem" ? (
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
+                          <input
+                            autoFocus
+                            type="text"
+                            value={editingVarText}
+                            onChange={(e) => setEditingVarText(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                handleSaveCustomVariableName("vmax_sem", editingVarText);
+                                setEditingVarKey(null);
+                              } else if (e.key === "Escape") {
+                                e.preventDefault();
+                                setEditingVarKey(null);
+                              }
+                            }}
+                            onBlur={() => {
+                              handleSaveCustomVariableName("vmax_sem", editingVarText);
+                              setEditingVarKey(null);
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            placeholder="Vmax Sem"
+                            style={{
+                              width: "74px",
+                              padding: "2px 3px",
+                              fontSize: "10.5px",
+                              fontWeight: 800,
+                              textAlign: "center",
+                              borderRadius: "4px",
+                              border: "1.5px solid #0284c7",
+                              outline: "none",
+                              background: "#ffffff",
+                              color: "#0f172a",
+                              boxShadow: "0 0 0 2px rgba(2, 132, 199, 0.2)",
+                            }}
+                          />
+                          <span style={{ fontSize: "8px", color: "#64748b", textTransform: "none", fontWeight: 500 }}>↵ Guardar</span>
+                        </div>
+                      ) : (
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingVarKey("vmax_sem");
+                            setEditingVarText(customVariableNames["vmax_sem"] || "Vmax Sem");
+                          }}
+                          title="Pulsar para editar nombre de la variable"
+                          style={{
+                            cursor: "pointer",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: "3px",
+                            padding: "2px 4px",
+                            borderRadius: "4px",
+                            transition: "all 0.15s ease",
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#e2e8f0")}
+                          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                        >
+                          <span style={{ fontSize: "10.5px", fontWeight: 800, whiteSpace: "nowrap" }}>
+                            {customVariableNames["vmax_sem"] || "Vmax Sem"}
+                          </span>
+                          <svg
+                            style={{
+                              width: "9.5px",
+                              height: "9.5px",
+                              color: "#94a3b8",
+                              flexShrink: 0,
+                              opacity: 0.6,
+                            }}
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                            />
+                          </svg>
+                        </div>
+                      )}
                       <div style={{ fontSize: "9px", fontWeight: 700, color: "#64748b", textTransform: "none", whiteSpace: "nowrap" }}>
                         % Top Hist.
                       </div>

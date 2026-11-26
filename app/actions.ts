@@ -5141,6 +5141,116 @@ export async function saveWeeklyRatioColumnsServer(
   }
 }
 
+const CUSTOM_VARIABLE_NAMES_UUID = "00000000-0000-0000-0000-000000000008";
+
+export async function getCustomVariableNamesServer(): Promise<Record<string, string>> {
+  try {
+    // 1. Supabase db_testing
+    const supabase = getServerSupabase();
+    const { data: dbRow } = await supabase
+      .from("db_testing")
+      .select("data")
+      .eq("id", CUSTOM_VARIABLE_NAMES_UUID)
+      .eq("test_type_id", "custom_variable_names")
+      .maybeSingle();
+
+    if (dbRow?.data && typeof dbRow.data === "object") {
+      const names = (dbRow.data as any).names;
+      if (names && typeof names === "object" && !Array.isArray(names)) {
+        return names;
+      }
+    }
+
+    // 2. configuracion_club
+    const { data: clubRow } = await supabase
+      .from("configuracion_club")
+      .select("config_json")
+      .eq("id", "default")
+      .maybeSingle();
+
+    if (clubRow?.config_json?.gpsConfig?.customVariableNames) {
+      const names = clubRow.config_json.gpsConfig.customVariableNames;
+      if (names && typeof names === "object" && !Array.isArray(names)) {
+        return names;
+      }
+    }
+
+    // 3. Archivo JSON local
+    const path = require("path");
+    const filePath = path.join(process.cwd(), "public", "custom_variable_names.json");
+    if (fs.existsSync(filePath)) {
+      const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+      if (parsed?.names && typeof parsed.names === "object" && !Array.isArray(parsed.names)) {
+        return parsed.names;
+      }
+    }
+  } catch (e) {
+    console.error("Error reading custom variable names from server:", e);
+  }
+  return {};
+}
+
+export async function saveCustomVariableNamesServer(
+  names: Record<string, string>
+): Promise<{ success: boolean; names: Record<string, string> }> {
+  try {
+    const valid = names && typeof names === "object" && !Array.isArray(names) ? names : {};
+    const payload = {
+      names: valid,
+      updatedAt: new Date().toISOString(),
+    };
+
+    // 1. Guardar en Supabase db_testing
+    const supabase = getServerSupabase();
+    await supabase.from("db_testing").upsert({
+      id: CUSTOM_VARIABLE_NAMES_UUID,
+      name: "Nombres Personalizados Variables GPS",
+      test_type_id: "custom_variable_names",
+      structure: "CONFIG",
+      data: payload,
+    });
+
+    // 2. Guardar en configuracion_club
+    try {
+      const { data: clubRow } = await supabase
+        .from("configuracion_club")
+        .select("config_json")
+        .eq("id", "default")
+        .maybeSingle();
+
+      const existingConfig = clubRow?.config_json || {};
+      const updatedConfig = {
+        ...existingConfig,
+        gpsConfig: {
+          ...(existingConfig.gpsConfig || {}),
+          customVariableNames: valid,
+        },
+      };
+
+      await supabase.from("configuracion_club").upsert(
+        {
+          id: "default",
+          config_json: updatedConfig,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "id" }
+      );
+    } catch (e) {}
+
+    // 3. Guardar archivo local
+    try {
+      const path = require("path");
+      const filePath = path.join(process.cwd(), "public", "custom_variable_names.json");
+      fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), "utf8");
+    } catch (e) {}
+
+    return { success: true, names: valid };
+  } catch (e) {
+    console.error("Error saving custom variable names to server:", e);
+    return { success: false, names };
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // MULTAS: CONFIGURACIÓN, BAREMOS Y REGISTRO OFICIAL
 // ═══════════════════════════════════════════════════════════════════
