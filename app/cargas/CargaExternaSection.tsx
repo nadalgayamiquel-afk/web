@@ -8219,8 +8219,8 @@ export default function CargaExternaSection({
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", color: "#0f172a" }}>
                 <thead>
                   <tr style={{ background: "#f1f5f9", borderBottom: "2px solid #cbd5e1", textAlign: "left", color: "#475569", fontSize: "11px", textTransform: "uppercase" }}>
-                    <th style={{ padding: "10px 12px" }}>Jugador</th>
-                    <th style={{ padding: "10px 6px", textAlign: "center" }}>Sesiones</th>
+                    <th style={{ padding: "10px 12px", width: "230px", minWidth: "190px", maxWidth: "250px" }}>Jugador</th>
+                    <th style={{ padding: "10px 6px", textAlign: "center", width: "75px", minWidth: "70px", maxWidth: "85px" }}>Sesiones</th>
                     {activeRatioKeys.map((key) => {
                       const vDef = getGpsVariableDef(key);
                       const nameObj = getVariableDisplayName(key, vDef);
@@ -8230,8 +8230,9 @@ export default function CargaExternaSection({
                         <th
                           key={key}
                           style={{
-                            padding: "10px 10px",
+                            padding: "10px 8px",
                             textAlign: "center",
+                            minWidth: "105px",
                             background: isDt ? "#e0f2fe" : undefined,
                             borderLeft: isDt ? "2px solid #0284c7" : undefined,
                             borderRight: isDt ? "2px solid #0284c7" : undefined,
@@ -8245,7 +8246,7 @@ export default function CargaExternaSection({
                         </th>
                       );
                     })}
-                    <th style={{ padding: "10px 12px", textAlign: "center" }}>
+                    <th style={{ padding: "10px 12px", textAlign: "center", width: "120px", minWidth: "110px", maxWidth: "135px" }}>
                       <div>Vmax Semana</div>
                       <div style={{ fontSize: "9.5px", fontWeight: 800, color: "#64748b", textTransform: "none" }}>
                         % Top Histórico
@@ -8283,13 +8284,13 @@ export default function CargaExternaSection({
                             background: idx % 2 === 0 ? "#ffffff" : "#fcfcfd",
                           }}
                         >
-                          <td style={{ padding: "8px 12px" }}>
+                          <td style={{ padding: "8px 12px", width: "230px", minWidth: "190px", maxWidth: "250px" }}>
                             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
                                 {renderDisponibilidadBadge && renderDisponibilidadBadge(j)}
-                                <div style={{ display: "flex", flexDirection: "column" }}>
+                                <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
                                   <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                                    <span style={{ fontWeight: 800, color: "#0f172a" }}>
+                                    <span style={{ fontWeight: 800, color: "#0f172a", whiteSpace: "nowrap" }}>
                                       {j.dorsal ? "#" + j.dorsal + " " : ""}{j.apodo || j.nombre}
                                     </span>
                                     {hasCustom && (
@@ -8302,6 +8303,7 @@ export default function CargaExternaSection({
                                           background: "#fef3c7",
                                           color: "#92400e",
                                           border: "1px solid #fde047",
+                                          whiteSpace: "nowrap",
                                         }}
                                         title="Este jugador tiene objetivos de ratios individuales personalizados"
                                       >
@@ -8309,7 +8311,7 @@ export default function CargaExternaSection({
                                       </span>
                                     )}
                                   </div>
-                                  <span style={{ fontSize: "10px", color: "#64748b" }}>
+                                  <span style={{ fontSize: "10px", color: "#64748b", whiteSpace: "nowrap" }}>
                                     {j.posicion || "Jugador"}
                                   </span>
                                 </div>
@@ -8318,7 +8320,7 @@ export default function CargaExternaSection({
                               {/* Acciones discretas por fila (aparecen sutilmente al pasar el ratón) */}
                               <div
                                 className="opacity-0 group-hover:opacity-100 transition-opacity duration-150"
-                                style={{ display: "flex", alignItems: "center", gap: "3px" }}
+                                style={{ display: "flex", alignItems: "center", gap: "3px", flexShrink: 0 }}
                               >
                                 <button
                                   type="button"
@@ -8413,7 +8415,7 @@ export default function CargaExternaSection({
                             </div>
                           </td>
 
-                          <td style={{ padding: "10px 6px", textAlign: "center", fontWeight: 800 }}>
+                          <td style={{ padding: "10px 6px", textAlign: "center", width: "75px", minWidth: "70px", maxWidth: "85px", fontWeight: 800 }}>
                             <div>{row.sessionsCount}</div>
                             {ratioDataSource === "todos" && row.simSessionsCount > 0 && (
                               <div style={{ fontSize: "9.5px", color: "#b45309", fontWeight: 700 }} title={row.realSessionsCount + " reales + " + row.simSessionsCount + " simuladas"}>
@@ -8424,7 +8426,7 @@ export default function CargaExternaSection({
 
                           {activeRatioKeys.map((key) => {
                             const m = row.metrics[key];
-                            if (!m) return <td key={key} style={{ padding: "8px 10px", textAlign: "center" }}>-</td>;
+                            if (!m) return <td key={key} style={{ padding: "8px 10px", textAlign: "center", minWidth: "105px" }}>-</td>;
 
                             return (
                               <td
@@ -8432,6 +8434,7 @@ export default function CargaExternaSection({
                                 style={{
                                   padding: "8px 10px",
                                   textAlign: "center",
+                                  minWidth: "105px",
                                   background: showSemaforo ? m.comp.bg : "transparent",
                                   borderLeft: showSemaforo ? ("3px solid " + m.comp.border) : "none",
                                   transition: "all 0.15s ease",
@@ -8463,7 +8466,7 @@ export default function CargaExternaSection({
                           })}
 
                           {/* Vmax */}
-                          <td style={{ padding: "10px 12px", textAlign: "center" }}>
+                          <td style={{ padding: "10px 12px", textAlign: "center", width: "120px", minWidth: "110px", maxWidth: "135px" }}>
                             <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
                               <span style={{ fontWeight: 800, color: row.vmaxPct >= 90 ? "#15803d" : "#64748b" }}>
                                 {row.weekMaxSpeed > 0 ? row.weekMaxSpeed.toFixed(1) + " km/h" : "-"}
