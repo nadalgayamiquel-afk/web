@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, Suspense } from "react";
+import React, { useState, useEffect, useMemo, Suspense, Component, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import * as XLSX from "xlsx";
@@ -11,6 +11,58 @@ import { ExternalDatabaseLinks, DEFAULT_EXTERNAL_LINKS } from "@/app/lib/externa
 import CargaExternaSection from "./CargaExternaSection";
 import { resolvePlanificacionMD, getLocalStoragePlanificacionDays } from "@/app/lib/planificacionMd";
 import { findMatchingJugador, extractPlayerNameFromRow, extractDatesFromRow, isRowMatchingDate, normalizeDateStr } from "@/app/lib/playerMatching";
+
+class CargaExternaErrorBoundary extends Component<
+  { children: ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: any) {
+    console.error("[CargaExternaErrorBoundary] Error capturado:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: "24px", background: "#fef2f2", border: "1px solid #f87171", borderRadius: "8px", margin: "16px 0", color: "#991b1b" }}>
+          <h3 style={{ margin: "0 0 8px 0", fontSize: "15px", fontWeight: 800 }}>
+            ⚠️ Ocurrió una incidencia visual al renderizar la sección de Cargas Externas
+          </h3>
+          <p style={{ margin: "0 0 12px 0", fontSize: "12px", color: "#7f1d1d" }}>
+            El sistema se ha protegido para evitar que la página quede en blanco. Puedes recargar la sección con el botón inferior:
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              this.setState({ hasError: false, error: null });
+            }}
+            style={{
+              padding: "6px 14px",
+              background: "#dc2626",
+              color: "#ffffff",
+              border: "none",
+              borderRadius: "5px",
+              fontWeight: 700,
+              cursor: "pointer",
+              fontSize: "12px",
+            }}
+          >
+            Reintentar carga de sección
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const teamsBySeason: Record<string, string[]> = {
   "2026/27": ["CE Europa"],
@@ -2232,20 +2284,22 @@ function CargasContent() {
 
         {/* CONTENIDOS CARGA EXTERNA (REPLANTEADA ORDENADA Y PRECISA) */}
         {tab === "externa" && (
-          <CargaExternaSection
-            planificacionDays={planificacionDays}
-            gpsRecords={gpsRecords}
-            jugadores={filteredJugadores}
-            selectedDate={selectedDate}
-            setSelectedDate={setSelectedDate}
-            isGpsUploading={isGpsUploading}
-            handleGpsCsvUpload={handleGpsCsvUpload}
-            handleSyncDownloadsGps={handleSyncDownloadsGps}
-            gpsUploadStatus={gpsUploadStatus}
-            handleUpdateGps={handleUpdateGps}
-            loadDbGpsRecords={loadDbGpsRecords}
-            renderDisponibilidadBadge={renderDisponibilidadBadge}
-          />
+          <CargaExternaErrorBoundary>
+            <CargaExternaSection
+              planificacionDays={planificacionDays}
+              gpsRecords={gpsRecords}
+              jugadores={filteredJugadores}
+              selectedDate={selectedDate}
+              setSelectedDate={setSelectedDate}
+              isGpsUploading={isGpsUploading}
+              handleGpsCsvUpload={handleGpsCsvUpload}
+              handleSyncDownloadsGps={handleSyncDownloadsGps}
+              gpsUploadStatus={gpsUploadStatus}
+              handleUpdateGps={handleUpdateGps}
+              loadDbGpsRecords={loadDbGpsRecords}
+              renderDisponibilidadBadge={renderDisponibilidadBadge}
+            />
+          </CargaExternaErrorBoundary>
         )}
       </section>
     </main>

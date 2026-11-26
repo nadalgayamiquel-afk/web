@@ -1006,6 +1006,7 @@ export default function CargaExternaSection({
   });
 
   const handleToggleColumn = (key: string) => {
+    if (!key) return;
     setSelectedProfileKeys((prev) => {
       let next: string[];
       if (prev.includes(key)) {
@@ -1015,20 +1016,21 @@ export default function CargaExternaSection({
         next = [...prev, key];
       }
       if (typeof window !== "undefined") {
-        localStorage.setItem("gps_profile_selected_fav_keys", JSON.stringify(next));
+        try {
+          localStorage.setItem("gps_profile_selected_fav_keys", JSON.stringify(next));
+        } catch (e) {}
       }
       return next;
     });
-    // Si la variable seleccionada no está en favoritas generales, la añadimos para mantener sincronía
-    if (!favoriteKeys.includes(key)) {
-      toggleFavorite(key);
-    }
   };
 
   const handleSetPresetColumns = (keys: string[]) => {
+    if (!Array.isArray(keys) || keys.length === 0) return;
     setSelectedProfileKeys(keys);
     if (typeof window !== "undefined") {
-      localStorage.setItem("gps_profile_selected_fav_keys", JSON.stringify(keys));
+      try {
+        localStorage.setItem("gps_profile_selected_fav_keys", JSON.stringify(keys));
+      } catch (e) {}
     }
   };
 
@@ -1044,18 +1046,18 @@ export default function CargaExternaSection({
 
   const displayedProfileKeys = useMemo(() => {
     // Variables estándar seleccionadas por el usuario (la HSR normal 19,8 es una variable fija como las demás)
-    const cleanKeys = selectedProfileKeys.filter(
-      (k) => k !== "HSR_Personalizada" && k !== "derived_undefined" && k !== "derived_1791992159697" && !isCustomHsrKey(k)
+    const cleanKeys = (selectedProfileKeys || []).filter(
+      (k) => Boolean(k) && typeof k === "string" && k !== "HSR_Personalizada" && k !== "derived_undefined" && k !== "derived_1791992159697" && !isCustomHsrKey(k)
     );
 
     // Ordenar para que DT esté siempre primero
     return [...cleanKeys].sort((a, b) => {
-      const aLower = a.toLowerCase();
-      const bLower = b.toLowerCase();
+      const aLower = (a || "").toLowerCase();
+      const bLower = (b || "").toLowerCase();
       const aIsDT = a === "Distance(m)" || aLower.includes("distancia total") || aLower === "dt";
       const bIsDT = b === "Distance(m)" || bLower.includes("distancia total") || bLower === "dt";
-      if (aIsDT) return -1;
-      if (bIsDT) return 1;
+      if (aIsDT && !bIsDT) return -1;
+      if (!aIsDT && bIsDT) return 1;
       return 0;
     });
   }, [selectedProfileKeys]);
@@ -3190,7 +3192,7 @@ export default function CargaExternaSection({
       return "transparent";
     }
     const range = columnMinMaxMap[key];
-    if (!range || range.max <= range.min) return "transparent";
+    if (!range || typeof range.max !== "number" || typeof range.min !== "number" || range.max <= range.min) return "transparent";
 
     const pct = Math.max(0, Math.min(1, (val - range.min) / (range.max - range.min)));
     // Escala deportiva suave y profesional de demanda relativa (Top 20% verde intenso, degradado hasta azul claro)
@@ -6003,26 +6005,41 @@ export default function CargaExternaSection({
                         pickerVariablesList.map((v) => {
                           const isChecked = selectedProfileKeys.includes(v.key);
                           return (
-                            <label
+                            <div
                               key={v.key}
+                              role="button"
+                              tabIndex={0}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                handleToggleColumn(v.key);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleToggleColumn(v.key);
+                                }
+                              }}
                               style={{
                                 display: "flex",
                                 alignItems: "center",
                                 justifyContent: "space-between",
                                 gap: "8px",
-                                padding: "4px 6px",
+                                padding: "5px 7px",
                                 borderRadius: "4px",
                                 background: isChecked ? "#eff6ff" : "transparent",
                                 cursor: "pointer",
                                 transition: "background-color 0.1s ease",
+                                userSelect: "none",
                               }}
                             >
-                              <div style={{ display: "flex", alignItems: "center", gap: "7px", minWidth: 0, flex: 1 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: "7px", minWidth: 0, flex: 1, pointerEvents: "none" }}>
                                 <input
                                   type="checkbox"
                                   checked={isChecked}
-                                  onChange={() => handleToggleColumn(v.key)}
-                                  style={{ cursor: "pointer", flexShrink: 0 }}
+                                  readOnly
+                                  style={{ cursor: "pointer", flexShrink: 0, width: "14px", height: "14px", accentColor: "#2563eb" }}
                                 />
                                 <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                   <span style={{ fontSize: "11px", fontWeight: isChecked ? 800 : 600, color: isChecked ? "#1e40af" : "#0f172a" }}>
@@ -6045,12 +6062,13 @@ export default function CargaExternaSection({
                                     background: isChecked ? "#dbeafe" : "#f1f5f9",
                                     color: isChecked ? "#1e40af" : "#475569",
                                     flexShrink: 0,
+                                    pointerEvents: "none",
                                   }}
                                 >
                                   {v.unit}
                                 </span>
                               )}
-                            </label>
+                            </div>
                           );
                         })
                       )}
@@ -6088,7 +6106,7 @@ export default function CargaExternaSection({
                       PART.
                     </th>
                     {displayedProfileKeys.map((key) => {
-                      const v = allVariables.find((item) => item.key === key) || availableFavVariables.find((item) => item.key === key);
+                      const v = allVariables.find((item) => item.key === key) || availableFavVariables.find((item) => item.key === key) || ALL_GPS_VARIABLES.find((item) => item.key === key);
                       const label = getCompactMetricHeader(key, v ? v.label : key);
                       return (
                         <th
@@ -6101,7 +6119,7 @@ export default function CargaExternaSection({
                             whiteSpace: "nowrap",
                             minWidth: "75px",
                           }}
-                          title={v ? `${v.label} (${v.unit})` : key}
+                          title={v ? `${v.label} (${v.unit || ""})` : key}
                         >
                           {label}
                         </th>
@@ -6597,11 +6615,20 @@ export default function CargaExternaSection({
 
                         {/* Columnas dinámicas según favoritas elegidas */}
                         {displayedProfileKeys.map((key) => {
-                          const val = p.values ? (p.values as Record<string, any>)[key] : undefined;
+                          const val = p?.values ? (p.values as Record<string, any>)[key] : undefined;
 
-                          const isEstimated = p.category === "estimado_45";
-                          const isCopied = p.category === "copiado_posicion";
+                          const isEstimated = p?.category === "estimado_45";
+                          const isCopied = p?.category === "copiado_posicion";
                           const suffix = isEstimated ? "*" : isCopied ? "**" : "";
+
+                          let displayStr = "—";
+                          if (val !== undefined && val !== null) {
+                            if (typeof val === "number") {
+                              displayStr = !isNaN(val) ? (val % 1 !== 0 ? val.toFixed(1) : val.toLocaleString()) : "—";
+                            } else if (typeof val === "string") {
+                              displayStr = val;
+                            }
+                          }
 
                           return (
                             <td
@@ -6617,15 +6644,7 @@ export default function CargaExternaSection({
                                 transition: "background-color 0.15s ease",
                               }}
                             >
-                              <span>
-                                {val !== undefined && val !== null
-                                  ? typeof val === "number"
-                                    ? val % 1 !== 0
-                                      ? val.toFixed(1)
-                                      : val.toLocaleString()
-                                    : val
-                                  : "—"}
-                              </span>
+                              <span>{displayStr}</span>
                               {suffix && (
                                 <span
                                   style={{
@@ -7312,9 +7331,26 @@ export default function CargaExternaSection({
                       <div style={{ maxHeight: "250px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "3px" }}>
                         {(ratioPickerScope === "favoritas" ? availableFavVariables : ALL_GPS_VARIABLES.filter((v) => v.key !== "Duration(min)")).map((v) => {
                           const isChecked = selectedRatioKeys.includes(v.key);
+                          const isDt = v.key === "Distance(m)";
+                          const checked = isDt ? true : isChecked;
+                          const nameObj = getVariableDisplayName(v.key, v);
                           return (
-                            <label
+                            <div
                               key={v.key}
+                              role="button"
+                              tabIndex={0}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                if (!isDt) handleToggleRatioColumn(v.key);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  if (!isDt) handleToggleRatioColumn(v.key);
+                                }
+                              }}
                               style={{
                                 display: "flex",
                                 alignItems: "center",
@@ -7322,36 +7358,30 @@ export default function CargaExternaSection({
                                 padding: "4px 6px",
                                 borderRadius: "4px",
                                 background: isChecked ? "#f0f9ff" : "transparent",
-                                cursor: "pointer",
+                                cursor: isDt ? "default" : "pointer",
                                 fontSize: "11px",
+                                userSelect: "none",
                               }}
                             >
-                              {(() => {
-                                const isDt = v.key === "Distance(m)";
-                                const checked = isDt ? true : isChecked;
-                                const nameObj = getVariableDisplayName(v.key, v);
-                                return (
-                                  <>
-                                    <input
-                                      type="checkbox"
-                                      checked={checked}
-                                      disabled={isDt}
-                                      onChange={() => !isDt && handleToggleRatioColumn(v.key)}
-                                      style={{ cursor: isDt ? "not-allowed" : "pointer", accentColor: "#0284c7" }}
-                                    />
-                                    <span style={{ fontWeight: checked ? 800 : 500, color: checked ? "#0369a1" : "#334155", flex: 1, display: "inline-flex", alignItems: "center", gap: "5px" }}>
-                                      {v.esDerivada && (
-                                        <span style={{ fontSize: "11px", color: "#059669", fontWeight: 900 }} title="Variable Personalizada">➕</span>
-                                      )}
-                                      <span>{nameObj.full} {isDt ? "(Fija)" : ""}</span>
-                                    </span>
-                                    <span style={{ fontSize: "9.5px", color: isDt ? "#1d4ed8" : "#64748b", fontWeight: 700, fontFamily: "monospace" }}>
-                                      [{nameObj.short}]
-                                    </span>
-                                  </>
-                                );
-                              })()}
-                            </label>
+                              <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, pointerEvents: "none" }}>
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  disabled={isDt}
+                                  readOnly
+                                  style={{ cursor: isDt ? "not-allowed" : "pointer", accentColor: "#0284c7" }}
+                                />
+                                <span style={{ fontWeight: checked ? 800 : 500, color: checked ? "#0369a1" : "#334155", flex: 1, display: "inline-flex", alignItems: "center", gap: "5px" }}>
+                                  {v.esDerivada && (
+                                    <span style={{ fontSize: "11px", color: "#059669", fontWeight: 900 }} title="Variable Personalizada">➕</span>
+                                  )}
+                                  <span>{nameObj.full} {isDt ? "(Fija)" : ""}</span>
+                                </span>
+                                <span style={{ fontSize: "9.5px", color: isDt ? "#1d4ed8" : "#64748b", fontWeight: 700, fontFamily: "monospace" }}>
+                                  [{nameObj.short}]
+                                </span>
+                              </div>
+                            </div>
                           );
                         })}
                       </div>

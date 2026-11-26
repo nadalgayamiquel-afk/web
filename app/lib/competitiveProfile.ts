@@ -320,7 +320,7 @@ export function getCompactMetricHeader(key: string, rawLabel?: string): string {
 
   // 7. Sprint (+24 km/h) Distancia
   if (k.includes("+ 24") || k.includes("+24") || l.includes("+24") || k.includes("sprint (m)") || l.includes("sprint")) {
-    return "Sprint 24";
+    return "Dist. +24";
   }
 
   return rawLabel || key;
