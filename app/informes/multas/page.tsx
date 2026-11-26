@@ -812,6 +812,7 @@ export default function MultasPage() {
   const [filtroTipoMulta, setFiltroTipoMulta] = useState<string>("TODOS");
   const [filtroJugador, setFiltroJugador] = useState<string>("TODOS");
   const [busqueda, setBusqueda] = useState<string>("");
+  const [selectedMultaIds, setSelectedMultaIds] = useState<Set<string>>(new Set());
 
   // Modal crear/editar tipo de multa
   const [showTipoMultaModal, setShowTipoMultaModal] = useState<boolean>(false);
@@ -934,6 +935,7 @@ export default function MultasPage() {
     setFiltroTipoMulta("TODOS");
     setFiltroJugador("TODOS");
     setBusqueda("");
+    setSelectedMultaIds(new Set());
     if (typeof window !== "undefined") {
       localStorage.removeItem("multas_filtro_fecha_desde");
       localStorage.removeItem("multas_filtro_fecha_hasta");
@@ -1724,6 +1726,39 @@ export default function MultasPage() {
     return list;
   }, [filteredMultas, sortCol, sortDir]);
 
+  // Selección múltiple para borrado selectivo en el Generador de Informes
+  const isAllFilteredSelected =
+    displayedMultas.length > 0 && displayedMultas.every((m) => selectedMultaIds.has(m.id));
+
+  const toggleSelectAllFiltered = () => {
+    if (isAllFilteredSelected) {
+      setSelectedMultaIds((prev) => {
+        const next = new Set(prev);
+        displayedMultas.forEach((m) => next.delete(m.id));
+        return next;
+      });
+    } else {
+      setSelectedMultaIds((prev) => {
+        const next = new Set(prev);
+        displayedMultas.forEach((m) => next.add(m.id));
+        return next;
+      });
+    }
+  };
+
+  const toggleSelectMulta = (id: string) => {
+    setSelectedMultaIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const clearSelection = () => {
+    setSelectedMultaIds(new Set());
+  };
+
   // Resumen formateado por deportista (para exportar PDF, imprimir y copiar)
   // Formato: "Pochito Total 32€ - Wellness No Realizado 27/07 - 04/08 ... - Wellness Tarde (>12:30h) ..."
   const resumenPorJugador = useMemo(() => {
@@ -1806,49 +1841,72 @@ export default function MultasPage() {
     setAddComentario("");
   };
 
-  // Manejar eliminar multa permanentemente del registro
-  const handleDeleteMulta = (id: string) => {
-    const target = multas.find((m) => m.id === id);
-    if (window.confirm("¿Seguro que deseas eliminar esta multa del registro?")) {
-      // 1. Guardar ID y firmas en lista negra permanente de eliminados
-      let deletedIds: string[] = [];
-      let deletedSignatures: string[] = [];
-      try {
-        const raw = localStorage.getItem("multas_deleted_ids_v2");
-        if (raw) deletedIds = JSON.parse(raw);
-      } catch (e) {}
-      try {
-        const rawSig = localStorage.getItem("multas_deleted_signatures_v1");
-        if (rawSig) deletedSignatures = JSON.parse(rawSig);
-      } catch (e) {}
+  // Manejar eliminar multas permanentemente del registro (individual o en lote seleccionado)
+  const handleDeleteMultipleMultas = (idsToDelete: string[]) => {
+    if (!idsToDelete || idsToDelete.length === 0) return;
+    const toDeleteSet = new Set(idsToDelete);
+    const count = idsToDelete.length;
 
-      if (!deletedIds.includes(id)) deletedIds.push(id);
+    const confirmMsg =
+      count === 1
+        ? "¿Seguro que deseas eliminar esta multa del registro oficial?"
+        : `¿Seguro que deseas eliminar definitivamente las ${count} multas seleccionadas del registro oficial?`;
 
-      if (target) {
-        const sigDate = `${target.jugador_id}::${target.fecha}`;
-        const sigConcept = `${target.jugador_id}::${target.fecha}::${target.concepto}`;
-        const idNo = `real_well_no_${target.jugador_id}_${target.fecha}`;
-        const idTarde = `real_well_tarde_${target.jugador_id}_${target.fecha}`;
-        const uniqueKey = `${target.jugador_id}_${target.fecha}`;
+    if (!window.confirm(confirmMsg)) return;
 
-        if (!deletedSignatures.includes(sigDate)) deletedSignatures.push(sigDate);
-        if (!deletedSignatures.includes(sigConcept)) deletedSignatures.push(sigConcept);
-        if (!deletedIds.includes(idNo)) deletedIds.push(idNo);
-        if (!deletedIds.includes(idTarde)) deletedIds.push(idTarde);
-        if (!deletedIds.includes(uniqueKey)) deletedIds.push(uniqueKey);
+    // 1. Guardar IDs y firmas en lista negra permanente de eliminados
+    let deletedIds: string[] = [];
+    let deletedSignatures: string[] = [];
+    try {
+      const raw = localStorage.getItem("multas_deleted_ids_v2");
+      if (raw) deletedIds = JSON.parse(raw);
+    } catch (e) {}
+    try {
+      const rawSig = localStorage.getItem("multas_deleted_signatures_v1");
+      if (rawSig) deletedSignatures = JSON.parse(rawSig);
+    } catch (e) {}
+
+    const deletedIdsSet = new Set(deletedIds);
+    const deletedSigSet = new Set(deletedSignatures);
+
+    multas.forEach((m) => {
+      if (toDeleteSet.has(m.id)) {
+        deletedIdsSet.add(m.id);
+        const sigDate = `${m.jugador_id}::${m.fecha}`;
+        const sigConcept = `${m.jugador_id}::${m.fecha}::${m.concepto}`;
+        const idNo = `real_well_no_${m.jugador_id}_${m.fecha}`;
+        const idTarde = `real_well_tarde_${m.jugador_id}_${m.fecha}`;
+        const uniqueKey = `${m.jugador_id}_${m.fecha}`;
+
+        deletedSigSet.add(sigDate);
+        deletedSigSet.add(sigConcept);
+        deletedIdsSet.add(idNo);
+        deletedIdsSet.add(idTarde);
+        deletedIdsSet.add(uniqueKey);
       }
+    });
 
-      if (typeof window !== "undefined") {
-        try {
-          localStorage.setItem("multas_deleted_ids_v2", JSON.stringify(deletedIds));
-          localStorage.setItem("multas_deleted_signatures_v1", JSON.stringify(deletedSignatures));
-        } catch (e) {}
-      }
-
-      // 2. Filtrar multa en memoria y actualizar localStorage
-      const updated = multas.filter((m) => m.id !== id);
-      saveMultasToStorage(updated);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("multas_deleted_ids_v2", JSON.stringify(Array.from(deletedIdsSet)));
+        localStorage.setItem("multas_deleted_signatures_v1", JSON.stringify(Array.from(deletedSigSet)));
+      } catch (e) {}
     }
+
+    // 2. Filtrar multas en memoria y actualizar localStorage + Supabase + JSON
+    const updated = multas.filter((m) => !toDeleteSet.has(m.id));
+    saveMultasToStorage(updated);
+
+    // 3. Limpiar IDs seleccionados
+    setSelectedMultaIds((prev) => {
+      const next = new Set(prev);
+      idsToDelete.forEach((id) => next.delete(id));
+      return next;
+    });
+  };
+
+  const handleDeleteMulta = (id: string) => {
+    handleDeleteMultipleMultas([id]);
   };
 
   // Manejar guardar edición de multa
@@ -2634,7 +2692,47 @@ export default function MultasPage() {
                   )}
                 </div>
 
-                <div className="no-print" style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                <div className="no-print" style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                  {filteredMultas.length > 0 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={toggleSelectAllFiltered}
+                        style={{
+                          fontSize: "11px",
+                          fontWeight: 700,
+                          color: isAllFilteredSelected ? "#dc2626" : "#1e3a8a",
+                          background: isAllFilteredSelected ? "#fee2e2" : "#eff6ff",
+                          border: isAllFilteredSelected ? "1px solid #fca5a5" : "1px solid #bfdbfe",
+                          padding: "4px 10px",
+                          borderRadius: "6px",
+                          cursor: "pointer",
+                        }}
+                        title="Seleccionar o deseleccionar todas las multas filtradas"
+                      >
+                        {isAllFilteredSelected ? "✕ Desmarcar Todas" : `☑️ Marcar Todas (${filteredMultas.length})`}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteMultipleMultas(filteredMultas.map((m) => m.id))}
+                        style={{
+                          fontSize: "11px",
+                          fontWeight: 800,
+                          color: "#b91c1c",
+                          background: "#fef2f2",
+                          border: "1px solid #fecaca",
+                          padding: "4px 10px",
+                          borderRadius: "6px",
+                          cursor: "pointer",
+                        }}
+                        title="Eliminar todas las multas que coinciden con los filtros actuales"
+                      >
+                        🗑️ Borrar Filtradas ({filteredMultas.length})
+                      </button>
+                    </>
+                  )}
+
                   <button
                     type="button"
                     onClick={handleActualizarMultas}
@@ -2678,11 +2776,101 @@ export default function MultasPage() {
                 </div>
               </div>
 
+              {/* Barra de acción para borrado en lote de seleccionadas */}
+              {selectedMultaIds.size > 0 && (
+                <div
+                  className="no-print"
+                  style={{
+                    background: "linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)",
+                    borderBottom: "1.5px solid #f87171",
+                    padding: "10px 18px",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                    gap: "10px",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                    <span style={{ fontSize: "16px" }}>☑️</span>
+                    <div>
+                      <strong style={{ fontSize: "13px", color: "#991b1b" }}>
+                        {selectedMultaIds.size} {selectedMultaIds.size === 1 ? "multa seleccionada" : "multas seleccionadas"}
+                      </strong>
+                      <span style={{ fontSize: "11.5px", color: "#7f1d1d", marginLeft: "8px" }}>
+                        (Total: {multas.filter((m) => selectedMultaIds.has(m.id)).reduce((acc, m) => acc + (m.importe || 0), 0)} €)
+                      </span>
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteMultipleMultas(Array.from(selectedMultaIds))}
+                      style={{
+                        background: "#dc2626",
+                        color: "#ffffff",
+                        border: "none",
+                        padding: "7px 16px",
+                        borderRadius: "7px",
+                        fontSize: "12px",
+                        fontWeight: 900,
+                        cursor: "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        boxShadow: "0 2px 6px rgba(220, 38, 38, 0.3)",
+                      }}
+                    >
+                      🗑️ Borrar {selectedMultaIds.size} {selectedMultaIds.size === 1 ? "Multa Seleccionada" : "Multas Seleccionadas"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={clearSelection}
+                      style={{
+                        background: "#ffffff",
+                        color: "#64748b",
+                        border: "1px solid #cbd5e1",
+                        padding: "7px 12px",
+                        borderRadius: "7px",
+                        fontSize: "11.5px",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      ✕ Desmarcar
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {filteredMultas.length > 0 ? (
                 <div style={{ overflowX: "auto" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11.5px" }}>
                     <thead>
                       <tr style={{ background: "#0f172a", color: "#ffffff", textAlign: "left" }}>
+                        <th
+                          className="no-print"
+                          style={{
+                            padding: "6px 8px",
+                            width: "42px",
+                            textAlign: "center",
+                            verticalAlign: "middle",
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isAllFilteredSelected}
+                            onChange={toggleSelectAllFiltered}
+                            title={isAllFilteredSelected ? "Desmarcar todas" : "Seleccionar todas las multas mostradas"}
+                            style={{
+                              width: "16px",
+                              height: "16px",
+                              cursor: "pointer",
+                              accentColor: "#dc2626",
+                            }}
+                          />
+                        </th>
                         <th
                           onClick={() => handleSort("fecha")}
                           title="Ordenar por fecha"
@@ -2725,96 +2913,120 @@ export default function MultasPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {displayedMultas.map((m, idx) => (
-                        <tr
-                          key={m.id || idx}
-                          style={{
-                            borderBottom: "1px solid #e2e8f0",
-                            background: idx % 2 === 0 ? "#ffffff" : "#f8fafc",
-                          }}
-                        >
-                          <td style={{ padding: "4px 8px", fontWeight: 700, color: "#334155", whiteSpace: "nowrap", textAlign: "center", verticalAlign: "middle" }}>
-                            {formatDateDDMM(m.fecha)}
-                          </td>
-                          <td style={{ padding: "4px 8px", verticalAlign: "middle" }}>
-                            <strong style={{ color: "#0f172a", fontSize: "11.5px" }}>{m.jugador_nombre}</strong>
-                          </td>
-                          <td style={{ padding: "4px 8px", color: "#1e293b", fontSize: "10.5px", lineHeight: 1.2, verticalAlign: "middle" }}>
-                            {m.concepto}
-                          </td>
-                          <td style={{ padding: "4px 8px", fontWeight: 900, color: "#b91c1c", textAlign: "center", verticalAlign: "middle", fontSize: "12px" }}>
-                            {m.importe} €
-                          </td>
-                          <td className={!hasAnyObservation ? "no-print" : ""} style={{ padding: "4px 8px", verticalAlign: "middle" }}>
-                            {/* Input editable en pantalla */}
-                            <input
-                              type="text"
-                              value={m.comentario || ""}
-                              placeholder="Añadir nota..."
-                              onChange={(e) => handleObservationChange(m.id, e.target.value)}
+                      {displayedMultas.map((m, idx) => {
+                        const isSelected = selectedMultaIds.has(m.id);
+                        return (
+                          <tr
+                            key={m.id || idx}
+                            style={{
+                              borderBottom: isSelected ? "1.5px solid #fca5a5" : "1px solid #e2e8f0",
+                              background: isSelected ? "#fef2f2" : idx % 2 === 0 ? "#ffffff" : "#f8fafc",
+                              transition: "background 0.15s ease",
+                            }}
+                          >
+                            <td
                               className="no-print"
                               style={{
-                                width: "130px",
-                                maxWidth: "100%",
-                                fontSize: "11px",
-                                padding: "3px 6px",
-                                borderRadius: "4px",
-                                border: (m.comentario || "").trim() ? "1px solid #93c5fd" : "1px solid #cbd5e1",
-                                background: (m.comentario || "").trim() ? "#eff6ff" : "#ffffff",
-                                color: "#0f172a",
-                                outline: "none",
+                                padding: "4px 8px",
+                                textAlign: "center",
+                                verticalAlign: "middle",
                               }}
-                            />
-                            {/* Texto solo para impresión (si está rellenado) */}
-                            {(m.comentario || "").trim() ? (
-                              <span className="print-only" style={{ fontSize: "10px", color: "#334155" }}>
-                                {m.comentario}
-                              </span>
-                            ) : null}
-                          </td>
-                          <td className="no-print" style={{ padding: "4px 8px", textAlign: "center", verticalAlign: "middle" }}>
-                            <div style={{ display: "inline-flex", gap: "4px" }}>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditingMulta(m);
-                                  setEditConcepto(m.concepto);
-                                  setEditImporte(m.importe);
-                                  setEditCategoria(m.categoria);
-                                  setEditComentario(m.comentario || "");
-                                }}
-                                title="Editar importe o concepto"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleSelectMulta(m.id)}
                                 style={{
-                                  background: "#f1f5f9",
-                                  border: "1px solid #cbd5e1",
-                                  padding: "2px 5px",
-                                  borderRadius: "4px",
+                                  width: "16px",
+                                  height: "16px",
                                   cursor: "pointer",
-                                  fontSize: "10.5px",
+                                  accentColor: "#dc2626",
                                 }}
-                              >
-                                ✏️
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteMulta(m.id)}
-                                title="Eliminar multa"
+                              />
+                            </td>
+                            <td style={{ padding: "4px 8px", fontWeight: 700, color: "#334155", whiteSpace: "nowrap", textAlign: "center", verticalAlign: "middle" }}>
+                              {formatDateDDMM(m.fecha)}
+                            </td>
+                            <td style={{ padding: "4px 8px", verticalAlign: "middle" }}>
+                              <strong style={{ color: "#0f172a", fontSize: "11.5px" }}>{m.jugador_nombre}</strong>
+                            </td>
+                            <td style={{ padding: "4px 8px", color: "#1e293b", fontSize: "10.5px", lineHeight: 1.2, verticalAlign: "middle" }}>
+                              {m.concepto}
+                            </td>
+                            <td style={{ padding: "4px 8px", fontWeight: 900, color: "#b91c1c", textAlign: "center", verticalAlign: "middle", fontSize: "12px" }}>
+                              {m.importe} €
+                            </td>
+                            <td className={!hasAnyObservation ? "no-print" : ""} style={{ padding: "4px 8px", verticalAlign: "middle" }}>
+                              {/* Input editable en pantalla */}
+                              <input
+                                type="text"
+                                value={m.comentario || ""}
+                                placeholder="Añadir nota..."
+                                onChange={(e) => handleObservationChange(m.id, e.target.value)}
+                                className="no-print"
                                 style={{
-                                  background: "#fee2e2",
-                                  border: "1px solid #fca5a5",
-                                  padding: "2px 5px",
+                                  width: "130px",
+                                  maxWidth: "100%",
+                                  fontSize: "11px",
+                                  padding: "3px 6px",
                                   borderRadius: "4px",
-                                  cursor: "pointer",
-                                  fontSize: "10.5px",
-                                  color: "#b91c1c",
+                                  border: (m.comentario || "").trim() ? "1px solid #93c5fd" : "1px solid #cbd5e1",
+                                  background: (m.comentario || "").trim() ? "#eff6ff" : "#ffffff",
+                                  color: "#0f172a",
+                                  outline: "none",
                                 }}
-                              >
-                                🗑️
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                              />
+                              {/* Texto solo para impresión (si está rellenado) */}
+                              {(m.comentario || "").trim() ? (
+                                <span className="print-only" style={{ fontSize: "10px", color: "#334155" }}>
+                                  {m.comentario}
+                                </span>
+                              ) : null}
+                            </td>
+                            <td className="no-print" style={{ padding: "4px 8px", textAlign: "center", verticalAlign: "middle" }}>
+                              <div style={{ display: "inline-flex", gap: "4px" }}>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingMulta(m);
+                                    setEditConcepto(m.concepto);
+                                    setEditImporte(m.importe);
+                                    setEditCategoria(m.categoria);
+                                    setEditComentario(m.comentario || "");
+                                  }}
+                                  title="Editar importe o concepto"
+                                  style={{
+                                    background: "#f1f5f9",
+                                    border: "1px solid #cbd5e1",
+                                    padding: "2px 5px",
+                                    borderRadius: "4px",
+                                    cursor: "pointer",
+                                    fontSize: "10.5px",
+                                  }}
+                                >
+                                  ✏️
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteMulta(m.id)}
+                                  title="Eliminar multa"
+                                  style={{
+                                    background: "#fee2e2",
+                                    border: "1px solid #fca5a5",
+                                    padding: "2px 5px",
+                                    borderRadius: "4px",
+                                    cursor: "pointer",
+                                    fontSize: "10.5px",
+                                    color: "#b91c1c",
+                                  }}
+                                >
+                                  🗑️
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
