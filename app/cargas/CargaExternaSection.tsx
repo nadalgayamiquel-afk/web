@@ -1313,6 +1313,40 @@ export default function CargaExternaSection({
     }
   };
 
+  const handleHideAllPlayers = () => {
+    const allIds = jugadores.map((j) => j.id);
+    setHiddenPlayerIds(allIds);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("gps_ratio_hidden_players", JSON.stringify(allIds));
+      } catch (e) {}
+    }
+  };
+
+  const handleIsolatePlayer = (playerId: string) => {
+    const allOtherIds = jugadores.filter((j) => j.id !== playerId).map((j) => j.id);
+    setHiddenPlayerIds(allOtherIds);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("gps_ratio_hidden_players", JSON.stringify(allOtherIds));
+      } catch (e) {}
+    }
+  };
+
+  const handleSetVisiblePlayers = (visibleIds: string[]) => {
+    if (!visibleIds || visibleIds.length === 0) {
+      handleShowAllPlayers();
+      return;
+    }
+    const hidden = jugadores.filter((j) => !visibleIds.includes(j.id)).map((j) => j.id);
+    setHiddenPlayerIds(hidden);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("gps_ratio_hidden_players", JSON.stringify(hidden));
+      } catch (e) {}
+    }
+  };
+
   const handleHidePlayersWithoutSessions = () => {
     const withoutSessions = weeklyRatiosData
       .filter((row) => row.sessionsCount === 0)
@@ -6907,82 +6941,152 @@ export default function CargaExternaSection({
         </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-          {/* ── BARRA UNIFICADA DE CONTROL DE RATIOS SEMANALES ── */}
+          {/* ── BARRA UNIFICADA DE CONTROL DE RATIOS SEMANALES (COMPACTA 2 FILAS) ── */}
           <div
             style={{
               background: "#ffffff",
-              borderRadius: "10px",
+              borderRadius: "8px",
               border: "1px solid #e2e8f0",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+              boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
               position: "relative",
+              overflow: "visible",
             }}
           >
-            {/* FILA 1: Controles de navegación y visualización */}
+            {/* FILA 1: Microciclo con flechas, Tipo, Configurar, Planificar, Modo de Evaluación y Semáforo */}
             <div
               style={{
-                padding: "9px 14px",
+                padding: "5px 10px",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
                 flexWrap: "wrap",
-                gap: "10px",
+                gap: "6px",
+                borderBottom: "1px solid #f1f5f9",
               }}
             >
-              {/* Izquierda: Microciclo + Botón configurar */}
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                <span style={{ fontSize: "12px", fontWeight: 700, color: "#64748b" }}>
+              {/* Izquierda: Flechas + Microciclo + Tipo + Fechas + Planificar */}
+              <div style={{ display: "flex", alignItems: "center", gap: "5px", flexWrap: "wrap" }}>
+                <span style={{ fontSize: "11px", fontWeight: 700, color: "#64748b" }}>
                   Microciclo:
                 </span>
-                <select
-                  value={selectedWeekIdx}
-                  onChange={(e) => setSelectedWeekIdx(Number(e.target.value))}
-                  style={{
-                    padding: "5px 10px",
-                    borderRadius: "6px",
-                    border: "1px solid #cbd5e1",
-                    background: "#f8fafc",
-                    fontSize: "12px",
-                    fontWeight: 700,
-                    color: "#0f172a",
-                    outline: "none",
-                    cursor: "pointer",
-                  }}
-                >
-                  {availableWeeks.map((w, idx) => (
-                    <option key={w.start + idx} value={idx}>
-                      {w.label}
-                    </option>
-                  ))}
-                </select>
+
+                {/* Flechas y selector de microciclo */}
+                <div style={{ display: "inline-flex", alignItems: "center", gap: "2px" }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (selectedWeekIdx < availableWeeks.length - 1) {
+                        setSelectedWeekIdx((prev) => prev + 1);
+                      }
+                    }}
+                    disabled={selectedWeekIdx >= availableWeeks.length - 1}
+                    style={{
+                      height: "26px",
+                      padding: "0 7px",
+                      borderRadius: "4px",
+                      border: "1px solid #cbd5e1",
+                      background: selectedWeekIdx >= availableWeeks.length - 1 ? "#f8fafc" : "#ffffff",
+                      color: selectedWeekIdx >= availableWeeks.length - 1 ? "#cbd5e1" : "#1e293b",
+                      cursor: selectedWeekIdx >= availableWeeks.length - 1 ? "not-allowed" : "pointer",
+                      fontSize: "11px",
+                      fontWeight: 800,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                    title={
+                      selectedWeekIdx < availableWeeks.length - 1
+                        ? `Microciclo anterior: ${availableWeeks[selectedWeekIdx + 1]?.nombre || "Anterior"}`
+                        : "No hay microciclos anteriores"
+                    }
+                  >
+                    ◀
+                  </button>
+
+                  <select
+                    value={selectedWeekIdx}
+                    onChange={(e) => setSelectedWeekIdx(Number(e.target.value))}
+                    style={{
+                      height: "26px",
+                      padding: "2px 6px",
+                      borderRadius: "4px",
+                      border: "1px solid #cbd5e1",
+                      background: "#ffffff",
+                      fontSize: "11.5px",
+                      fontWeight: 700,
+                      color: "#0f172a",
+                      outline: "none",
+                      cursor: "pointer",
+                      maxWidth: "270px",
+                    }}
+                  >
+                    {availableWeeks.map((w, idx) => (
+                      <option key={w.start + idx} value={idx}>
+                        {w.label}
+                      </option>
+                    ))}
+                  </select>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (selectedWeekIdx > 0) {
+                        setSelectedWeekIdx((prev) => prev - 1);
+                      }
+                    }}
+                    disabled={selectedWeekIdx <= 0}
+                    style={{
+                      height: "26px",
+                      padding: "0 7px",
+                      borderRadius: "4px",
+                      border: "1px solid #cbd5e1",
+                      background: selectedWeekIdx <= 0 ? "#f8fafc" : "#ffffff",
+                      color: selectedWeekIdx <= 0 ? "#cbd5e1" : "#1e293b",
+                      cursor: selectedWeekIdx <= 0 ? "not-allowed" : "pointer",
+                      fontSize: "11px",
+                      fontWeight: 800,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                    title={
+                      selectedWeekIdx > 0
+                        ? `Microciclo siguiente: ${availableWeeks[selectedWeekIdx - 1]?.nombre || "Siguiente"}`
+                        : "No hay microciclos posteriores"
+                    }
+                  >
+                    ▶
+                  </button>
+                </div>
 
                 {/* Selector directo del tipo de la semana activa */}
                 {activeWeek && (
-                  <div style={{ display: "inline-flex", alignItems: "center", gap: "5px" }}>
-                    <span style={{ fontSize: "11px", fontWeight: 700, color: "#64748b" }}>Tipo:</span>
-                    <select
-                      value={activeWeek.tipo || "media"}
-                      onChange={(e) => handleUpdateWeekType(activeWeek.microId, e.target.value as any)}
-                      style={{
-                        padding: "4px 8px",
-                        borderRadius: "6px",
-                        border: `1.5px solid ${MICROCICLE_TYPE_CONFIG[activeWeek.tipo || "media"]?.color || "#cbd5e1"}`,
-                        background: MICROCICLE_TYPE_CONFIG[activeWeek.tipo || "media"]?.bg || "#ffffff",
-                        color: MICROCICLE_TYPE_CONFIG[activeWeek.tipo || "media"]?.color || "#0f172a",
-                        fontSize: "11.5px",
-                        fontWeight: 800,
-                        cursor: "pointer",
-                        outline: "none",
-                      }}
-                      title="Cambiar el tipo asignado a esta semana concreta"
-                    >
-                      <option value="corto">⚡ Semana Corta (6d entre MD)</option>
-                      <option value="media">📅 Semana Media (7d entre MD)</option>
-                      <option value="largo">⏳ Semana Larga (8d entre MD)</option>
-                      <option value="doble_partido">⚽⚽ Doble Partido</option>
-                      <option value="sin_categorizar">⚪ Sin categorizar</option>
-                    </select>
-                  </div>
+                  <select
+                    value={activeWeek.tipo || "media"}
+                    onChange={(e) => handleUpdateWeekType(activeWeek.microId, e.target.value as any)}
+                    style={{
+                      height: "26px",
+                      padding: "2px 6px",
+                      borderRadius: "4px",
+                      border: `1.5px solid ${MICROCICLE_TYPE_CONFIG[activeWeek.tipo || "media"]?.color || "#cbd5e1"}`,
+                      background: MICROCICLE_TYPE_CONFIG[activeWeek.tipo || "media"]?.bg || "#ffffff",
+                      color: MICROCICLE_TYPE_CONFIG[activeWeek.tipo || "media"]?.color || "#0f172a",
+                      fontSize: "11px",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                      outline: "none",
+                    }}
+                    title="Cambiar tipo de microciclo"
+                  >
+                    <option value="corto">⚡ Corta (6d)</option>
+                    <option value="media">📅 Media (7d)</option>
+                    <option value="largo">⏳ Larga (8d)</option>
+                    <option value="doble_partido">⚽⚽ Doble</option>
+                    <option value="sin_categorizar">⚪ Sin cat.</option>
+                  </select>
                 )}
+
+                {/* Botón configurar fechas */}
                 <button
                   type="button"
                   onClick={() => {
@@ -6994,22 +7098,19 @@ export default function CargaExternaSection({
                     setShowMicroModal(true);
                   }}
                   style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "4px",
-                    padding: "4px 9px",
-                    borderRadius: "6px",
-                    border: "1px solid #e2e8f0",
+                    height: "26px",
+                    padding: "2px 7px",
+                    borderRadius: "4px",
+                    border: "1px solid #cbd5e1",
                     background: "#ffffff",
-                    fontSize: "11.5px",
+                    fontSize: "11px",
                     fontWeight: 600,
                     color: "#475569",
                     cursor: "pointer",
-                    transition: "all 0.15s ease",
                   }}
                   title="Marcar o editar microciclos personalizados"
                 >
-                  Configurar fechas
+                  Fechas
                 </button>
 
                 {/* Botón para Planificar Ratios por Sesión */}
@@ -7017,19 +7118,18 @@ export default function CargaExternaSection({
                   type="button"
                   onClick={() => setShowSessionPlanningModal(true)}
                   style={{
+                    height: "26px",
                     display: "inline-flex",
                     alignItems: "center",
-                    gap: "5px",
-                    padding: "4px 10px",
-                    borderRadius: "6px",
+                    gap: "4px",
+                    padding: "2px 8px",
+                    borderRadius: "4px",
                     border: "1px solid #0284c7",
                     background: "#f0f9ff",
-                    fontSize: "11.5px",
+                    fontSize: "11px",
                     fontWeight: 700,
                     color: "#0369a1",
                     cursor: "pointer",
-                    transition: "all 0.15s ease",
-                    boxShadow: "0 1px 2px rgba(2,132,199,0.08)",
                   }}
                   title="Planifica los ratios exigidos para cada sesión individual del microciclo"
                 >
@@ -7037,74 +7137,68 @@ export default function CargaExternaSection({
                 </button>
               </div>
 
-              {/* Derecha: Segmented Datos, Segmented Mostrar, Semáforo, Variables y Jugadores */}
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                {/* Segmented Modo de Evaluación: Progresivo vs Total vs Por Sesión */}
-                <div style={{ display: "inline-flex", alignItems: "center", background: "#f1f5f9", padding: "2px", borderRadius: "6px", gap: "2px" }}>
+              {/* Derecha: Modo de Evaluación + Semáforo */}
+              <div style={{ display: "flex", alignItems: "center", gap: "5px", flexWrap: "wrap" }}>
+                {/* Segmented Modo */}
+                <div style={{ display: "inline-flex", alignItems: "center", background: "#f1f5f9", padding: "2px", borderRadius: "5px", gap: "1px" }}>
                   <button
                     type="button"
                     onClick={() => handleSetRatioEvaluationMode("progresivo")}
                     style={{
-                      padding: "4px 9px",
-                      borderRadius: "4px",
+                      height: "22px",
+                      padding: "0 7px",
+                      borderRadius: "3px",
                       border: "none",
                       background: ratioEvaluationMode === "progresivo" ? "#ffffff" : "transparent",
                       color: ratioEvaluationMode === "progresivo" ? "#0f172a" : "#64748b",
-                      fontWeight: ratioEvaluationMode === "progresivo" ? 700 : 500,
-                      fontSize: "11.5px",
+                      fontWeight: ratioEvaluationMode === "progresivo" ? 800 : 500,
+                      fontSize: "11px",
                       cursor: "pointer",
                       boxShadow: ratioEvaluationMode === "progresivo" ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "4px",
                     }}
-                    title="Evalúa el cumplimiento acumulado según las sesiones realizadas a la fecha (evita falsas alarmas rojas al inicio del microciclo)"
+                    title="Evalúa el cumplimiento acumulado según las sesiones realizadas a la fecha"
                   >
-                    <span>📅</span> Progresivo (A la fecha)
+                    Progresivo
                   </button>
 
                   <button
                     type="button"
                     onClick={() => handleSetRatioEvaluationMode("total")}
                     style={{
-                      padding: "4px 9px",
-                      borderRadius: "4px",
+                      height: "22px",
+                      padding: "0 7px",
+                      borderRadius: "3px",
                       border: "none",
                       background: ratioEvaluationMode === "total" ? "#ffffff" : "transparent",
                       color: ratioEvaluationMode === "total" ? "#0f172a" : "#64748b",
-                      fontWeight: ratioEvaluationMode === "total" ? 700 : 500,
-                      fontSize: "11.5px",
+                      fontWeight: ratioEvaluationMode === "total" ? 800 : 500,
+                      fontSize: "11px",
                       cursor: "pointer",
                       boxShadow: ratioEvaluationMode === "total" ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "4px",
                     }}
                     title="Evalúa el cumplimiento total contra el 100% del objetivo del microciclo completo"
                   >
-                    <span>🏁</span> Total Microciclo
+                    Total
                   </button>
 
                   <button
                     type="button"
                     onClick={() => handleSetRatioEvaluationMode("sesion")}
                     style={{
-                      padding: "4px 9px",
-                      borderRadius: "4px",
+                      height: "22px",
+                      padding: "0 7px",
+                      borderRadius: "3px",
                       border: "none",
                       background: ratioEvaluationMode === "sesion" ? "#ffffff" : "transparent",
                       color: ratioEvaluationMode === "sesion" ? "#0f172a" : "#64748b",
-                      fontWeight: ratioEvaluationMode === "sesion" ? 700 : 500,
-                      fontSize: "11.5px",
+                      fontWeight: ratioEvaluationMode === "sesion" ? 800 : 500,
+                      fontSize: "11px",
                       cursor: "pointer",
                       boxShadow: ratioEvaluationMode === "sesion" ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "4px",
                     }}
-                    title="Evalúa el rendimiento de una sesión concreta del microciclo contra su objetivo de sesión"
+                    title="Evalúa el rendimiento de una sesión concreta del microciclo"
                   >
-                    <span>📍</span> Por Sesión
+                    Por Sesión
                   </button>
                 </div>
 
@@ -7114,13 +7208,14 @@ export default function CargaExternaSection({
                     value={selectedRatioSessionDate || (activeWeek?.dates[activeWeek.dates.length - 1] || "")}
                     onChange={(e) => setSelectedRatioSessionDate(e.target.value)}
                     style={{
-                      padding: "4px 8px",
-                      borderRadius: "6px",
+                      height: "26px",
+                      padding: "2px 6px",
+                      borderRadius: "4px",
                       border: "1.5px solid #0284c7",
                       background: "#f0f9ff",
                       color: "#0369a1",
                       fontWeight: 800,
-                      fontSize: "11.5px",
+                      fontSize: "11px",
                       cursor: "pointer",
                       outline: "none",
                     }}
@@ -7129,154 +7224,35 @@ export default function CargaExternaSection({
                       const sMd = getSessionMd(dt, gpsRecords.filter((r) => r.fecha === dt));
                       const parts = dt.split("-");
                       const label = parts.length === 3 ? `${parts[2]}/${parts[1]}` : dt;
+                      const dayRecs = (gpsRecords || []).filter((r) => r.fecha === dt);
+                      const simCount = dayRecs.filter((r) => isRecordSimulado(r)).length;
+                      const realCount = dayRecs.length - simCount;
+                      const simTag = simCount > 0 ? ` (${realCount}r + ${simCount}s)` : "";
                       return (
-                        (() => {
-                        const dayRecs = (gpsRecords || []).filter((r) => r.fecha === dt);
-                        const simCount = dayRecs.filter((r) => isRecordSimulado(r)).length;
-                        const realCount = dayRecs.length - simCount;
-                        const simTag = simCount > 0 ? ` (${realCount} reales, ${simCount} simulados)` : "";
-                        return (
-                          <option key={dt} value={dt}>
-                            {label} · {sMd}{simTag}
-                          </option>
-                        );
-                      })()
+                        <option key={dt} value={dt}>
+                          {label} · {sMd}{simTag}
+                        </option>
                       );
                     })}
                   </select>
                 )}
-
-                <div style={{ width: "1px", height: "16px", background: "#e2e8f0" }} />
-
-                {/* Segmented Datos */}
-                <div style={{ display: "inline-flex", alignItems: "center", background: "#f1f5f9", padding: "2px", borderRadius: "6px", gap: "2px" }}>
-                  <button
-                    type="button"
-                    onClick={() => handleSetRatioDataSource("reales")}
-                    style={{
-                      padding: "4px 9px",
-                      borderRadius: "4px",
-                      border: "none",
-                      background: ratioDataSource === "reales" ? "#ffffff" : "transparent",
-                      color: ratioDataSource === "reales" ? "#0f172a" : "#64748b",
-                      fontWeight: ratioDataSource === "reales" ? 700 : 500,
-                      fontSize: "11.5px",
-                      cursor: "pointer",
-                      boxShadow: ratioDataSource === "reales" ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "5px",
-                    }}
-                    title="Usar exclusivamente datos reales de GPS"
-                  >
-                    {ratioDataSource === "reales" && (
-                      <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#16a34a" }} />
-                    )}
-                    Solo Reales
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSetRatioDataSource("todos")}
-                    style={{
-                      padding: "4px 9px",
-                      borderRadius: "4px",
-                      border: "none",
-                      background: ratioDataSource === "todos" ? "#ffffff" : "transparent",
-                      color: ratioDataSource === "todos" ? "#0f172a" : "#64748b",
-                      fontWeight: ratioDataSource === "todos" ? 700 : 500,
-                      fontSize: "11.5px",
-                      cursor: "pointer",
-                      boxShadow: ratioDataSource === "todos" ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "5px",
-                    }}
-                    title="Incluir todos los datos registrados"
-                  >
-                    {ratioDataSource === "todos" && (
-                      <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#0284c7" }} />
-                    )}
-                    Todos los Datos
-                  </button>
-                </div>
-
-                <div style={{ width: "1px", height: "16px", background: "#e2e8f0" }} />
-
-                {/* Segmented Formato / Mostrar */}
-                <div style={{ display: "inline-flex", alignItems: "center", background: "#f1f5f9", padding: "2px", borderRadius: "6px", gap: "2px" }}>
-                  <button
-                    type="button"
-                    onClick={() => handleSetRatioFormat("real")}
-                    style={{
-                      padding: "4px 8px",
-                      borderRadius: "4px",
-                      border: "none",
-                      background: ratioFormat === "real" ? "#ffffff" : "transparent",
-                      color: ratioFormat === "real" ? "#0f172a" : "#64748b",
-                      fontWeight: ratioFormat === "real" ? 700 : 500,
-                      fontSize: "11.5px",
-                      cursor: "pointer",
-                      boxShadow: ratioFormat === "real" ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
-                    }}
-                    title="Mostrar el valor real acumulado en metros o conteos"
-                  >
-                    Valor Real
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSetRatioFormat("multiplier")}
-                    style={{
-                      padding: "4px 8px",
-                      borderRadius: "4px",
-                      border: "none",
-                      background: ratioFormat === "multiplier" ? "#ffffff" : "transparent",
-                      color: ratioFormat === "multiplier" ? "#0f172a" : "#64748b",
-                      fontWeight: ratioFormat === "multiplier" ? 700 : 500,
-                      fontSize: "11.5px",
-                      cursor: "pointer",
-                      boxShadow: ratioFormat === "multiplier" ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
-                    }}
-                    title="Mostrar el multiplicador de partido (ej. 2.1x)"
-                  >
-                    Multiplicador
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSetRatioFormat("remaining")}
-                    style={{
-                      padding: "4px 8px",
-                      borderRadius: "4px",
-                      border: "none",
-                      background: ratioFormat === "remaining" ? "#ffffff" : "transparent",
-                      color: ratioFormat === "remaining" ? "#0f172a" : "#64748b",
-                      fontWeight: ratioFormat === "remaining" ? 700 : 500,
-                      fontSize: "11.5px",
-                      cursor: "pointer",
-                      boxShadow: ratioFormat === "remaining" ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
-                    }}
-                    title="Mostrar valor restante para alcanzar el objetivo"
-                  >
-                    Restante
-                  </button>
-                </div>
-
-                <div style={{ width: "1px", height: "16px", background: "#e2e8f0" }} />
 
                 {/* Semáforo Toggle */}
                 <button
                   type="button"
                   onClick={handleToggleSemaforo}
                   style={{
+                    height: "26px",
                     display: "inline-flex",
                     alignItems: "center",
-                    gap: "5px",
-                    padding: "4px 9px",
-                    borderRadius: "6px",
-                    border: showSemaforo ? "1px solid #bbf7d0" : "1px solid #e2e8f0",
+                    gap: "4px",
+                    padding: "2px 7px",
+                    borderRadius: "4px",
+                    border: showSemaforo ? "1px solid #bbf7d0" : "1px solid #cbd5e1",
                     background: showSemaforo ? "#f0fdf4" : "#ffffff",
                     color: showSemaforo ? "#15803d" : "#64748b",
-                    fontSize: "11.5px",
-                    fontWeight: 600,
+                    fontSize: "11px",
+                    fontWeight: 700,
                     cursor: "pointer",
                   }}
                   title="Activa o desactiva el coloreado en semáforo"
@@ -7284,10 +7260,10 @@ export default function CargaExternaSection({
                   <span>Semáforo</span>
                   <span
                     style={{
-                      fontSize: "9.5px",
+                      fontSize: "9px",
                       fontWeight: 800,
-                      padding: "1px 5px",
-                      borderRadius: "4px",
+                      padding: "1px 4px",
+                      borderRadius: "3px",
                       background: showSemaforo ? "#dcfce7" : "#f1f5f9",
                       color: showSemaforo ? "#166534" : "#94a3b8",
                     }}
@@ -7295,80 +7271,570 @@ export default function CargaExternaSection({
                     {showSemaforo ? "ON" : "OFF"}
                   </span>
                 </button>
+              </div>
+            </div>
 
-                {/* Botón Selector de Variables */}
+            {/* FILA 2: Filtro de Jugadores, Datos, Formato, Variables y Ratios Exigidos */}
+            <div
+              style={{
+                padding: "4px 10px",
+                background: "#f8fafc",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: "6px",
+                borderBottomLeftRadius: "7px",
+                borderBottomRightRadius: "7px",
+              }}
+            >
+              {/* Izquierda: Selector de Jugadores + Reales/Todos + Formato + Variables */}
+              <div style={{ display: "flex", alignItems: "center", gap: "5px", flexWrap: "wrap" }}>
+                {/* Selector / Filtro Rápido de Jugadores */}
+                <div style={{ position: "relative" }}>
+                  <div style={{ display: "inline-flex", alignItems: "center", gap: "2px" }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowPlayerFilterPicker((prev) => !prev)}
+                      style={{
+                        height: "25px",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                        padding: "2px 8px",
+                        borderRadius: "4px",
+                        border:
+                          displayedWeeklyRatiosData.length <= 2 && hiddenPlayerIds.length > 0
+                            ? "1.5px solid #0284c7"
+                            : hiddenPlayerIds.length > 0
+                            ? "1px solid #f59e0b"
+                            : showPlayerFilterPicker
+                            ? "1px solid #0284c7"
+                            : "1px solid #cbd5e1",
+                        background:
+                          displayedWeeklyRatiosData.length <= 2 && hiddenPlayerIds.length > 0
+                            ? "#eff6ff"
+                            : hiddenPlayerIds.length > 0
+                            ? "#fffbeb"
+                            : showPlayerFilterPicker
+                            ? "#f0f9ff"
+                            : "#ffffff",
+                        color:
+                          displayedWeeklyRatiosData.length <= 2 && hiddenPlayerIds.length > 0
+                            ? "#0369a1"
+                            : hiddenPlayerIds.length > 0
+                            ? "#9a3412"
+                            : "#334155",
+                        fontSize: "11px",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                      title="Filtrar jugadores en la tabla de ratios"
+                    >
+                      <span>👤</span>
+                      {displayedWeeklyRatiosData.length <= 2 && hiddenPlayerIds.length > 0 ? (
+                        <span style={{ fontWeight: 800 }}>
+                          {displayedWeeklyRatiosData.map((r) => r.jugador.apodo || r.jugador.nombre).join(" & ")}
+                        </span>
+                      ) : (
+                        <span>Jugadores:</span>
+                      )}
+                      <span
+                        style={{
+                          fontSize: "10px",
+                          fontWeight: 800,
+                          padding: "0 4px",
+                          borderRadius: "3px",
+                          background:
+                            displayedWeeklyRatiosData.length <= 2 && hiddenPlayerIds.length > 0
+                              ? "#bfdbfe"
+                              : hiddenPlayerIds.length > 0
+                              ? "#fde68a"
+                              : "#e2e8f0",
+                          color:
+                            displayedWeeklyRatiosData.length <= 2 && hiddenPlayerIds.length > 0
+                              ? "#1e40af"
+                              : hiddenPlayerIds.length > 0
+                              ? "#92400e"
+                              : "#334155",
+                        }}
+                      >
+                        {displayedWeeklyRatiosData.length}/{weeklyRatiosData.length}
+                      </span>
+                      <span style={{ fontSize: "8px", color: "#64748b" }}>
+                        {showPlayerFilterPicker ? "▲" : "▼"}
+                      </span>
+                    </button>
+
+                    {hiddenPlayerIds.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleShowAllPlayers}
+                        style={{
+                          height: "25px",
+                          padding: "0 6px",
+                          borderRadius: "4px",
+                          border: "1px solid #cbd5e1",
+                          background: "#ffffff",
+                          color: "#dc2626",
+                          fontSize: "11px",
+                          fontWeight: 800,
+                          cursor: "pointer",
+                        }}
+                        title="Restablecer y mostrar todos los jugadores"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Modal / Popover de Filtro de Jugadores */}
+                  {showPlayerFilterPicker && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: "calc(100% + 4px)",
+                        left: 0,
+                        zIndex: 100,
+                        background: "#ffffff",
+                        border: "1px solid #cbd5e1",
+                        borderRadius: "8px",
+                        boxShadow: "0 10px 25px rgba(0,0,0,0.14)",
+                        padding: "10px",
+                        width: "350px",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "8px",
+                      }}
+                    >
+                      {/* Cabecera */}
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #f1f5f9", paddingBottom: "5px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                          <strong style={{ fontSize: "11.5px", color: "#0f172a" }}>
+                            Filtrar Jugadores
+                          </strong>
+                          <span style={{ fontSize: "10px", color: hiddenPlayerIds.length > 0 ? "#b45309" : "#16a34a", fontWeight: 800, background: hiddenPlayerIds.length > 0 ? "#fef3c7" : "#dcfce7", padding: "1px 5px", borderRadius: "3px" }}>
+                            {displayedWeeklyRatiosData.length} de {weeklyRatiosData.length}
+                          </span>
+                        </div>
+                        {hiddenPlayerIds.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={handleShowAllPlayers}
+                            style={{ border: "none", background: "none", color: "#dc2626", fontSize: "10.5px", fontWeight: 700, cursor: "pointer", textDecoration: "underline" }}
+                          >
+                            Ver todos
+                          </button>
+                        )}
+                      </div>
+
+                      {/* SELECCIÓN RÁPIDA DE 1 O 2 JUGADORES */}
+                      <div style={{ background: "#f8fafc", padding: "7px 8px", borderRadius: "6px", border: "1px solid #e2e8f0" }}>
+                        <div style={{ fontSize: "10.5px", fontWeight: 700, color: "#475569", marginBottom: "4px" }}>
+                          🎯 Ver 1 o 2 jugadores directamente:
+                        </div>
+                        <div style={{ display: "flex", gap: "5px" }}>
+                          <select
+                            value={
+                              displayedWeeklyRatiosData.length === 1 || displayedWeeklyRatiosData.length === 2
+                                ? displayedWeeklyRatiosData[0]?.jugador.id || ""
+                                : ""
+                            }
+                            onChange={(e) => {
+                              const p1Id = e.target.value;
+                              if (!p1Id) {
+                                handleShowAllPlayers();
+                                return;
+                              }
+                              const p2Id = displayedWeeklyRatiosData.length === 2 ? displayedWeeklyRatiosData[1]?.jugador.id : "";
+                              const visible = [p1Id, ...(p2Id && p2Id !== p1Id ? [p2Id] : [])];
+                              handleSetVisiblePlayers(visible);
+                            }}
+                            style={{
+                              flex: 1,
+                              height: "25px",
+                              fontSize: "11px",
+                              borderRadius: "4px",
+                              border: "1px solid #cbd5e1",
+                              background: "#ffffff",
+                              outline: "none",
+                              fontWeight: 600,
+                            }}
+                          >
+                            <option value="">Jugador 1...</option>
+                            {jugadores.map((j) => (
+                              <option key={j.id} value={j.id}>
+                                {j.dorsal ? `#${j.dorsal} ` : ""}{j.apodo || j.nombre}
+                              </option>
+                            ))}
+                          </select>
+
+                          <select
+                            value={
+                              displayedWeeklyRatiosData.length === 2
+                                ? displayedWeeklyRatiosData[1]?.jugador.id || ""
+                                : ""
+                            }
+                            onChange={(e) => {
+                              const p2Id = e.target.value;
+                              const p1Id = displayedWeeklyRatiosData[0]?.jugador.id || jugadores[0]?.id;
+                              if (!p2Id) {
+                                if (p1Id) handleIsolatePlayer(p1Id);
+                                return;
+                              }
+                              const visible = [p1Id, p2Id].filter(Boolean);
+                              handleSetVisiblePlayers(visible);
+                            }}
+                            style={{
+                              flex: 1,
+                              height: "25px",
+                              fontSize: "11px",
+                              borderRadius: "4px",
+                              border: "1px solid #cbd5e1",
+                              background: "#ffffff",
+                              outline: "none",
+                              fontWeight: 600,
+                            }}
+                          >
+                            <option value="">+ Jugador 2 (Opcional)...</option>
+                            {jugadores.map((j) => (
+                              <option key={j.id} value={j.id}>
+                                {j.dorsal ? `#${j.dorsal} ` : ""}{j.apodo || j.nombre}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Buscador de jugadores */}
+                      <input
+                        type="text"
+                        placeholder="Buscar por nombre, apodo o dorsal..."
+                        value={playerSearchFilter}
+                        onChange={(e) => setPlayerSearchFilter(e.target.value)}
+                        style={{
+                          width: "100%",
+                          padding: "4px 7px",
+                          borderRadius: "4px",
+                          border: "1px solid #cbd5e1",
+                          fontSize: "11px",
+                          outline: "none",
+                        }}
+                      />
+
+                      {/* Presets rápidos */}
+                      <div style={{ display: "flex", gap: "3px", flexWrap: "wrap" }}>
+                        <button
+                          type="button"
+                          onClick={handleShowAllPlayers}
+                          style={{ padding: "2px 6px", borderRadius: "3px", border: "1px solid #bfdbfe", background: "#eff6ff", fontSize: "10px", color: "#1e40af", cursor: "pointer", fontWeight: 700 }}
+                        >
+                          Todos
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleHideAllPlayers}
+                          style={{ padding: "2px 6px", borderRadius: "3px", border: "1px solid #cbd5e1", background: "#f8fafc", fontSize: "10px", color: "#475569", cursor: "pointer", fontWeight: 700 }}
+                          title="Ocultar todos para elegir 1 o 2 fácilmente"
+                        >
+                          Desmarcar todos
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleHidePlayersWithoutSessions}
+                          style={{ padding: "2px 6px", borderRadius: "3px", border: "1px solid #cbd5e1", background: "#f8fafc", fontSize: "10px", color: "#475569", cursor: "pointer", fontWeight: 700 }}
+                          title="Ocultar jugadores sin sesiones en este microciclo"
+                        >
+                          Con sesiones
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleHideGoalkeepers}
+                          style={{ padding: "2px 6px", borderRadius: "3px", border: "1px solid #cbd5e1", background: "#f8fafc", fontSize: "10px", color: "#475569", cursor: "pointer", fontWeight: 700 }}
+                          title="Ocultar porteros"
+                        >
+                          Sin Porteros
+                        </button>
+                      </div>
+
+                      {/* Lista de jugadores */}
+                      <div style={{ maxHeight: "220px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "2px" }}>
+                        {jugadores
+                          .filter((j) => {
+                            if (!playerSearchFilter) return true;
+                            const q = playerSearchFilter.toLowerCase();
+                            const name = (j.apodo || j.nombre || "").toLowerCase();
+                            const dorsal = String(j.dorsal || "");
+                            const pos = (j.posicion || "").toLowerCase();
+                            return name.includes(q) || dorsal.includes(q) || pos.includes(q);
+                          })
+                          .map((j) => {
+                            const isHidden = hiddenPlayerIds.includes(j.id);
+                            const rowData = weeklyRatiosData.find((r) => r.jugador.id === j.id);
+                            const sessCount = rowData?.sessionsCount ?? 0;
+
+                            return (
+                              <div
+                                key={j.id}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  padding: "3px 6px",
+                                  borderRadius: "4px",
+                                  background: isHidden ? "#f8fafc" : "#f0fdf4",
+                                  border: isHidden ? "1px solid #e2e8f0" : "1px solid #bbf7d0",
+                                  fontSize: "11px",
+                                  opacity: isHidden ? 0.65 : 1,
+                                }}
+                              >
+                                <label
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "6px",
+                                    cursor: "pointer",
+                                    flex: 1,
+                                    margin: 0,
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={!isHidden}
+                                    onChange={() => handleTogglePlayerVisibility(j.id)}
+                                    style={{ cursor: "pointer", accentColor: "#16a34a" }}
+                                  />
+                                  <span style={{ fontWeight: !isHidden ? 800 : 500, color: !isHidden ? "#166534" : "#64748b" }}>
+                                    {j.dorsal ? "#" + j.dorsal + " " : ""}{j.apodo || j.nombre}
+                                  </span>
+                                  <span style={{ fontSize: "9px", color: "#94a3b8" }}>
+                                    {j.posicion || "JUG"}
+                                  </span>
+                                </label>
+
+                                <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+                                  <span style={{ fontSize: "9.5px", fontWeight: 700, color: sessCount > 0 ? "#0369a1" : "#94a3b8" }}>
+                                    {sessCount} {sessCount === 1 ? "ses." : "ses."}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleIsolatePlayer(j.id)}
+                                    style={{
+                                      padding: "1px 5px",
+                                      borderRadius: "3px",
+                                      border: "1px solid #cbd5e1",
+                                      background: "#ffffff",
+                                      fontSize: "9.5px",
+                                      fontWeight: 700,
+                                      color: "#0369a1",
+                                      cursor: "pointer",
+                                    }}
+                                    title={`Ver solo a ${j.apodo || j.nombre}`}
+                                  >
+                                    Solo
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                      </div>
+
+                      {/* Pie del modal */}
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid #f1f5f9", paddingTop: "6px" }}>
+                        <span style={{ fontSize: "10px", color: "#64748b" }}>
+                          {hiddenPlayerIds.length} ocultos
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setShowPlayerFilterPicker(false)}
+                          style={{
+                            padding: "3px 10px",
+                            background: "#0f172a",
+                            color: "#ffffff",
+                            borderRadius: "4px",
+                            border: "none",
+                            fontSize: "11px",
+                            fontWeight: 800,
+                            cursor: "pointer",
+                          }}
+                        >
+                          Listo
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ width: "1px", height: "14px", background: "#cbd5e1" }} />
+
+                {/* Segmented Datos */}
+                <div style={{ display: "inline-flex", alignItems: "center", background: "#f1f5f9", padding: "1px", borderRadius: "4px", gap: "1px" }}>
+                  <button
+                    type="button"
+                    onClick={() => handleSetRatioDataSource("reales")}
+                    style={{
+                      padding: "1px 6px",
+                      height: "22px",
+                      borderRadius: "3px",
+                      border: "none",
+                      background: ratioDataSource === "reales" ? "#ffffff" : "transparent",
+                      color: ratioDataSource === "reales" ? "#0f172a" : "#64748b",
+                      fontWeight: ratioDataSource === "reales" ? 700 : 500,
+                      fontSize: "10.5px",
+                      cursor: "pointer",
+                      boxShadow: ratioDataSource === "reales" ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
+                    }}
+                    title="Solo datos reales de GPS"
+                  >
+                    Reales
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetRatioDataSource("todos")}
+                    style={{
+                      padding: "1px 6px",
+                      height: "22px",
+                      borderRadius: "3px",
+                      border: "none",
+                      background: ratioDataSource === "todos" ? "#ffffff" : "transparent",
+                      color: ratioDataSource === "todos" ? "#0f172a" : "#64748b",
+                      fontWeight: ratioDataSource === "todos" ? 700 : 500,
+                      fontSize: "10.5px",
+                      cursor: "pointer",
+                      boxShadow: ratioDataSource === "todos" ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
+                    }}
+                    title="Todos los datos registrados"
+                  >
+                    Todos
+                  </button>
+                </div>
+
+                {/* Segmented Formato */}
+                <div style={{ display: "inline-flex", alignItems: "center", background: "#f1f5f9", padding: "1px", borderRadius: "4px", gap: "1px" }}>
+                  <button
+                    type="button"
+                    onClick={() => handleSetRatioFormat("real")}
+                    style={{
+                      padding: "1px 5px",
+                      height: "22px",
+                      borderRadius: "3px",
+                      border: "none",
+                      background: ratioFormat === "real" ? "#ffffff" : "transparent",
+                      color: ratioFormat === "real" ? "#0f172a" : "#64748b",
+                      fontWeight: ratioFormat === "real" ? 700 : 500,
+                      fontSize: "10.5px",
+                      cursor: "pointer",
+                      boxShadow: ratioFormat === "real" ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
+                    }}
+                    title="Mostrar valor real en metros o conteos"
+                  >
+                    Real
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetRatioFormat("multiplier")}
+                    style={{
+                      padding: "1px 5px",
+                      height: "22px",
+                      borderRadius: "3px",
+                      border: "none",
+                      background: ratioFormat === "multiplier" ? "#ffffff" : "transparent",
+                      color: ratioFormat === "multiplier" ? "#0f172a" : "#64748b",
+                      fontWeight: ratioFormat === "multiplier" ? 700 : 500,
+                      fontSize: "10.5px",
+                      cursor: "pointer",
+                      boxShadow: ratioFormat === "multiplier" ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
+                    }}
+                    title="Multiplicador de partido (ej. 2.1x)"
+                  >
+                    Mult. (x)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetRatioFormat("remaining")}
+                    style={{
+                      padding: "1px 5px",
+                      height: "22px",
+                      borderRadius: "3px",
+                      border: "none",
+                      background: ratioFormat === "remaining" ? "#ffffff" : "transparent",
+                      color: ratioFormat === "remaining" ? "#0f172a" : "#64748b",
+                      fontWeight: ratioFormat === "remaining" ? 700 : 500,
+                      fontSize: "10.5px",
+                      cursor: "pointer",
+                      boxShadow: ratioFormat === "remaining" ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
+                    }}
+                    title="Valor restante para alcanzar el objetivo"
+                  >
+                    Restante
+                  </button>
+                </div>
+
+                <div style={{ width: "1px", height: "14px", background: "#cbd5e1" }} />
+
+                {/* Selector de Variables */}
                 <div style={{ position: "relative" }}>
                   <button
                     type="button"
                     onClick={() => setShowRatioColumnPicker((prev) => !prev)}
                     style={{
+                      height: "25px",
                       display: "inline-flex",
                       alignItems: "center",
-                      gap: "6px",
-                      padding: "4px 9px",
-                      borderRadius: "6px",
-                      border: showRatioColumnPicker ? "1px solid #0284c7" : "1px solid #e2e8f0",
+                      gap: "4px",
+                      padding: "2px 7px",
+                      borderRadius: "4px",
+                      border: showRatioColumnPicker ? "1px solid #0284c7" : "1px solid #cbd5e1",
                       background: showRatioColumnPicker ? "#f0f9ff" : "#ffffff",
                       color: showRatioColumnPicker ? "#0369a1" : "#334155",
-                      fontSize: "11.5px",
+                      fontSize: "11px",
                       fontWeight: 600,
                       cursor: "pointer",
                     }}
-                    title="Elige qué variables GPS ver en las columnas"
+                    title="Variables GPS visibles"
                   >
                     <span>Variables</span>
-                    <span
-                      style={{
-                        fontSize: "10px",
-                        fontWeight: 800,
-                        background: "#f1f5f9",
-                        color: "#334155",
-                        padding: "1px 5px",
-                        borderRadius: "4px",
-                      }}
-                    >
+                    <span style={{ fontSize: "9.5px", fontWeight: 800, background: "#f1f5f9", padding: "0 4px", borderRadius: "3px" }}>
                       {selectedRatioKeys.length}
                     </span>
-                    <span style={{ fontSize: "8px", color: "#64748b" }}>
-                      {showRatioColumnPicker ? "▲" : "▼"}
-                    </span>
+                    <span style={{ fontSize: "8px", color: "#64748b" }}>{showRatioColumnPicker ? "▲" : "▼"}</span>
                   </button>
 
                   {showRatioColumnPicker && (
                     <div
                       style={{
                         position: "absolute",
-                        right: 0,
-                        top: "calc(100% + 6px)",
-                        zIndex: 90,
+                        left: 0,
+                        top: "calc(100% + 4px)",
+                        zIndex: 100,
                         background: "#ffffff",
                         border: "1px solid #cbd5e1",
-                        borderRadius: "10px",
-                        boxShadow: "0 10px 25px rgba(0,0,0,0.12)",
-                        padding: "12px",
+                        borderRadius: "8px",
+                        boxShadow: "0 10px 25px rgba(0,0,0,0.14)",
+                        padding: "10px",
                         width: "320px",
                         display: "flex",
                         flexDirection: "column",
-                        gap: "10px",
+                        gap: "8px",
                       }}
                     >
                       {/* Encabezado */}
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #f1f5f9", paddingBottom: "6px" }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #f1f5f9", paddingBottom: "5px" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                          <strong style={{ fontSize: "12px", color: "#0f172a" }}>
+                          <strong style={{ fontSize: "11.5px", color: "#0f172a" }}>
                             {ratioPickerScope === "favoritas" ? "Variables Favoritas" : "Catálogo Completo GPS"}
                           </strong>
-                          <span style={{ fontSize: "10px", color: "#0369a1", fontWeight: 800, background: "#e0f2fe", padding: "1px 6px", borderRadius: "4px" }}>
+                          <span style={{ fontSize: "9.5px", color: "#0369a1", fontWeight: 800, background: "#e0f2fe", padding: "1px 5px", borderRadius: "3px" }}>
                             {selectedRatioKeys.length} activas
                           </span>
                         </div>
                         <div>
                           {ratioColumnSaveStatus ? (
                             <span style={{
-                              fontSize: "10px",
+                              fontSize: "9.5px",
                               fontWeight: 800,
-                              padding: "2px 7px",
-                              borderRadius: "10px",
+                              padding: "1px 6px",
+                              borderRadius: "8px",
                               background: ratioColumnSaveStatus.includes("✓") ? "#dcfce7" : "#fef3c7",
                               color: ratioColumnSaveStatus.includes("✓") ? "#15803d" : "#b45309",
                               border: `1px solid ${ratioColumnSaveStatus.includes("✓") ? "#bbf7d0" : "#fde047"}`,
@@ -7376,7 +7842,7 @@ export default function CargaExternaSection({
                               {ratioColumnSaveStatus}
                             </span>
                           ) : (
-                            <span style={{ fontSize: "9.5px", color: "#059669", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: "3px" }}>
+                            <span style={{ fontSize: "9px", color: "#059669", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: "2px" }}>
                               💾 BBDD
                             </span>
                           )}
@@ -7384,19 +7850,19 @@ export default function CargaExternaSection({
                       </div>
 
                       {/* Selector de ámbito: Favoritas vs Catálogo */}
-                      <div style={{ display: "flex", gap: "3px", background: "#f1f5f9", padding: "3px", borderRadius: "6px" }}>
+                      <div style={{ display: "flex", gap: "2px", background: "#f1f5f9", padding: "2px", borderRadius: "5px" }}>
                         <button
                           type="button"
                           onClick={() => setRatioPickerScope("favoritas")}
                           style={{
                             flex: 1,
-                            padding: "5px 6px",
-                            borderRadius: "5px",
+                            padding: "3px 5px",
+                            borderRadius: "4px",
                             border: "none",
                             background: ratioPickerScope === "favoritas" ? "#ffffff" : "transparent",
                             color: ratioPickerScope === "favoritas" ? "#0369a1" : "#64748b",
                             fontWeight: ratioPickerScope === "favoritas" ? 800 : 600,
-                            fontSize: "11px",
+                            fontSize: "10.5px",
                             cursor: "pointer",
                             boxShadow: ratioPickerScope === "favoritas" ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
                           }}
@@ -7408,13 +7874,13 @@ export default function CargaExternaSection({
                           onClick={() => setRatioPickerScope("todas")}
                           style={{
                             flex: 1,
-                            padding: "5px 6px",
-                            borderRadius: "5px",
+                            padding: "3px 5px",
+                            borderRadius: "4px",
                             border: "none",
                             background: ratioPickerScope === "todas" ? "#ffffff" : "transparent",
                             color: ratioPickerScope === "todas" ? "#0369a1" : "#64748b",
                             fontWeight: ratioPickerScope === "todas" ? 800 : 600,
-                            fontSize: "11px",
+                            fontSize: "10.5px",
                             cursor: "pointer",
                             boxShadow: ratioPickerScope === "todas" ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
                           }}
@@ -7424,26 +7890,26 @@ export default function CargaExternaSection({
                       </div>
 
                       {/* Presets rápidos */}
-                      <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
+                      <div style={{ display: "flex", gap: "3px", flexWrap: "wrap" }}>
                         <button
                           type="button"
                           onClick={() => handleSetPresetRatioColumns(availableFavVariables.map((v) => v.key))}
-                          style={{ padding: "3px 7px", borderRadius: "4px", border: "1px solid #bfdbfe", background: "#eff6ff", fontSize: "10.5px", color: "#1e40af", cursor: "pointer", fontWeight: 800 }}
+                          style={{ padding: "2px 6px", borderRadius: "3px", border: "1px solid #bfdbfe", background: "#eff6ff", fontSize: "10px", color: "#1e40af", cursor: "pointer", fontWeight: 700 }}
                           title="Seleccionar todas tus variables favoritas"
                         >
-                          Todas las favoritas
+                          Todas las favs
                         </button>
                         <button
                           type="button"
                           onClick={() => handleSetPresetRatioColumns(["Distance(m)", "+ 24 km/h (Distancia)", "Player Load", "Max Speed (km/h)"])}
-                          style={{ padding: "3px 6px", borderRadius: "4px", border: "1px solid #e2e8f0", background: "#f8fafc", fontSize: "10.5px", color: "#334155", cursor: "pointer", fontWeight: 700 }}
+                          style={{ padding: "2px 5px", borderRadius: "3px", border: "1px solid #e2e8f0", background: "#f8fafc", fontSize: "10px", color: "#334155", cursor: "pointer", fontWeight: 600 }}
                         >
                           Top 4
                         </button>
                         <button
                           type="button"
                           onClick={() => handleSetPresetRatioColumns(["Distance(m)", "19.8 - 24 km/h (Distancia)", "Accelerations + Decelerations", "+ 24 km/h (Distancia)"])}
-                          style={{ padding: "3px 6px", borderRadius: "4px", border: "1px solid #e2e8f0", background: "#f8fafc", fontSize: "10.5px", color: "#334155", cursor: "pointer", fontWeight: 700 }}
+                          style={{ padding: "2px 5px", borderRadius: "3px", border: "1px solid #e2e8f0", background: "#f8fafc", fontSize: "10px", color: "#334155", cursor: "pointer", fontWeight: 600 }}
                         >
                           Clásicas
                         </button>
@@ -7451,7 +7917,7 @@ export default function CargaExternaSection({
                           <button
                             type="button"
                             onClick={() => handleSetPresetRatioColumns(["15 - 16 km/h (Distancia)", "16 - 17 km/h (Distancia)", "17 - 19,8 km/h (Distancia)", "21 - 24 km/h (Distancia)", "+ 24 km/h (Distancia)"])}
-                            style={{ padding: "3px 6px", borderRadius: "4px", border: "1px solid #e2e8f0", background: "#f8fafc", fontSize: "10.5px", color: "#334155", cursor: "pointer", fontWeight: 700 }}
+                            style={{ padding: "2px 5px", borderRadius: "3px", border: "1px solid #e2e8f0", background: "#f8fafc", fontSize: "10px", color: "#334155", cursor: "pointer", fontWeight: 600 }}
                           >
                             Zonas Vel.
                           </button>
@@ -7459,7 +7925,7 @@ export default function CargaExternaSection({
                       </div>
 
                       {/* Lista scrolleable con las variables */}
-                      <div style={{ maxHeight: "250px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "3px" }}>
+                      <div style={{ maxHeight: "230px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "2px" }}>
                         {(ratioPickerScope === "favoritas" ? availableFavVariables : ALL_GPS_VARIABLES.filter((v) => v.key !== "Duration(min)")).map((v) => {
                           const isChecked = selectedRatioKeys.includes(v.key);
                           const isDt = v.key === "Distance(m)";
@@ -7485,16 +7951,16 @@ export default function CargaExternaSection({
                               style={{
                                 display: "flex",
                                 alignItems: "center",
-                                gap: "8px",
-                                padding: "4px 6px",
+                                gap: "6px",
+                                padding: "3px 5px",
                                 borderRadius: "4px",
                                 background: isChecked ? "#f0f9ff" : "transparent",
                                 cursor: isDt ? "default" : "pointer",
-                                fontSize: "11px",
+                                fontSize: "10.5px",
                                 userSelect: "none",
                               }}
                             >
-                              <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, pointerEvents: "none" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: "6px", flex: 1, pointerEvents: "none" }}>
                                 <input
                                   type="checkbox"
                                   checked={checked}
@@ -7502,13 +7968,13 @@ export default function CargaExternaSection({
                                   readOnly
                                   style={{ cursor: isDt ? "not-allowed" : "pointer", accentColor: "#0284c7" }}
                                 />
-                                <span style={{ fontWeight: checked ? 800 : 500, color: checked ? "#0369a1" : "#334155", flex: 1, display: "inline-flex", alignItems: "center", gap: "5px" }}>
+                                <span style={{ fontWeight: checked ? 800 : 500, color: checked ? "#0369a1" : "#334155", flex: 1, display: "inline-flex", alignItems: "center", gap: "4px" }}>
                                   {v.esDerivada && (
-                                    <span style={{ fontSize: "11px", color: "#059669", fontWeight: 900 }} title="Variable Personalizada">➕</span>
+                                    <span style={{ fontSize: "10px", color: "#059669", fontWeight: 900 }} title="Variable Personalizada">➕</span>
                                   )}
                                   <span>{nameObj.full} {isDt ? "(Fija)" : ""}</span>
                                 </span>
-                                <span style={{ fontSize: "9.5px", color: isDt ? "#1d4ed8" : "#64748b", fontWeight: 700, fontFamily: "monospace" }}>
+                                <span style={{ fontSize: "9px", color: isDt ? "#1d4ed8" : "#64748b", fontWeight: 700, fontFamily: "monospace" }}>
                                   [{nameObj.short}]
                                 </span>
                               </div>
@@ -7517,8 +7983,8 @@ export default function CargaExternaSection({
                         })}
                       </div>
 
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid #f1f5f9", paddingTop: "8px" }}>
-                        <span style={{ fontSize: "10px", color: "#64748b" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid #f1f5f9", paddingTop: "6px" }}>
+                        <span style={{ fontSize: "9.5px", color: "#64748b" }}>
                           💾 Guardado permanente
                         </span>
                         <button
@@ -7528,17 +7994,17 @@ export default function CargaExternaSection({
                             setShowRatioColumnPicker(false);
                           }}
                           style={{
-                            padding: "4px 14px",
-                            borderRadius: "5px",
+                            padding: "3px 10px",
+                            borderRadius: "4px",
                             background: "#0284c7",
                             color: "#ffffff",
-                            fontSize: "11px",
+                            fontSize: "10.5px",
                             fontWeight: 800,
                             cursor: "pointer",
                             border: "none",
                             display: "inline-flex",
                             alignItems: "center",
-                            gap: "4px",
+                            gap: "3px",
                           }}
                         >
                           ✓ Guardar y Cerrar
@@ -7547,229 +8013,12 @@ export default function CargaExternaSection({
                     </div>
                   )}
                 </div>
-
-                {/* Botón Selector / Ocultador de Jugadores */}
-                <div style={{ position: "relative" }}>
-                  <button
-                    type="button"
-                    onClick={() => setShowPlayerFilterPicker((prev) => !prev)}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "6px",
-                      padding: "4px 9px",
-                      borderRadius: "6px",
-                      border: hiddenPlayerIds.length > 0 ? "1px solid #fed7aa" : showPlayerFilterPicker ? "1px solid #0284c7" : "1px solid #e2e8f0",
-                      background: hiddenPlayerIds.length > 0 ? "#fffbeb" : showPlayerFilterPicker ? "#f0f9ff" : "#ffffff",
-                      color: hiddenPlayerIds.length > 0 ? "#9a3412" : "#334155",
-                      fontSize: "11.5px",
-                      fontWeight: 600,
-                      cursor: "pointer",
-                    }}
-                    title="Oculta o muestra jugadores en la tabla de ratios semanales"
-                  >
-                    <span>Jugadores</span>
-                    <span
-                      style={{
-                        fontSize: "10px",
-                        fontWeight: 800,
-                        background: hiddenPlayerIds.length > 0 ? "#fef3c7" : "#f1f5f9",
-                        color: hiddenPlayerIds.length > 0 ? "#b45309" : "#334155",
-                        padding: "1px 5px",
-                        borderRadius: "4px",
-                      }}
-                    >
-                      {displayedWeeklyRatiosData.length}/{weeklyRatiosData.length}
-                    </span>
-                    {hiddenPlayerIds.length > 0 && (
-                      <span style={{ fontSize: "10px", color: "#b45309", fontWeight: 700 }}>
-                        ({hiddenPlayerIds.length} ocultos)
-                      </span>
-                    )}
-                    <span style={{ fontSize: "8px", color: "#64748b" }}>
-                      {showPlayerFilterPicker ? "▲" : "▼"}
-                    </span>
-                  </button>
-
-                  {showPlayerFilterPicker && (
-                    <div
-                      style={{
-                        position: "absolute",
-                        top: "calc(100% + 6px)",
-                        right: 0,
-                        zIndex: 90,
-                        background: "#ffffff",
-                        border: "1px solid #cbd5e1",
-                        borderRadius: "10px",
-                        boxShadow: "0 10px 25px rgba(0,0,0,0.12)",
-                        padding: "12px",
-                        width: "330px",
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: "10px",
-                      }}
-                    >
-                      {/* Encabezado */}
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #f1f5f9", paddingBottom: "6px" }}>
-                        <strong style={{ fontSize: "12px", color: "#0f172a" }}>
-                          Visibilidad de Jugadores
-                        </strong>
-                        <span style={{ fontSize: "10.5px", color: hiddenPlayerIds.length > 0 ? "#b45309" : "#16a34a", fontWeight: 800, background: hiddenPlayerIds.length > 0 ? "#fef3c7" : "#dcfce7", padding: "1px 6px", borderRadius: "4px" }}>
-                          {displayedWeeklyRatiosData.length} visibles
-                        </span>
-                      </div>
-
-                      {/* Buscador de jugadores */}
-                      <input
-                        type="text"
-                        placeholder="Buscar por nombre, apodo o dorsal..."
-                        value={playerSearchFilter}
-                        onChange={(e) => setPlayerSearchFilter(e.target.value)}
-                        style={{
-                          width: "100%",
-                          padding: "6px 8px",
-                          borderRadius: "6px",
-                          border: "1px solid #cbd5e1",
-                          fontSize: "11.5px",
-                          outline: "none",
-                        }}
-                      />
-
-                      {/* Presets rápidos */}
-                      <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
-                        <button
-                          type="button"
-                          onClick={handleShowAllPlayers}
-                          style={{ padding: "3px 7px", borderRadius: "4px", border: "1px solid #bfdbfe", background: "#eff6ff", fontSize: "10.5px", color: "#1e40af", cursor: "pointer", fontWeight: 800 }}
-                        >
-                          Mostrar Todos
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleHidePlayersWithoutSessions}
-                          style={{ padding: "3px 7px", borderRadius: "4px", border: "1px solid #cbd5e1", background: "#f8fafc", fontSize: "10.5px", color: "#475569", cursor: "pointer", fontWeight: 700 }}
-                          title="Ocultar jugadores que tienen 0 sesiones en este microciclo"
-                        >
-                          Sin sesiones
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleHideGoalkeepers}
-                          style={{ padding: "3px 7px", borderRadius: "4px", border: "1px solid #cbd5e1", background: "#f8fafc", fontSize: "10.5px", color: "#475569", cursor: "pointer", fontWeight: 700 }}
-                          title="Ocultar porteros de la tabla de ratios"
-                        >
-                          Porteros
-                        </button>
-                      </div>
-
-                      {/* Lista de jugadores con checkbox */}
-                      <div style={{ maxHeight: "260px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "3px" }}>
-                        {jugadores
-                          .filter((j) => {
-                            if (!playerSearchFilter) return true;
-                            const q = playerSearchFilter.toLowerCase();
-                            const name = (j.apodo || j.nombre || "").toLowerCase();
-                            const dorsal = String(j.dorsal || "");
-                            const pos = (j.posicion || "").toLowerCase();
-                            return name.includes(q) || dorsal.includes(q) || pos.includes(q);
-                          })
-                          .map((j) => {
-                            const isHidden = hiddenPlayerIds.includes(j.id);
-                            const rowData = weeklyRatiosData.find((r) => r.jugador.id === j.id);
-                            const sessCount = rowData?.sessionsCount ?? 0;
-
-                            return (
-                              <label
-                                key={j.id}
-                                style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "space-between",
-                                  padding: "5px 8px",
-                                  borderRadius: "6px",
-                                  background: isHidden ? "#f8fafc" : "#f0fdf4",
-                                  border: isHidden ? "1px solid #e2e8f0" : "1px solid #bbf7d0",
-                                  cursor: "pointer",
-                                  fontSize: "11.5px",
-                                  opacity: isHidden ? 0.6 : 1,
-                                  transition: "all 0.1s ease",
-                                }}
-                              >
-                                <div style={{ display: "flex", alignItems: "center", gap: "7px" }}>
-                                  <input
-                                    type="checkbox"
-                                    checked={!isHidden}
-                                    onChange={() => handleTogglePlayerVisibility(j.id)}
-                                    style={{ cursor: "pointer", accentColor: "#16a34a" }}
-                                  />
-                                  <span style={{ fontWeight: !isHidden ? 800 : 500, color: !isHidden ? "#166534" : "#64748b" }}>
-                                    {j.dorsal ? "#" + j.dorsal + " " : ""}{j.apodo || j.nombre}
-                                  </span>
-                                  <span style={{ fontSize: "9.5px", color: "#94a3b8" }}>
-                                    {j.posicion || "Jugador"}
-                                  </span>
-                                </div>
-                                <span style={{ fontSize: "10px", fontWeight: 700, color: sessCount > 0 ? "#0369a1" : "#94a3b8" }}>
-                                  {sessCount} {sessCount === 1 ? "sesión" : "sesiones"}
-                                </span>
-                              </label>
-                            );
-                          })}
-                      </div>
-
-                      {/* Pie del modal */}
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid #f1f5f9", paddingTop: "8px" }}>
-                        {hiddenPlayerIds.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={handleShowAllPlayers}
-                            style={{ border: "none", background: "none", color: "#dc2626", fontSize: "11px", fontWeight: 800, cursor: "pointer" }}
-                          >
-                            Restablecer todos ({weeklyRatiosData.length})
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => setShowPlayerFilterPicker(false)}
-                          style={{
-                            marginLeft: "auto",
-                            padding: "4px 10px",
-                            background: "#0f172a",
-                            color: "#ffffff",
-                            borderRadius: "6px",
-                            border: "none",
-                            fontSize: "11px",
-                            fontWeight: 800,
-                            cursor: "pointer",
-                          }}
-                        >
-                          Listo
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
               </div>
-            </div>
 
-            {/* FILA 2: Ratios Exigidos Ribbon (Integrado elegantemente en la base de la tarjeta) */}
-            <div
-              style={{
-                borderTop: "1px solid #f1f5f9",
-                background: "#f8fafc",
-                padding: "7px 14px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                flexWrap: "wrap",
-                gap: "10px",
-                borderBottomLeftRadius: "9px",
-                borderBottomRightRadius: "9px",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                <span style={{ fontSize: "11.5px", fontWeight: 700, color: "#64748b" }}>
-                  Ratios Exigidos:
+              {/* Derecha: Ratios Exigidos + Ajustes individuales */}
+              <div style={{ display: "flex", alignItems: "center", gap: "5px", flexWrap: "wrap" }}>
+                <span style={{ fontSize: "10.5px", fontWeight: 700, color: "#64748b" }}>
+                  Ratios:
                 </span>
 
                 {activeRatioKeys.map((key) => {
@@ -7785,21 +8034,15 @@ export default function CargaExternaSection({
                         display: "inline-flex",
                         alignItems: "center",
                         background: "#ffffff",
-                        border: isDt ? "1px solid #bfdbfe" : "1px solid #e2e8f0",
-                        borderRadius: "5px",
-                        padding: "2px 5px 2px 7px",
-                        boxShadow: "0 1px 2px rgba(0,0,0,0.02)",
-                        gap: "4px",
+                        border: isDt ? "1px solid #bfdbfe" : "1px solid #cbd5e1",
+                        borderRadius: "4px",
+                        padding: "1px 4px",
+                        gap: "2px",
+                        height: "23px",
                       }}
                       title={"Objetivo de ratio semanal para " + nameObj.full}
                     >
-                      <span
-                        style={{
-                          fontSize: "11px",
-                          fontWeight: 700,
-                          color: isDt ? "#1d4ed8" : "#334155",
-                        }}
-                      >
+                      <span style={{ fontSize: "10px", fontWeight: 700, color: isDt ? "#1d4ed8" : "#334155" }}>
                         {nameObj.short}
                       </span>
                       <input
@@ -7813,49 +8056,23 @@ export default function CargaExternaSection({
                           if (!isNaN(val) && val > 0) handleUpdateTeamTarget(key, val);
                         }}
                         style={{
-                          width: "42px",
-                          padding: "2px 0",
-                          borderRadius: "3px",
+                          width: "32px",
+                          padding: "0",
+                          borderRadius: "2px",
                           border: "none",
                           background: "#f1f5f9",
-                          fontSize: "11.5px",
+                          fontSize: "11px",
                           fontWeight: 800,
                           color: isDt ? "#1e40af" : "#0f172a",
                           textAlign: "center",
                           outline: "none",
+                          height: "17px",
                         }}
                       />
-                      <span style={{ fontSize: "10.5px", color: "#94a3b8", fontWeight: 600 }}>x</span>
+                      <span style={{ fontSize: "9.5px", color: "#94a3b8", fontWeight: 600 }}>x</span>
                     </div>
                   );
                 })}
-              </div>
-
-              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                {hiddenPlayerIds.length > 0 && (
-                  <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "11.5px" }}>
-                    <span style={{ color: "#9a3412", background: "#fef3c7", padding: "1px 7px", borderRadius: "10px", fontWeight: 700, fontSize: "10.5px" }}>
-                      {hiddenPlayerIds.length} {hiddenPlayerIds.length === 1 ? "oculto" : "ocultos"}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleShowAllPlayers}
-                      style={{
-                        border: "none",
-                        background: "none",
-                        color: "#0284c7",
-                        fontSize: "11.5px",
-                        fontWeight: 600,
-                        cursor: "pointer",
-                        padding: 0,
-                        textDecoration: "underline",
-                      }}
-                    >
-                      Mostrar todos
-                    </button>
-                    <span style={{ color: "#cbd5e1" }}>·</span>
-                  </div>
-                )}
 
                 <button
                   type="button"
@@ -7863,20 +8080,20 @@ export default function CargaExternaSection({
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
-                    gap: "5px",
-                    padding: "3px 9px",
-                    borderRadius: "5px",
-                    border: "1px solid #e2e8f0",
+                    gap: "4px",
+                    padding: "2px 6px",
+                    height: "23px",
+                    borderRadius: "4px",
+                    border: "1px solid #cbd5e1",
                     background: "#ffffff",
-                    fontSize: "11.5px",
+                    fontSize: "10.5px",
                     fontWeight: 600,
                     color: "#475569",
                     cursor: "pointer",
-                    boxShadow: "0 1px 2px rgba(0,0,0,0.02)",
                   }}
                   title="Ajustar ratios individuales específicos por jugador"
                 >
-                  Ajustes individuales ({Object.keys(playerCustomTargets).length})
+                  Ajustes indiv. ({Object.keys(playerCustomTargets).length})
                 </button>
               </div>
             </div>
@@ -8074,6 +8291,32 @@ export default function CargaExternaSection({
                                   title={"Modificar ratios exigidos para " + (j.apodo || j.nombre)}
                                 >
                                   🎯
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleIsolatePlayer(j.id)}
+                                  style={{
+                                    padding: "2px 5px",
+                                    borderRadius: "4px",
+                                    border: "1px solid #cbd5e1",
+                                    background: "#ffffff",
+                                    fontSize: "10px",
+                                    fontWeight: 700,
+                                    cursor: "pointer",
+                                    color: "#0369a1",
+                                    transition: "all 0.15s ease",
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.borderColor = "#0284c7";
+                                    e.currentTarget.style.background = "#f0f9ff";
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.borderColor = "#cbd5e1";
+                                    e.currentTarget.style.background = "#ffffff";
+                                  }}
+                                  title={"Ver solo a " + (j.apodo || j.nombre) + " (ocultar los demás)"}
+                                >
+                                  Solo
                                 </button>
                                 <button
                                   type="button"
