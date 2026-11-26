@@ -813,6 +813,11 @@ export default function MultasPage() {
   const [filtroJugador, setFiltroJugador] = useState<string>("TODOS");
   const [busqueda, setBusqueda] = useState<string>("");
   const [selectedMultaIds, setSelectedMultaIds] = useState<Set<string>>(new Set());
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [dragStartIndex, setDragStartIndex] = useState<number | null>(null);
+  const [dragAction, setDragAction] = useState<"select" | "deselect">("select");
+  const [dragBaseSelection, setDragBaseSelection] = useState<Set<string>>(new Set());
+  const [lastClickedIndex, setLastClickedIndex] = useState<number | null>(null);
 
   // Modal crear/editar tipo de multa
   const [showTipoMultaModal, setShowTipoMultaModal] = useState<boolean>(false);
@@ -936,6 +941,7 @@ export default function MultasPage() {
     setFiltroJugador("TODOS");
     setBusqueda("");
     setSelectedMultaIds(new Set());
+    setLastClickedIndex(null);
     if (typeof window !== "undefined") {
       localStorage.removeItem("multas_filtro_fecha_desde");
       localStorage.removeItem("multas_filtro_fecha_hasta");
@@ -944,6 +950,19 @@ export default function MultasPage() {
       localStorage.removeItem("multas_filtro_busqueda");
     }
   };
+
+  // Listener global para finalizar el arrastre estilo Excel al soltar el ratón en cualquier lugar
+  useEffect(() => {
+    const handleGlobalMouseUp = () => {
+      setIsDragging(false);
+      setDragStartIndex(null);
+    };
+
+    window.addEventListener("mouseup", handleGlobalMouseUp);
+    return () => {
+      window.removeEventListener("mouseup", handleGlobalMouseUp);
+    };
+  }, []);
 
   useEffect(() => {
     setMounted(true);
@@ -1755,8 +1774,66 @@ export default function MultasPage() {
     });
   };
 
+  // Arrastre estilo Excel: Iniciar al pulsar
+  const handleRowMouseDown = (e: React.MouseEvent, idx: number, multaId: string) => {
+    const targetTag = (e.target as HTMLElement).tagName;
+    // Permitir interacción normal con inputs de texto, botones y selects
+    if (targetTag === "BUTTON" || targetTag === "SELECT" || (targetTag === "INPUT" && (e.target as HTMLInputElement).type === "text")) {
+      return;
+    }
+
+    // Shift + Clic para seleccionar rango continuo desde el último clicado (estilo Excel)
+    if (e.shiftKey && lastClickedIndex !== null) {
+      e.preventDefault();
+      const min = Math.min(lastClickedIndex, idx);
+      const max = Math.max(lastClickedIndex, idx);
+      const next = new Set(selectedMultaIds);
+      for (let i = min; i <= max; i++) {
+        if (displayedMultas[i]) next.add(displayedMultas[i].id);
+      }
+      setSelectedMultaIds(next);
+      setLastClickedIndex(idx);
+      return;
+    }
+
+    // Clic con arrastre estilo Excel (pulsar y arrastrar hacia abajo/arriba)
+    const willSelect = !selectedMultaIds.has(multaId);
+    setIsDragging(true);
+    setDragStartIndex(idx);
+    setDragAction(willSelect ? "select" : "deselect");
+    setLastClickedIndex(idx);
+
+    const base = new Set(selectedMultaIds);
+    setDragBaseSelection(base);
+
+    const next = new Set(base);
+    if (willSelect) next.add(multaId);
+    else next.delete(multaId);
+    setSelectedMultaIds(next);
+  };
+
+  // Arrastre estilo Excel: Al pasar el cursor por otra fila mientras se mantiene pulsado
+  const handleRowMouseEnter = (hoverIdx: number) => {
+    if (!isDragging || dragStartIndex === null) return;
+
+    const min = Math.min(dragStartIndex, hoverIdx);
+    const max = Math.max(dragStartIndex, hoverIdx);
+
+    const next = new Set(dragBaseSelection);
+    const rangeIds = displayedMultas.slice(min, max + 1).map((m) => m.id);
+
+    if (dragAction === "select") {
+      rangeIds.forEach((id) => next.add(id));
+    } else {
+      rangeIds.forEach((id) => next.delete(id));
+    }
+
+    setSelectedMultaIds(next);
+  };
+
   const clearSelection = () => {
     setSelectedMultaIds(new Set());
+    setLastClickedIndex(null);
   };
 
   // Resumen formateado por deportista (para exportar PDF, imprimir y copiar)
@@ -2791,7 +2868,7 @@ export default function MultasPage() {
                     gap: "10px",
                   }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
                     <span style={{ fontSize: "16px" }}>☑️</span>
                     <div>
                       <strong style={{ fontSize: "13px", color: "#991b1b" }}>
@@ -2801,6 +2878,9 @@ export default function MultasPage() {
                         (Total: {multas.filter((m) => selectedMultaIds.has(m.id)).reduce((acc, m) => acc + (m.importe || 0), 0)} €)
                       </span>
                     </div>
+                    <span style={{ fontSize: "11px", color: "#991b1b", background: "#fee2e2", padding: "2px 8px", borderRadius: "4px", border: "1px solid #fca5a5" }}>
+                      💡 Arrastra pulsando o usa Shift + Clic para seleccionar seguidas como en Excel
+                    </span>
                   </div>
 
                   <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
@@ -2846,14 +2926,21 @@ export default function MultasPage() {
 
               {filteredMultas.length > 0 ? (
                 <div style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11.5px" }}>
+                  <table
+                    style={{
+                      width: "100%",
+                      borderCollapse: "collapse",
+                      fontSize: "11.5px",
+                      userSelect: isDragging ? "none" : "auto",
+                    }}
+                  >
                     <thead>
                       <tr style={{ background: "#0f172a", color: "#ffffff", textAlign: "left" }}>
                         <th
                           className="no-print"
                           style={{
                             padding: "6px 8px",
-                            width: "42px",
+                            width: "50px",
                             textAlign: "center",
                             verticalAlign: "middle",
                           }}
@@ -2918,10 +3005,14 @@ export default function MultasPage() {
                         return (
                           <tr
                             key={m.id || idx}
+                            onMouseDown={(e) => handleRowMouseDown(e, idx, m.id)}
+                            onMouseEnter={() => handleRowMouseEnter(idx)}
                             style={{
                               borderBottom: isSelected ? "1.5px solid #fca5a5" : "1px solid #e2e8f0",
                               background: isSelected ? "#fef2f2" : idx % 2 === 0 ? "#ffffff" : "#f8fafc",
-                              transition: "background 0.15s ease",
+                              boxShadow: isSelected ? "inset 3px 0 0 #dc2626" : "none",
+                              transition: "background 0.1s ease",
+                              cursor: "default",
                             }}
                           >
                             <td
@@ -2930,19 +3021,34 @@ export default function MultasPage() {
                                 padding: "4px 8px",
                                 textAlign: "center",
                                 verticalAlign: "middle",
+                                cursor: "grab",
+                                userSelect: "none",
                               }}
+                              title="Haz clic o mantén pulsado y arrastra hacia abajo para seleccionar varias celdas seguidas como en Excel"
                             >
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={() => toggleSelectMulta(m.id)}
-                                style={{
-                                  width: "16px",
-                                  height: "16px",
-                                  cursor: "pointer",
-                                  accentColor: "#dc2626",
-                                }}
-                              />
+                              <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "4px" }}>
+                                <span
+                                  style={{
+                                    fontSize: "12px",
+                                    color: isSelected ? "#dc2626" : "#cbd5e1",
+                                    userSelect: "none",
+                                    lineHeight: 1,
+                                  }}
+                                >
+                                  ⠿
+                                </span>
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => {}}
+                                  style={{
+                                    width: "16px",
+                                    height: "16px",
+                                    cursor: "pointer",
+                                    accentColor: "#dc2626",
+                                  }}
+                                />
+                              </div>
                             </td>
                             <td style={{ padding: "4px 8px", fontWeight: 700, color: "#334155", whiteSpace: "nowrap", textAlign: "center", verticalAlign: "middle" }}>
                               {formatDateDDMM(m.fecha)}
