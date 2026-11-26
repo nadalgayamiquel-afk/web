@@ -4,6 +4,19 @@ import React, { useState, useEffect, useRef } from 'react';
 import { GimnasioSesion, GimnasioEjercicio, SensorCaptureRecord } from './gimnasio-types';
 import { saveSensorCapture, getSensorCapturesForDate, getAllSensorCaptures } from '@/app/actions';
 
+// ════════════════════════════════════════════════════════════════════════════════
+// PROTOCOLOS BLUETOOTH LE OFICIALES PARA HARDWARE DE GIMNASIO
+// ════════════════════════════════════════════════════════════════════════════════
+// 1. Tindeq Progressor (Dinamómetro de Tracción Isométrica)
+const TINDEQ_SERVICE_UUID = '7e4e1701-0ea6-4190-9f39-512902f62241';
+const TINDEQ_DATA_CHAR_UUID = '7e4e1702-0ea6-4190-9f39-512902f62241';
+const TINDEQ_CTRL_CHAR_UUID = '7e4e1703-0ea6-4190-9f39-512902f62241';
+
+// 2. Enode / Vmaxpro (Encoder Lineal VBT - Nordic UART Service & VBT Profile)
+const ENODE_NORDIC_UART_SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+const ENODE_RX_CHAR_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+const ENODE_TX_CHAR_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+
 interface Props {
   isOpen: boolean;
   onClose: () => void;
@@ -32,7 +45,15 @@ export default function GimnasioEstacionModal({
   const [isSimulating, setIsSimulating] = useState<boolean>(true);
   const [bluetoothConnected, setBluetoothConnected] = useState<boolean>(false);
   const [bluetoothDeviceName, setBluetoothDeviceName] = useState<string>('');
+  const [connectedSensorType, setConnectedSensorType] = useState<'ENODE' | 'TINDEQ' | null>(null);
+  const [showBluefyModal, setShowBluefyModal] = useState<boolean>(false);
   const [isFullScreen, setIsFullScreen] = useState<boolean>(false);
+
+  // Referencias Bluetooth GATT
+  const bleDeviceRef = useRef<any>(null);
+  const bleDataCharRef = useRef<any>(null);
+  const bleCtrlCharRef = useRef<any>(null);
+  const tindeqStartTimeRef = useRef<number>(0);
 
   // Active workout state
   const [activeJugador, setActiveJugador] = useState<any | null>(null);
@@ -344,25 +365,222 @@ export default function GimnasioEstacionModal({
     }
   };
 
-  // Bluetooth Connect using Web Bluetooth API
-  const handleConnectBluetooth = async () => {
+  // ════════════════════════════════════════════════════════════════════════════════
+  // CONTROLADOR BLUETOOTH LE (TINDEQ PROGRESSOR & ENODE / VMAXPRO)
+  // ════════════════════════════════════════════════════════════════════════════════
+
+  // Notificación de datos de Tindeq Progressor (Fuerza continua en Newtons)
+  const handleTindeqNotification = (event: any) => {
+    const value: DataView = event.target.value;
+    if (!value || value.byteLength < 4) return;
+
+    let weightKg = 0;
     try {
-      if (typeof navigator !== 'undefined' && (navigator as any).bluetooth) {
-        const device = await (navigator as any).bluetooth.requestDevice({
-          acceptAllDevices: true,
-          optionalServices: ['battery_service', '0000ffe0-0000-1000-8000-00805f9b34fb'],
-        });
-        setBluetoothConnected(true);
-        setBluetoothDeviceName(device.name || 'Sensor Bluetooth');
-        setIsSimulating(false);
+      if (value.byteLength >= 8) {
+        // Paquete estándar Tindeq: timestamp (4b) + float32 weight en kg (4b)
+        weightKg = value.getFloat32(4, true);
       } else {
-        alert('Web Bluetooth API no disponible en este navegador. Activando Modo Simulación para pruebas fluidas.');
-        setIsSimulating(true);
+        weightKg = value.getFloat32(0, true);
       }
-    } catch (e: any) {
-      console.warn('Bluetooth connection cancelled or failed:', e);
-      setIsSimulating(true);
+    } catch {
+      weightKg = 0;
     }
+
+    if (isNaN(weightKg)) return;
+    const forceN = Math.max(0, Math.round(weightKg * 9.80665));
+
+    setCurrentForceN(forceN);
+    setPeakForceN((prev) => Math.max(prev, forceN));
+
+    if (forceN > 25) {
+      setWorkoutState('ACTIVE');
+    }
+
+    const elapsed = parseFloat(((Date.now() - (tindeqStartTimeRef.current || Date.now())) / 1000).toFixed(2));
+    setCurvePoints((prev) => {
+      const next = [...prev, { t: elapsed, f: forceN }];
+      return next.slice(-200); // 200 puntos en pantalla
+    });
+  };
+
+  // Notificación de repeticiones de Enode / Vmaxpro (Velocidad en m/s)
+  const handleEnodeNotification = (event: any) => {
+    const value: DataView = event.target.value;
+    if (!value || value.byteLength === 0) return;
+
+    try {
+      let meanV = 0;
+      let peakV = 0;
+
+      if (value.byteLength >= 4) {
+        // Lectura de velocidad propulsiva en cm/s o m/s
+        const raw1 = value.getUint16(0, true) / 100;
+        const raw2 = value.getUint16(2, true) / 100;
+        if (raw1 > 0.1 && raw1 < 3.5) {
+          meanV = parseFloat(raw1.toFixed(2));
+          peakV = parseFloat(Math.max(meanV, raw2).toFixed(2));
+        }
+      }
+
+      if (meanV > 0.15) {
+        setWorkoutState('ACTIVE');
+        setCurrentInstantVelocity(meanV);
+        setLastVelocity(meanV);
+
+        setCurrentReps((prev) => {
+          const newBest = prev.length === 0 ? meanV : Math.max(prev[0].velocidadMedia, meanV);
+          setBestVelocity(newBest);
+          const dropPct = parseFloat((((newBest - meanV) / newBest) * 100).toFixed(1));
+          return [
+            ...prev,
+            {
+              rep: prev.length + 1,
+              velocidadMedia: meanV,
+              velocidadPico: peakV,
+              perdidaVelocidadPct: dropPct,
+            },
+          ];
+        });
+      }
+    } catch (e) {
+      console.warn('Error interpretando paquete Enode:', e);
+    }
+  };
+
+  // Tarar Tindeq a 0
+  const handleTindeqTare = async () => {
+    if (bleCtrlCharRef.current) {
+      try {
+        // Comando 0x64 (Tare) en Tindeq Progressor
+        await bleCtrlCharRef.current.writeValue(new Uint8Array([0x64]));
+        setCurrentForceN(0);
+        setPeakForceN(0);
+        setCurvePoints([]);
+      } catch (e) {
+        console.warn('Error tarando Tindeq:', e);
+      }
+    }
+  };
+
+  // Iniciar streaming continuo en Tindeq
+  const startTindeqStreaming = async () => {
+    if (bleCtrlCharRef.current) {
+      try {
+        tindeqStartTimeRef.current = Date.now();
+        // Comando 0x65 (Start continuous measurement)
+        await bleCtrlCharRef.current.writeValue(new Uint8Array([0x65]));
+      } catch (e) {
+        console.warn('Error iniciando streaming Tindeq:', e);
+      }
+    }
+  };
+
+  // Detener streaming en Tindeq
+  const stopTindeqStreaming = async () => {
+    if (bleCtrlCharRef.current) {
+      try {
+        // Comando 0x66 (Stop continuous measurement)
+        await bleCtrlCharRef.current.writeValue(new Uint8Array([0x66]));
+      } catch (e) {
+        console.warn('Error deteniendo streaming Tindeq:', e);
+      }
+    }
+  };
+
+  // Conectar dispositivo Bluetooth mediante Web Bluetooth API
+  const handleConnectBluetooth = async () => {
+    const target = sensorType === 'ENCODER' ? 'ENODE' : 'TINDEQ';
+
+    if (typeof navigator === 'undefined' || !(navigator as any).bluetooth) {
+      setShowBluefyModal(true);
+      setIsSimulating(true);
+      return;
+    }
+
+    try {
+      let device: any = null;
+
+      if (target === 'TINDEQ') {
+        device = await (navigator as any).bluetooth.requestDevice({
+          filters: [
+            { namePrefix: 'Progressor' },
+            { namePrefix: 'Tindeq' },
+            { services: [TINDEQ_SERVICE_UUID] },
+          ],
+          optionalServices: [TINDEQ_SERVICE_UUID, 'battery_service'],
+        });
+      } else {
+        device = await (navigator as any).bluetooth.requestDevice({
+          filters: [
+            { namePrefix: 'Vmaxpro' },
+            { namePrefix: 'Enode' },
+            { namePrefix: 'ENODE' },
+          ],
+          optionalServices: [
+            ENODE_NORDIC_UART_SERVICE,
+            'battery_service',
+            '0000ffe0-0000-1000-8000-00805f9b34fb',
+          ],
+        });
+      }
+
+      if (!device) return;
+
+      bleDeviceRef.current = device;
+      const server = await device.gatt.connect();
+
+      device.addEventListener('gattserverdisconnected', () => {
+        setBluetoothConnected(false);
+        setBluetoothDeviceName('');
+        setConnectedSensorType(null);
+        setIsSimulating(true);
+      });
+
+      if (target === 'TINDEQ') {
+        const service = await server.getPrimaryService(TINDEQ_SERVICE_UUID);
+        const dataChar = await service.getCharacteristic(TINDEQ_DATA_CHAR_UUID);
+        const ctrlChar = await service.getCharacteristic(TINDEQ_CTRL_CHAR_UUID);
+
+        await dataChar.startNotifications();
+        dataChar.addEventListener('characteristicvaluechanged', handleTindeqNotification);
+
+        bleDataCharRef.current = dataChar;
+        bleCtrlCharRef.current = ctrlChar;
+      } else {
+        try {
+          const service = await server.getPrimaryService(ENODE_NORDIC_UART_SERVICE);
+          const txChar = await service.getCharacteristic(ENODE_TX_CHAR_UUID);
+          await txChar.startNotifications();
+          txChar.addEventListener('characteristicvaluechanged', handleEnodeNotification);
+          bleDataCharRef.current = txChar;
+        } catch (e) {
+          console.warn('Enode fallback connection:', e);
+        }
+      }
+
+      setBluetoothConnected(true);
+      setBluetoothDeviceName(device.name || (target === 'TINDEQ' ? 'Tindeq Progressor' : 'Enode Sensor'));
+      setConnectedSensorType(target);
+      setIsSimulating(false);
+    } catch (e: any) {
+      if (e.name !== 'NotFoundError') {
+        console.warn('Bluetooth connection error:', e);
+      }
+    }
+  };
+
+  // Desconectar dispositivo Bluetooth
+  const handleDisconnectBluetooth = () => {
+    if (bleDeviceRef.current && bleDeviceRef.current.gatt && bleDeviceRef.current.gatt.connected) {
+      bleDeviceRef.current.gatt.disconnect();
+    }
+    bleDeviceRef.current = null;
+    bleDataCharRef.current = null;
+    bleCtrlCharRef.current = null;
+    setBluetoothConnected(false);
+    setBluetoothDeviceName('');
+    setConnectedSensorType(null);
+    setIsSimulating(true);
   };
 
   // Start athlete turn (mantiene la última carga configurada en la estación)
@@ -376,6 +594,12 @@ export default function GimnasioEstacionModal({
     setPeakForceN(0);
     setCurvePoints([]);
     setWorkoutState('LISTENING');
+
+    // Si es Tindeq en directo, tarar e iniciar medición continua
+    if (bluetoothConnected && connectedSensorType === 'TINDEQ') {
+      handleTindeqTare();
+      startTindeqStreaming();
+    }
   };
 
   // Movement detection & execution logic (Simulation or Live Sensor)
@@ -476,6 +700,9 @@ export default function GimnasioEstacionModal({
   // Finish Serie and auto-save
   const finishSerie = () => {
     if (simIntervalRef.current) clearInterval(simIntervalRef.current);
+    if (bluetoothConnected && connectedSensorType === 'TINDEQ') {
+      stopTindeqStreaming();
+    }
     setWorkoutState('SUMMARY');
 
     // Trigger save to Supabase
@@ -678,7 +905,12 @@ export default function GimnasioEstacionModal({
           {/* Tipo de sensor */}
           <div style={{ display: 'inline-flex', background: '#1e293b', borderRadius: '6px', padding: '2px', border: '1px solid #334155' }}>
             <button
-              onClick={() => setSensorType('ENCODER')}
+              onClick={() => {
+                setSensorType('ENCODER');
+                if (connectedSensorType !== 'ENODE') {
+                  // Si cambiamos a Encoder y no está conectado Enode, permitimos conectar Enode
+                }
+              }}
               style={{
                 fontSize: '11px',
                 fontWeight: sensorType === 'ENCODER' ? 900 : 700,
@@ -690,10 +922,12 @@ export default function GimnasioEstacionModal({
                 cursor: 'pointer',
               }}
             >
-              ⚡ Encoder (VBT)
+              ⚡ Enode (VBT)
             </button>
             <button
-              onClick={() => setSensorType('DINAMOMETRO')}
+              onClick={() => {
+                setSensorType('DINAMOMETRO');
+              }}
               style={{
                 fontSize: '11px',
                 fontWeight: sensorType === 'DINAMOMETRO' ? 900 : 700,
@@ -705,33 +939,98 @@ export default function GimnasioEstacionModal({
                 cursor: 'pointer',
               }}
             >
-              💪 Dinamómetro
+              💪 Tindeq (Dinamómetro)
             </button>
           </div>
         </div>
 
         {/* Controles de hardware y salida */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          {/* Bluetooth */}
-          <button
-            onClick={handleConnectBluetooth}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              background: bluetoothConnected ? '#15803d' : '#1e293b',
-              color: '#ffffff',
-              border: bluetoothConnected ? '1px solid #22c55e' : '1px solid #334155',
-              padding: '6px 12px',
-              borderRadius: '7px',
-              fontSize: '11.5px',
-              fontWeight: 800,
-              cursor: 'pointer',
-            }}
-          >
-            <span>{bluetoothConnected ? '🟢' : '🔵'}</span>
-            <span>{bluetoothConnected ? (bluetoothDeviceName || 'Sensor Enlazado') : 'Conectar BT'}</span>
-          </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {/* Botón de Tarar para Tindeq cuando está conectado */}
+          {sensorType === 'DINAMOMETRO' && bluetoothConnected && connectedSensorType === 'TINDEQ' && (
+            <button
+              onClick={handleTindeqTare}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                background: '#0e7490',
+                color: '#ffffff',
+                border: '1px solid #06b6d4',
+                padding: '6px 10px',
+                borderRadius: '7px',
+                fontSize: '11px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+              title="Calibrar y poner a 0 Newtons el Tindeq Progressor"
+            >
+              <span>⚖️</span>
+              <span>Tarar a 0</span>
+            </button>
+          )}
+
+          {/* Bluetooth Connect / Disconnect */}
+          {bluetoothConnected ? (
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+              <div
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: '#15803d',
+                  color: '#ffffff',
+                  border: '1px solid #22c55e',
+                  padding: '6px 10px',
+                  borderRadius: '7px',
+                  fontSize: '11px',
+                  fontWeight: 800,
+                }}
+              >
+                <span>🟢</span>
+                <span>{bluetoothDeviceName || (connectedSensorType === 'TINDEQ' ? 'Tindeq' : 'Enode')}</span>
+              </div>
+              <button
+                onClick={handleDisconnectBluetooth}
+                style={{
+                  background: '#334155',
+                  color: '#f87171',
+                  border: '1px solid #475569',
+                  padding: '6px 8px',
+                  borderRadius: '7px',
+                  fontSize: '10.5px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+                title="Desconectar sensor Bluetooth"
+              >
+                ✕
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={handleConnectBluetooth}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: sensorType === 'ENCODER' ? '#1e3a8a' : '#164e63',
+                color: '#ffffff',
+                border: sensorType === 'ENCODER' ? '1px solid #3b82f6' : '1px solid #06b6d4',
+                padding: '6px 12px',
+                borderRadius: '7px',
+                fontSize: '11.5px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+              }}
+              title={sensorType === 'ENCODER' ? 'Conectar Enode / Vmaxpro por Bluetooth' : 'Conectar Tindeq Progressor por Bluetooth'}
+            >
+              <span>🔵</span>
+              <span>{sensorType === 'ENCODER' ? 'Conectar Enode' : 'Conectar Tindeq'}</span>
+            </button>
+          )}
 
           {/* Simulación */}
           <button
@@ -1429,6 +1728,103 @@ export default function GimnasioEstacionModal({
           </div>
         )}
       </main>
+
+      {/* ── MODAL INFORMATIVO: BLUETOOTH EN IPAD / BLUEFY ── */}
+      {showBluefyModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 99999,
+            background: 'rgba(0,0,0,0.75)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
+          }}
+          onClick={() => setShowBluefyModal(false)}
+        >
+          <div
+            style={{
+              background: '#0f172a',
+              border: '1.5px solid #38bdf8',
+              borderRadius: '16px',
+              padding: '24px',
+              maxWidth: '480px',
+              width: '100%',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5)',
+              color: '#f8fafc',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+              <span style={{ fontSize: '28px' }}>📡</span>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 900, color: '#ffffff' }}>
+                  Conectar {sensorType === 'ENCODER' ? 'Enode' : 'Tindeq'} en iPad
+                </h3>
+                <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+                  Aviso para Google Chrome / Safari en iPadOS
+                </span>
+              </div>
+            </div>
+
+            <div style={{ background: '#1e293b', borderRadius: '10px', padding: '14px', border: '1px solid #334155', marginBottom: '16px', fontSize: '12px', lineHeight: '1.55', color: '#cbd5e1' }}>
+              <p style={{ margin: '0 0 10px 0' }}>
+                <strong style={{ color: '#f59e0b' }}>⚠️ Restricción de Apple en iPad:</strong> Apple bloquea el acceso Bluetooth en Chrome y Safari para iPadOS.
+              </p>
+              <p style={{ margin: '0 0 8px 0' }}>
+                Para conectar tu <strong>{sensorType === 'ENCODER' ? 'Enode (Vmaxpro)' : 'Tindeq Progressor'}</strong> en vivo en el iPad:
+              </p>
+              <ol style={{ margin: '0 0 10px 0', paddingLeft: '18px' }}>
+                <li>Descarga en el iPad la app gratuita <strong>Bluefy</strong> (<em>Web BLE Browser</em>) desde la App Store.</li>
+                <li>Abre tu web dentro de Bluefy: <code style={{ color: '#38bdf8', background: '#0f172a', padding: '2px 4px', borderRadius: '3px' }}>mng18.vercel.app</code></li>
+                <li>¡Pulsa Conectar y el sensor se vinculará en directo!</li>
+              </ol>
+              <p style={{ margin: 0, fontSize: '11px', color: '#94a3b8' }}>
+                💡 <em>Si aún no tienes los sensores físicos o estás probando la estación, el <strong>Modo Simulación</strong> te permite probar atletas, repeticiones y guardado en Supabase al instante.</em>
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => {
+                  setIsSimulating(true);
+                  setShowBluefyModal(false);
+                }}
+                style={{
+                  background: '#7c3aed',
+                  color: '#ffffff',
+                  border: 'none',
+                  padding: '9px 16px',
+                  borderRadius: '8px',
+                  fontSize: '12.5px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                }}
+              >
+                🧪 Usar Modo Simulación
+              </button>
+              <button
+                onClick={() => setShowBluefyModal(false)}
+                style={{
+                  background: '#334155',
+                  color: '#e2e8f0',
+                  border: '1px solid #475569',
+                  padding: '9px 16px',
+                  borderRadius: '8px',
+                  fontSize: '12.5px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
