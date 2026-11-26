@@ -2378,6 +2378,7 @@ export default function PlayerDetailTabs({
           equipo: "1er EQUIPO",
           fecha_nacimiento: jugador.fecha_nacimiento || "",
           fecha: nuevaLesion.fechaInicio,
+          fecha_alta: nuevaLesion.fechaAlta || undefined,
           tipo_disponibilidad: "NDL",
           contexto: nuevaLesion.contexto || "Entrenamiento Optimizador",
           contacto: nuevaLesion.contacto || "Sin contacto",

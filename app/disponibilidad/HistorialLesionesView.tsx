@@ -164,6 +164,26 @@ export default function HistorialLesionesView({
   // Estado de sincronización con la base de datos
   const [bbddStatus, setBbddStatus] = useState<string>("Sincronizando BBDD...");
 
+  // Selección múltiple y arrastre estilo Excel (para borrado por lotes)
+  const [selectedLesionKeys, setSelectedLesionKeys] = useState<Set<string>>(new Set());
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [dragStartIndex, setDragStartIndex] = useState<number | null>(null);
+  const [dragAction, setDragAction] = useState<"select" | "deselect">("select");
+  const [dragBaseSelection, setDragBaseSelection] = useState<Set<string>>(new Set());
+  const [lastClickedIndex, setLastClickedIndex] = useState<number | null>(null);
+
+  // Listener global para finalizar el arrastre de selección al soltar el ratón en cualquier lugar
+  useEffect(() => {
+    const handleGlobalMouseUp = () => {
+      setIsDragging(false);
+      setDragStartIndex(null);
+    };
+    window.addEventListener("mouseup", handleGlobalMouseUp);
+    return () => {
+      window.removeEventListener("mouseup", handleGlobalMouseUp);
+    };
+  }, []);
+
   // 1. Estado local de registros clasificados detallados (filtrado estricto por temporada activa y sin 30-08-2026)
   const [localRecords, setLocalRecords] = useState<LesionFormData[]>([]);
 
@@ -350,8 +370,12 @@ export default function HistorialLesionesView({
     const rawList: LesionFormData[] = [];
 
     jugadores.forEach((j) => {
-      let prevStatus = "D";
-      let currentEp: any = null;
+      let lastKnownStatus: string | null = null;
+      let currentEp: {
+        fechaInicio: string;
+        tipoInicial: "NDL" | "NDR" | "L";
+        fechasNDL: string[];
+      } | null = null;
 
       fechasSorted.forEach((fecha) => {
         if (isFechaCuestionarioOInvalida(fecha) || !isDateInSeason(fecha, seasonStart, seasonEnd)) return;
@@ -366,33 +390,57 @@ export default function HistorialLesionesView({
           else if (override === "amarillo") status = "P";
           else if (override === "rojo" && !status) status = "NDL";
         }
-        if (!status) status = "D";
+
+        // Si este día no tiene ningún registro ni sesión (p. ej. día libre o descanso sin sesión):
+        // NO asumimos "D". Los días libres no alteran el estado médico del jugador ni crean lesiones falsas.
+        if (!status) return;
 
         const isNDL = status === "NDL" || status === "L";
         const isNDR = status === "NDR";
         const isLesion = isNDL || isNDR;
-        const isDisponible = status === "D" || status === "DCS" || status === "DS";
+        const isDisponible = status === "D" || status === "DCS" || status === "DS" || status === "DCI";
 
         if (isLesion) {
-          if (!currentEp && (prevStatus === "D" || prevStatus === "P" || prevStatus === "DCS" || prevStatus === "DS")) {
-            currentEp = {
-              fechaInicio: fecha,
-              tipoInicial: isNDL ? "NDL" : "NDR",
-              dias: [fecha],
-            };
-          } else if (currentEp) {
-            currentEp.dias.push(fecha);
+          if (!currentEp) {
+            // Regla solicitada: Solo crear episodio si el estado anterior registrado era Disponible o DCI
+            const prevWasDisponible =
+              lastKnownStatus === "D" ||
+              lastKnownStatus === "DCS" ||
+              lastKnownStatus === "DS" ||
+              lastKnownStatus === "DCI";
+
+            if (prevWasDisponible) {
+              currentEp = {
+                fechaInicio: fecha,
+                tipoInicial: isNDL ? "NDL" : "NDR",
+                fechasNDL: [fecha],
+              };
+            }
+          } else {
+            currentEp.fechasNDL.push(fecha);
           }
         } else if (isDisponible) {
           if (currentEp) {
-            const diasCount = currentEp.dias.length;
+            // El jugador vuelve a estar disponible en esta fecha (fin de baja)
+            const fechaAlta = fecha;
             const existing = detailedMap.get(`${j.id}_${currentEp.fechaInicio}`);
             const comFisio = comentariosMap[`${j.id}_${currentEp.fechaInicio}`] || "";
 
+            // Los días de baja se suman hasta que tenga la siguiente Disponibilidad
+            const finalAlta = existing?.fecha_alta || fechaAlta;
+            let diffDays = 0;
+            if (finalAlta && currentEp.fechaInicio) {
+              const d1 = new Date(currentEp.fechaInicio + "T00:00:00");
+              const d2 = new Date(finalAlta + "T00:00:00");
+              diffDays = Math.max(0, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)));
+            } else {
+              diffDays = currentEp.fechasNDL.length;
+            }
+
             let grav = "Leve (1 a 7)";
-            if (diasCount === 0) grav = "Sin baja (0)";
-            else if (diasCount <= 7) grav = "Leve (1 a 7)";
-            else if (diasCount <= 28) grav = "Moderada (8 a 28)";
+            if (diffDays === 0) grav = "Sin baja (0)";
+            else if (diffDays <= 7) grav = "Leve (1 a 7)";
+            else if (diffDays <= 28) grav = "Moderada (8 a 28)";
             else grav = "Grave (>28)";
 
             rawList.push({
@@ -406,15 +454,16 @@ export default function HistorialLesionesView({
               equipo: "1er EQUIPO",
               fecha_nacimiento: j.fecha_nacimiento || "",
               fecha: currentEp.fechaInicio,
+              fecha_alta: finalAlta,
               tipo_disponibilidad: currentEp.tipoInicial,
               contexto: existing?.contexto || "Entrenamiento Optimizador",
               contacto: existing?.contacto || "Sin contacto",
               region_corporal: existing?.region_corporal || "Muslo (cuádriceps)",
               recurrencia: existing?.recurrencia || "Nueva",
               tejido: existing?.tejido || "Músculo",
-              resultado: existing?.resultado || (diasCount === 0 ? "Sin baja" : "Con baja"),
+              resultado: existing?.resultado || (diffDays === 0 ? "Sin baja" : "Con baja"),
               gravedad: existing?.gravedad || grav,
-              dias_baja: existing?.dias_baja !== undefined ? existing.dias_baja : diasCount,
+              dias_baja: existing?.dias_baja !== undefined ? existing.dias_baja : diffDays,
               comentario: existing?.comentario !== undefined ? existing.comentario : comFisio,
             });
 
@@ -422,23 +471,35 @@ export default function HistorialLesionesView({
           }
         }
 
-        prevStatus = status;
+        lastKnownStatus = status;
       });
 
-      const ep: { fechaInicio: string; tipoInicial: "NDL" | "NDR" | "L"; dias: string[] } | null = currentEp;
-      if (ep) {
-        const diasCount = ep.dias.length;
-        const existing = detailedMap.get(`${j.id}_${ep.fechaInicio}`);
-        const comFisio = comentariosMap[`${j.id}_${ep.fechaInicio}`] || "";
+      // Si el episodio sigue abierto (aún no ha llegado a la siguiente Disponibilidad)
+      if (currentEp) {
+        const existing = detailedMap.get(`${j.id}_${currentEp.fechaInicio}`);
+        const comFisio = comentariosMap[`${j.id}_${currentEp.fechaInicio}`] || "";
+
+        let finalAlta = existing?.fecha_alta || "";
+        let diffDays = 0;
+        if (finalAlta && currentEp.fechaInicio) {
+          const d1 = new Date(currentEp.fechaInicio + "T00:00:00");
+          const d2 = new Date(finalAlta + "T00:00:00");
+          diffDays = Math.max(0, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)));
+        } else {
+          // Si sigue de baja activa, los días se van sumando hasta hoy
+          const d1 = new Date(currentEp.fechaInicio + "T00:00:00");
+          const dHoy = new Date();
+          diffDays = Math.max(1, Math.round((dHoy.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)));
+        }
 
         let grav = "Leve (1 a 7)";
-        if (diasCount === 0) grav = "Sin baja (0)";
-        else if (diasCount <= 7) grav = "Leve (1 a 7)";
-        else if (diasCount <= 28) grav = "Moderada (8 a 28)";
+        if (diffDays === 0) grav = "Sin baja (0)";
+        else if (diffDays <= 7) grav = "Leve (1 a 7)";
+        else if (diffDays <= 28) grav = "Moderada (8 a 28)";
         else grav = "Grave (>28)";
 
         rawList.push({
-          id: existing?.id || `${j.id}_${ep.fechaInicio}`,
+          id: existing?.id || `${j.id}_${currentEp.fechaInicio}`,
           jugador_id: j.id,
           jugador_nombre: j.nombre,
           jugador_apodo: j.apodo || "",
@@ -447,16 +508,17 @@ export default function HistorialLesionesView({
           seccion: "CE MANRESA",
           equipo: "1er EQUIPO",
           fecha_nacimiento: j.fecha_nacimiento || "",
-          fecha: ep.fechaInicio,
-          tipo_disponibilidad: ep.tipoInicial,
+          fecha: currentEp.fechaInicio,
+          fecha_alta: finalAlta,
+          tipo_disponibilidad: currentEp.tipoInicial,
           contexto: existing?.contexto || "Entrenamiento Optimizador",
           contacto: existing?.contacto || "Sin contacto",
           region_corporal: existing?.region_corporal || "Muslo (cuádriceps)",
           recurrencia: existing?.recurrencia || "Nueva",
           tejido: existing?.tejido || "Músculo",
-          resultado: existing?.resultado || (diasCount === 0 ? "Sin baja" : "Con baja"),
+          resultado: existing?.resultado || (diffDays === 0 ? "Sin baja" : "Con baja"),
           gravedad: existing?.gravedad || grav,
-          dias_baja: existing?.dias_baja !== undefined ? existing.dias_baja : diasCount,
+          dias_baja: existing?.dias_baja !== undefined ? existing.dias_baja : diffDays,
           comentario: existing?.comentario !== undefined ? existing.comentario : comFisio,
         });
       }
@@ -737,6 +799,101 @@ export default function HistorialLesionesView({
       return true;
     });
   }, [episodios, filterPlayerId, chartSelectedValue, selectedDimension, showChart, searchTerm]);
+
+  // Clave unívoca por fila de lesión
+  const getLesionItemKey = (ep: LesionFormData) => `${ep.jugador_id}_${ep.fecha}`;
+
+  // Seleccionar / Deseleccionar todas las lesiones visibles
+  const handleToggleAll = () => {
+    if (selectedLesionKeys.size === episodiosFiltrados.length && episodiosFiltrados.length > 0) {
+      setSelectedLesionKeys(new Set());
+    } else {
+      const all = new Set(episodiosFiltrados.map((ep) => getLesionItemKey(ep)));
+      setSelectedLesionKeys(all);
+    }
+  };
+
+  // Clic y arrastre estilo Excel para selección de múltiples filas
+  const handleRowMouseDown = (idx: number, key: string, e: React.MouseEvent) => {
+    if (e.shiftKey && lastClickedIndex !== null) {
+      const min = Math.min(lastClickedIndex, idx);
+      const max = Math.max(lastClickedIndex, idx);
+      const next = new Set(selectedLesionKeys);
+      for (let i = min; i <= max; i++) {
+        const item = episodiosFiltrados[i];
+        if (item) next.add(getLesionItemKey(item));
+      }
+      setSelectedLesionKeys(next);
+      setLastClickedIndex(idx);
+      return;
+    }
+
+    const willSelect = !selectedLesionKeys.has(key);
+    setIsDragging(true);
+    setDragStartIndex(idx);
+    setDragAction(willSelect ? "select" : "deselect");
+    setLastClickedIndex(idx);
+
+    const base = new Set(selectedLesionKeys);
+    setDragBaseSelection(base);
+
+    const next = new Set(base);
+    if (willSelect) next.add(key);
+    else next.delete(key);
+    setSelectedLesionKeys(next);
+  };
+
+  const handleRowMouseEnter = (hoverIdx: number) => {
+    if (!isDragging || dragStartIndex === null) return;
+
+    const min = Math.min(dragStartIndex, hoverIdx);
+    const max = Math.max(dragStartIndex, hoverIdx);
+
+    const next = new Set(dragBaseSelection);
+    const rangeItems = episodiosFiltrados.slice(min, max + 1);
+
+    if (dragAction === "select") {
+      rangeItems.forEach((ep) => next.add(getLesionItemKey(ep)));
+    } else {
+      rangeItems.forEach((ep) => next.delete(getLesionItemKey(ep)));
+    }
+
+    setSelectedLesionKeys(next);
+  };
+
+  // Borrar en lote todas las lesiones seleccionadas
+  const handleDeleteSelected = () => {
+    if (selectedLesionKeys.size === 0) return;
+    if (!window.confirm(`¿Estás seguro de que deseas eliminar las ${selectedLesionKeys.size} lesiones seleccionadas?`)) return;
+
+    const nextDeletedSet = new Set(deletedLesionKeys);
+    const toRemoveKeys = new Set(selectedLesionKeys);
+
+    // Filtrar localRecords
+    const nextList = localRecords.filter((r) => {
+      const k = getLesionItemKey(r);
+      const isSelected = toRemoveKeys.has(k) || (r.id && toRemoveKeys.has(r.id));
+      if (isSelected) {
+        nextDeletedSet.add(k);
+        if (r.id) nextDeletedSet.add(r.id);
+        return false;
+      }
+      return true;
+    });
+
+    toRemoveKeys.forEach((k) => nextDeletedSet.add(k));
+
+    setDeletedLesionKeys(nextDeletedSet);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("lesiones_eliminadas_v1", JSON.stringify(Array.from(nextDeletedSet)));
+      } catch (e) {}
+    }
+
+    saveRecordsToStorage(nextList, nextDeletedSet);
+    setSelectedLesionKeys(new Set());
+    setLastClickedIndex(null);
+  };
 
   return (
     <div
@@ -1125,6 +1282,7 @@ export default function HistorialLesionesView({
               equipo: "1er EQUIPO",
               fecha_nacimiento: firstPlayer.fecha_nacimiento || "",
               fecha: new Date().toISOString().split("T")[0],
+              fecha_alta: "",
               tipo_disponibilidad: "NDL",
               contexto: "Entrenamiento Optimizador",
               contacto: "Sin contacto",
@@ -1185,6 +1343,81 @@ export default function HistorialLesionesView({
         </span>
       </div>
 
+      {/* BARRA DE ACCIÓN FLOTANTE CUANDO HAY LESIONES SELECCIONADAS (ESTILO EXCEL) */}
+      {selectedLesionKeys.size > 0 && (
+        <div
+          style={{
+            position: "sticky",
+            top: "10px",
+            zIndex: 40,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            background: "#fee2e2",
+            border: "1.5px solid #ef4444",
+            padding: "8px 14px",
+            borderRadius: "8px",
+            boxShadow: "0 4px 12px rgba(239,68,68,0.15)",
+            marginBottom: "12px",
+            flexWrap: "wrap",
+            gap: "10px",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <span style={{ fontSize: "14px" }}>📋</span>
+            <span style={{ fontSize: "12px", fontWeight: 900, color: "#991b1b" }}>
+              {selectedLesionKeys.size} {selectedLesionKeys.size === 1 ? "lesión seleccionada" : "lesiones seleccionadas"}
+            </span>
+            <span style={{ fontSize: "11px", color: "#b91c1c" }}>
+              (Arrastra con clic presionado o usa Shift para seleccionar varias seguidas)
+            </span>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedLesionKeys(new Set());
+                setLastClickedIndex(null);
+              }}
+              style={{
+                background: "#ffffff",
+                border: "1px solid #cbd5e1",
+                borderRadius: "5px",
+                padding: "4px 10px",
+                fontSize: "11px",
+                fontWeight: 700,
+                color: "#475569",
+                cursor: "pointer",
+              }}
+            >
+              ✕ Deseleccionar
+            </button>
+
+            <button
+              type="button"
+              onClick={handleDeleteSelected}
+              style={{
+                background: "#dc2626",
+                border: "none",
+                borderRadius: "5px",
+                padding: "5px 14px",
+                fontSize: "11.5px",
+                fontWeight: 900,
+                color: "#ffffff",
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+                boxShadow: "0 2px 4px rgba(220,38,38,0.25)",
+              }}
+            >
+              <span>🗑️</span> Borrar Seleccionadas ({selectedLesionKeys.size})
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 3. TABLA CON SELECTORES DE COLUMNA PARA EL GRÁFICO (CHECKBOXES / BOTONES INTERACTIVOS) */}
       <div style={{ overflowX: "auto", border: "1px solid #cbd5e1", borderRadius: "6px" }}>
         <table
@@ -1199,6 +1432,8 @@ export default function HistorialLesionesView({
           <thead>
             {/* FILA DE SELECTORES DE CLASIFICACIÓN (CHECKBOXES ESTILO EXCEL) */}
             <tr style={{ background: "#f1f5f9", borderBottom: "1px solid #cbd5e1", textAlign: "center" }}>
+              <th style={{ padding: "4px", borderRight: "1px solid #e2e8f0", width: "38px" }}></th>
+              <th style={{ padding: "4px", borderRight: "1px solid #e2e8f0" }}></th>
               <th style={{ padding: "4px", borderRight: "1px solid #e2e8f0" }}></th>
               <th style={{ padding: "4px", borderRight: "1px solid #e2e8f0" }}></th>
 
@@ -1345,8 +1580,18 @@ export default function HistorialLesionesView({
                 textAlign: "center",
               }}
             >
+              <th style={{ padding: "6px 8px", width: "38px", textAlign: "center", borderRight: "1px solid #64748b" }}>
+                <input
+                  type="checkbox"
+                  checked={episodiosFiltrados.length > 0 && selectedLesionKeys.size === episodiosFiltrados.length}
+                  onChange={handleToggleAll}
+                  style={{ cursor: "pointer", width: "14px", height: "14px", accentColor: "#dc2626" }}
+                  title="Seleccionar / deseleccionar todas"
+                />
+              </th>
               <th style={{ padding: "8px 10px", borderRight: "1px solid #64748b" }}>Deportista</th>
-              <th style={{ padding: "8px 10px", borderRight: "1px solid #64748b" }}>Fecha</th>
+              <th style={{ padding: "8px 10px", borderRight: "1px solid #64748b" }}>Fecha Lesión</th>
+              <th style={{ padding: "8px 10px", borderRight: "1px solid #64748b" }}>Vuelta / Alta</th>
 
               {/* Posición Clickable */}
               <th
@@ -1501,7 +1746,7 @@ export default function HistorialLesionesView({
             {episodiosFiltrados.length === 0 ? (
               <tr>
                 <td
-                  colSpan={13}
+                  colSpan={15}
                   style={{
                     padding: "30px",
                     textAlign: "center",
@@ -1534,6 +1779,8 @@ export default function HistorialLesionesView({
             ) : (
               episodiosFiltrados.map((ep, idx) => {
                 const isEven = idx % 2 === 0;
+                const itemKey = getLesionItemKey(ep);
+                const isChecked = selectedLesionKeys.has(itemKey);
                 const rowKey = `${ep.id || ep.jugador_id}_${ep.fecha}_${idx}`;
                 const saveKey = `${ep.jugador_id}_${ep.fecha}`;
                 const isSaved = saveIndicatorId === saveKey;
@@ -1541,12 +1788,48 @@ export default function HistorialLesionesView({
                 return (
                   <tr
                     key={rowKey}
+                    onMouseDown={(e) => {
+                      if (e.shiftKey) {
+                        handleRowMouseDown(idx, itemKey, e);
+                      }
+                    }}
+                    onMouseEnter={() => handleRowMouseEnter(idx)}
                     style={{
-                      background: isEven ? "#ffffff" : "#f8fafc",
+                      background: isChecked ? "#fef2f2" : isEven ? "#ffffff" : "#f8fafc",
                       borderBottom: "1px solid #e2e8f0",
                       color: "#0f172a",
+                      userSelect: isDragging ? "none" : "auto",
+                      transition: "background-color 0.1s ease",
                     }}
                   >
+                    {/* Checkbox de selección tipo Excel con clic y arrastre */}
+                    <td
+                      onMouseDown={(e) => handleRowMouseDown(idx, itemKey, e)}
+                      onMouseEnter={() => handleRowMouseEnter(idx)}
+                      style={{
+                        padding: "6px 8px",
+                        textAlign: "center",
+                        borderRight: "1px solid #e2e8f0",
+                        cursor: "pointer",
+                        background: isChecked ? "#fee2e2" : "inherit",
+                        userSelect: "none",
+                        width: "38px",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        readOnly
+                        style={{
+                          cursor: "pointer",
+                          width: "14px",
+                          height: "14px",
+                          accentColor: "#dc2626",
+                          pointerEvents: "none",
+                        }}
+                      />
+                    </td>
+
                     <td
                       style={{
                         padding: "7px 10px",
@@ -1566,6 +1849,34 @@ export default function HistorialLesionesView({
                       }}
                     >
                       {ep.fecha}
+                    </td>
+                    <td
+                      style={{
+                        padding: "7px 10px",
+                        fontWeight: 700,
+                        borderRight: "1px solid #e2e8f0",
+                        textAlign: "center",
+                      }}
+                    >
+                      {ep.fecha_alta ? (
+                        <span style={{ color: "#166534", fontWeight: 800 }}>
+                          {ep.fecha_alta}
+                        </span>
+                      ) : (
+                        <span
+                          style={{
+                            background: "#fef3c7",
+                            color: "#b45309",
+                            border: "1px solid #fde047",
+                            padding: "2px 6px",
+                            borderRadius: "4px",
+                            fontSize: "10px",
+                            fontWeight: 800,
+                          }}
+                        >
+                          En curso
+                        </span>
+                      )}
                     </td>
                     <td
                       style={{
@@ -1881,47 +2192,165 @@ export default function HistorialLesionesView({
                 </div>
               )}
 
-              {/* Pregunta de fecha */}
+              {/* Pregunta de fecha de inicio y fecha de vuelta a disponibilidad */}
               <div
                 style={{
                   background: "#eff6ff",
                   border: "1.5px solid #93c5fd",
-                  padding: "12px",
+                  padding: "12px 14px",
                   borderRadius: "8px",
                   marginBottom: "16px",
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                  gap: "12px",
                 }}
               >
-                <label
-                  style={{
-                    display: "block",
-                    fontSize: "12px",
-                    fontWeight: 800,
-                    color: "#1e3a8a",
-                    marginBottom: "6px",
-                  }}
-                >
-                  📅 ¿Qué día ocurrió la lesión? *
-                </label>
-                <input
-                  type="date"
-                  required
-                  value={editingModalRecord.fecha}
-                  onChange={(e) =>
-                    setEditingModalRecord({
-                      ...editingModalRecord,
-                      fecha: e.target.value,
-                    })
-                  }
-                  style={{
-                    padding: "6px 12px",
-                    borderRadius: "6px",
-                    border: "1.5px solid #2563eb",
-                    fontSize: "13px",
-                    fontWeight: 800,
-                    color: "#0f172a",
-                    width: "180px",
-                  }}
-                />
+                <div>
+                  <label
+                    style={{
+                      display: "block",
+                      fontSize: "12px",
+                      fontWeight: 800,
+                      color: "#1e3a8a",
+                      marginBottom: "6px",
+                    }}
+                  >
+                    📅 ¿Cuándo ocurrió la lesión? *
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={editingModalRecord.fecha}
+                    onChange={(e) => {
+                      const newFecha = e.target.value;
+                      let newDias = editingModalRecord.dias_baja;
+                      let newGrav = editingModalRecord.gravedad;
+                      let newRes = editingModalRecord.resultado;
+                      if (editingModalRecord.fecha_alta && newFecha) {
+                        const d1 = new Date(newFecha + "T00:00:00");
+                        const d2 = new Date(editingModalRecord.fecha_alta + "T00:00:00");
+                        newDias = Math.max(0, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)));
+                        if (newDias === 0) {
+                          newGrav = "Sin baja (0)";
+                          newRes = "Sin baja";
+                        } else if (newDias <= 7) {
+                          newGrav = "Leve (1 a 7)";
+                          newRes = "Con baja";
+                        } else if (newDias <= 28) {
+                          newGrav = "Moderada (8 a 28)";
+                          newRes = "Con baja";
+                        } else {
+                          newGrav = "Grave (>28)";
+                          newRes = "Con baja";
+                        }
+                      }
+                      setEditingModalRecord({
+                        ...editingModalRecord,
+                        fecha: newFecha,
+                        dias_baja: newDias,
+                        gravedad: newGrav,
+                        resultado: newRes,
+                      });
+                    }}
+                    style={{
+                      padding: "6px 12px",
+                      borderRadius: "6px",
+                      border: "1.5px solid #2563eb",
+                      fontSize: "13px",
+                      fontWeight: 800,
+                      color: "#0f172a",
+                      width: "100%",
+                      boxSizing: "border-box",
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label
+                    style={{
+                      display: "block",
+                      fontSize: "12px",
+                      fontWeight: 800,
+                      color: "#15803d",
+                      marginBottom: "6px",
+                    }}
+                  >
+                    🟢 ¿Cuándo volvió a estar disponible? (Opcional)
+                  </label>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <input
+                      type="date"
+                      value={editingModalRecord.fecha_alta || ""}
+                      onChange={(e) => {
+                        const altaVal = e.target.value;
+                        let newDias = editingModalRecord.dias_baja;
+                        let newGrav = editingModalRecord.gravedad;
+                        let newRes = editingModalRecord.resultado;
+                        if (altaVal && editingModalRecord.fecha) {
+                          const d1 = new Date(editingModalRecord.fecha + "T00:00:00");
+                          const d2 = new Date(altaVal + "T00:00:00");
+                          newDias = Math.max(0, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)));
+                          if (newDias === 0) {
+                            newGrav = "Sin baja (0)";
+                            newRes = "Sin baja";
+                          } else if (newDias <= 7) {
+                            newGrav = "Leve (1 a 7)";
+                            newRes = "Con baja";
+                          } else if (newDias <= 28) {
+                            newGrav = "Moderada (8 a 28)";
+                            newRes = "Con baja";
+                          } else {
+                            newGrav = "Grave (>28)";
+                            newRes = "Con baja";
+                          }
+                        }
+                        setEditingModalRecord({
+                          ...editingModalRecord,
+                          fecha_alta: altaVal,
+                          dias_baja: newDias,
+                          gravedad: newGrav,
+                          resultado: newRes,
+                        });
+                      }}
+                      style={{
+                        padding: "6px 12px",
+                        borderRadius: "6px",
+                        border: "1.5px solid #16a34a",
+                        fontSize: "13px",
+                        fontWeight: 800,
+                        color: "#0f172a",
+                        flex: 1,
+                        boxSizing: "border-box",
+                      }}
+                    />
+                    {editingModalRecord.fecha_alta && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setEditingModalRecord({
+                            ...editingModalRecord,
+                            fecha_alta: "",
+                          })
+                        }
+                        style={{
+                          background: "#f1f5f9",
+                          border: "1px solid #cbd5e1",
+                          borderRadius: "5px",
+                          padding: "6px 8px",
+                          fontSize: "11px",
+                          cursor: "pointer",
+                          fontWeight: 700,
+                        }}
+                        title="Limpiar fecha de alta (sigue de baja)"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                  <span style={{ fontSize: "10.5px", color: "#64748b", fontWeight: 600, display: "block", marginTop: "4px" }}>
+                    {editingModalRecord.fecha_alta ? `✓ Calcula automáticamente ${editingModalRecord.dias_baja} días de baja` : "Dejar vacío si la baja sigue activa"}
+                  </span>
+                </div>
               </div>
 
               {/* Selectores de clasificación */}

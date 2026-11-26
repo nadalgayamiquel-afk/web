@@ -13,6 +13,7 @@ export type LesionFormData = {
   equipo: string;
   fecha_nacimiento?: string;
   fecha: string;
+  fecha_alta?: string;
   sesion_dia_id?: string;
   tipo_disponibilidad: "NDL" | "NDR" | "L";
   contexto: string;
@@ -109,6 +110,7 @@ export default function LesionControlModal({ isOpen, onClose, onSave, initialDat
   const [fecha, setFecha] = useState(
     ultimoDiaDisponible || sesionDia.fecha || new Date().toISOString().split("T")[0]
   );
+  const [fechaAlta, setFechaAlta] = useState<string>("");
   const [contexto, setContexto] = useState(
     sesionDia.evento_am?.toUpperCase().includes("PA") ? "Competición" : "Entrenamiento Optimizador"
   );
@@ -138,6 +140,16 @@ export default function LesionControlModal({ isOpen, onClose, onSave, initialDat
     }
   };
 
+  const handleFechaAltaChange = (altaVal: string) => {
+    setFechaAlta(altaVal);
+    if (altaVal && fecha) {
+      const d1 = new Date(fecha + "T00:00:00");
+      const d2 = new Date(altaVal + "T00:00:00");
+      const diff = Math.max(0, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)));
+      handleDiasChange(diff);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSave({
@@ -151,6 +163,7 @@ export default function LesionControlModal({ isOpen, onClose, onSave, initialDat
       equipo: "1er EQUIPO",
       fecha_nacimiento: jugador.fecha_nacimiento || "",
       fecha,
+      fecha_alta: fechaAlta || undefined,
       sesion_dia_id: sesionDia.id,
       tipo_disponibilidad: codigo,
       contexto,
@@ -251,26 +264,33 @@ export default function LesionControlModal({ isOpen, onClose, onSave, initialDat
             </div>
           </div>
 
-          {/* Pregunta explícita sobre la fecha de la lesión con predeterminado del último día disponible */}
+          {/* Pregunta explícita sobre la fecha de la lesión y fecha de vuelta a disponibilidad */}
           <div style={{
             background: "#eff6ff",
             border: "1.5px solid #93c5fd",
             padding: "12px 14px",
             borderRadius: "8px",
             marginBottom: "16px",
-            display: "flex",
-            flexDirection: "column",
-            gap: "6px"
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+            gap: "12px"
           }}>
-            <label style={{ fontSize: "12px", fontWeight: 900, color: "#1e3a8a", display: "flex", alignItems: "center", gap: "6px" }}>
-              <span>📅</span> ¿Qué día ocurrió la lesión o molestia? *
-            </label>
-            <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+            <div>
+              <label style={{ fontSize: "12px", fontWeight: 900, color: "#1e3a8a", display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
+                <span>📅</span> ¿Cuándo ocurrió la lesión? *
+              </label>
               <input
                 type="date"
                 required
                 value={fecha}
-                onChange={(e) => setFecha(e.target.value)}
+                onChange={(e) => {
+                  setFecha(e.target.value);
+                  if (fechaAlta && e.target.value) {
+                    const d1 = new Date(e.target.value + "T00:00:00");
+                    const d2 = new Date(fechaAlta + "T00:00:00");
+                    handleDiasChange(Math.max(0, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24))));
+                  }
+                }}
                 style={{
                   padding: "6px 12px",
                   borderRadius: "6px",
@@ -280,14 +300,61 @@ export default function LesionControlModal({ isOpen, onClose, onSave, initialDat
                   color: "#0f172a",
                   background: "#ffffff",
                   outline: "none",
-                  width: "180px",
+                  width: "100%",
+                  boxSizing: "border-box",
                 }}
               />
               {ultimoDiaDisponible && (
-                <span style={{ fontSize: "11.5px", color: "#1d4ed8", fontWeight: 700 }}>
-                  💡 Sugerido por defecto: Último día disponible ({ultimoDiaDisponible})
+                <span style={{ fontSize: "10.5px", color: "#1d4ed8", fontWeight: 700, display: "block", marginTop: "4px" }}>
+                  💡 Sugerido: Último día disponible ({ultimoDiaDisponible})
                 </span>
               )}
+            </div>
+
+            <div>
+              <label style={{ fontSize: "12px", fontWeight: 900, color: "#15803d", display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
+                <span>🟢</span> ¿Cuándo volvió a estar disponible? (Opcional)
+              </label>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <input
+                  type="date"
+                  value={fechaAlta}
+                  onChange={(e) => handleFechaAltaChange(e.target.value)}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: "6px",
+                    border: "1.5px solid #16a34a",
+                    fontSize: "13px",
+                    fontWeight: 800,
+                    color: "#0f172a",
+                    background: "#ffffff",
+                    outline: "none",
+                    flex: 1,
+                    boxSizing: "border-box",
+                  }}
+                />
+                {fechaAlta && (
+                  <button
+                    type="button"
+                    onClick={() => handleFechaAltaChange("")}
+                    style={{
+                      background: "#f1f5f9",
+                      border: "1px solid #cbd5e1",
+                      borderRadius: "5px",
+                      padding: "6px 8px",
+                      fontSize: "11px",
+                      cursor: "pointer",
+                      fontWeight: 700,
+                    }}
+                    title="Limpiar fecha de alta (sigue de baja)"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+              <span style={{ fontSize: "10.5px", color: "#64748b", fontWeight: 600, display: "block", marginTop: "4px" }}>
+                {fechaAlta ? `✓ Calcula automáticamente ${diasBaja} días de baja` : "Dejar vacío si la baja sigue activa"}
+              </span>
             </div>
           </div>
 
