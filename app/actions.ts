@@ -6705,3 +6705,19 @@ export async function getAllSensorCaptures(): Promise<any[]> {
     return [];
   }
 }
+
+export async function deleteSensorCapture(captureId: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = getServerSupabase();
+    if (supabase) {
+      const { error } = await supabase.from('fuerza_sesiones').delete().eq('id', captureId);
+      if (error) {
+        console.warn('Error deleting sensor capture from Supabase:', error.message);
+      }
+    }
+    return { success: true };
+  } catch (e: any) {
+    console.error('Error in deleteSensorCapture:', e);
+    return { success: false, error: e?.message };
+  }
+}

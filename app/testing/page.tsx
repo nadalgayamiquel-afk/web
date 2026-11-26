@@ -5,6 +5,8 @@ import Link from "next/link";
 import * as XLSX from "xlsx";
 import { getActiveJugadores, updatePesosBatch, getTestingDatasets, saveTestingDataset, deleteTestingDataset } from "@/app/actions";
 import { useReportClubInfo } from "@/app/lib/useReportClubInfo";
+import TestingSensoresView from "./TestingSensoresView";
+import GimnasioEstacionModal from "../gimnasio/GimnasioEstacionModal";
 
 /* ─── Types ─── */
 type Jugador = {
@@ -3400,7 +3402,8 @@ function EditableDataTable({
 /* ═══════════════════════════════════════════════════ */
 export default function TestingPage() {
   const { clubName: activeTeam, clubShield, activeTemporada, setSeasonAndTeam, availableTemporadas } = useReportClubInfo();
-  const [activeTab, setActiveTab] = useState<"datos" | "cocina" | "reports">("datos");
+  const [activeTab, setActiveTab] = useState<"datos" | "cocina" | "reports" | "sensores">("datos");
+  const [showLiveStationModal, setShowLiveStationModal] = useState<boolean>(false);
   const [reportSubTab, setReportSubTab] = useState<"equipo" | "individual">("equipo");
   const [selectedReportPlayer, setSelectedReportPlayer] = useState<string>("");
   const [jugadores, setJugadores] = useState<Jugador[]>([]);
@@ -4256,6 +4259,27 @@ export default function TestingPage() {
           }}
         >
           Reports
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("sensores")}
+          style={{
+            flex: 1.2,
+            padding: "9px 18px",
+            borderRadius: "8px",
+            border: "none",
+            fontSize: "13.5px",
+            fontWeight: 800,
+            cursor: "pointer",
+            textAlign: "center",
+            whiteSpace: "nowrap",
+            background: activeTab === "sensores" ? "#1e3a8a" : "transparent",
+            color: activeTab === "sensores" ? "#ffffff" : "#475569",
+            boxShadow: activeTab === "sensores" ? "0 2px 6px rgba(30,58,138,0.3)" : "none",
+            transition: "all 0.15s ease",
+          }}
+        >
+          📡 Sensores & Tests Jugador (Tindeq / Enode)
         </button>
       </div>
 
@@ -5742,6 +5766,29 @@ export default function TestingPage() {
             </div>
           )}
         </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════ */}
+      {/* CAPA 4: SENSORES Y TESTS DE JUGADOR (TINDEQ & ENODE)  */}
+      {/* ══════════════════════════════════════════════════════ */}
+      {activeTab === "sensores" && (
+        <TestingSensoresView
+          jugadores={jugadores}
+          datasets={datasets}
+          testTypes={testTypes}
+          onOpenLiveStation={() => setShowLiveStationModal(true)}
+        />
+      )}
+
+      {/* MODAL DE TEST EN VIVO (ESTACIÓN BLUETOOTH / SIMULACIÓN) */}
+      {showLiveStationModal && (
+        <GimnasioEstacionModal
+          isOpen={showLiveStationModal}
+          onClose={() => setShowLiveStationModal(false)}
+          allDays={[]}
+          sesionesMap={{}}
+          jugadores={jugadores}
+        />
       )}
     </main>
   );
