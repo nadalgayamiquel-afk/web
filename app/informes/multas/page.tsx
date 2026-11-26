@@ -3,7 +3,17 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import * as XLSX from "xlsx";
-import { getActiveJugadores, fetchLiveWellnessSheet, getSesionesDiaRange, getEventosBloquesBBDD } from "@/app/actions";
+import {
+  getActiveJugadores,
+  fetchLiveWellnessSheet,
+  getSesionesDiaRange,
+  getEventosBloquesBBDD,
+  getMultasConfigServer,
+  saveMultasConfigServer,
+  getMultasRecordsServer,
+  saveMultasRecordsServer,
+  TipoMultaConfigServer,
+} from "@/app/actions";
 import REAL_MULTAS_DATA from "./real-multas-data.json";
 import { saveMultasToDatabase, loadMultasFromDatabase, cleanupObsoleteLocalStorage, StoredMulta } from "./multas-storage";
 import { useClubConfig } from "@/app/lib/useClubConfig";
@@ -24,6 +34,7 @@ export interface Multa {
   reincidencia?: "1ª Falta" | "2ª Falta" | "Reincidente";
   comentario?: string;
   creado_por?: string;
+  tipo_id?: string;
 }
 
 export interface TipoMultaConfig {
@@ -33,6 +44,14 @@ export interface TipoMultaConfig {
   importe: number;
   categoria: Multa["categoria"];
   icon: string;
+  activo?: boolean;
+  modeloCalculo?: "progresivo" | "fijo";
+  importeFijo?: number;
+  precioBase?: number;
+  incremento?: number;
+  fechaInicioCiclo?: string;
+  esAutomatica?: boolean;
+  horaLimite?: string;
 }
 
 interface JugadorSimple {
@@ -47,32 +66,35 @@ interface JugadorSimple {
   temporada?: string | null;
 }
 
-// 23 Jugadores activos de CE Europa (Temporada 2026/27)
-const INITIAL_MANRESA_JUGADORES: JugadorSimple[] = [
-  { id: "e218da66-f670-4e19-8812-a5d9ba301de2", nombre: "BILAL ACHHIBA", equipo: "CE Europa", temporada: "2026/27", activo: true },
-  { id: "860fc2f5-166b-4ae3-b64e-d0f51cf27033", nombre: "DAOUDA KONE", equipo: "CE Europa", temporada: "2026/27", activo: true },
-  { id: "45d23990-6071-4c56-b997-1f5a4efbda72", nombre: "RICHARD MARTINEZ", equipo: "CE Europa", temporada: "2026/27", activo: true },
-  { id: "4f25efc4-8b6c-4dd8-8799-a805aaa8b66d", nombre: "ALEIX DÍAZ", dorsal: 7, equipo: "CE Europa", temporada: "2026/27", activo: true },
-  { id: "c10999d2-2293-4191-bdeb-2ea4c72aa63a", nombre: "ALEX IGLESIAS", dorsal: 21, equipo: "CE Europa", temporada: "2026/27", activo: true },
-  { id: "029a3c4d-e44a-4ef1-9d95-5715033dec42", nombre: "ÁNGEL VERA", dorsal: 23, equipo: "CE Europa", temporada: "2026/27", activo: true },
-  { id: "7bd5dc45-ca0d-4dce-9f59-8c7a3837fbcc", nombre: "CARLOS PORTERO", dorsal: 9, equipo: "CE Europa", temporada: "2026/27", activo: true },
-  { id: "4d3ad31c-f7cd-4de8-a199-af723618bff4", nombre: "DANI FERRER", dorsal: 11, equipo: "CE Europa", temporada: "2026/27", activo: true },
-  { id: "aec4e6e1-5a47-4b55-b23a-715eaac292a2", nombre: "DAVID MOMOH", dorsal: 17, equipo: "CE Europa", temporada: "2026/27", activo: true },
-  { id: "82d3987f-9ebb-4164-8fe5-b7e68a08e18b", nombre: "IVAN TÉBAR", dorsal: 22, equipo: "CE Europa", temporada: "2026/27", activo: true },
-  { id: "b6877a25-e6de-48f3-aab3-1ae48a53e317", nombre: "POCHITO", dorsal: 4, equipo: "CE Europa", temporada: "2026/27", activo: true },
-  { id: "ba0f3680-2107-4718-b117-90879fb52f4b", nombre: "NICOLAS OLMEDO", dorsal: 19, equipo: "CE Europa", temporada: "2026/27", activo: true },
-  { id: "44a17d58-563b-41a5-811f-58ee1365866d", nombre: "OUSSAMA BOUKIR", dorsal: 25, equipo: "CE Europa", temporada: "2026/27", activo: true },
-  { id: "44980484-06d0-4eba-9896-417d29438e91", nombre: "QUIM BORRÀS", dorsal: 16, equipo: "CE Europa", temporada: "2026/27", activo: true },
-  { id: "d0444862-4bb1-4d9e-81d6-2eae200a036c", nombre: "ROGER MUNELLS", dorsal: 12, equipo: "CE Europa", temporada: "2026/27", activo: true },
-  { id: "08dee8b5-d0e0-4358-86e7-5124ece580ca", nombre: "BADR EL AMERANI", dorsal: 24, equipo: "CE Europa", temporada: "2026/27", activo: true },
-  { id: "33182eb2-bed8-4320-9bd5-9c1fbf63c260", nombre: "MATHEUS TEIXEIRA", dorsal: 18, equipo: "CE Europa", temporada: "2026/27", activo: true },
-  { id: "10e6eb1c-6377-47c6-93dd-2bd583a4661b", nombre: "SANTI GUZMAN", dorsal: 10, equipo: "CE Europa", temporada: "2026/27", activo: true },
-  { id: "b77c80d6-486a-4276-a20a-f33985249e8f", nombre: "ERIC MONTES", dorsal: 6, equipo: "CE Europa", temporada: "2026/27", activo: true },
-  { id: "32a88998-f40c-43c9-900d-d1aecf3244b5", nombre: "MARC CASTRO", dorsal: 8, equipo: "CE Europa", temporada: "2026/27", activo: true },
-  { id: "71ba8914-0d2d-47fe-a078-5aba08bf8a26", nombre: "MOHA EZZARFANI", dorsal: 20, equipo: "CE Europa", temporada: "2026/27", activo: true },
-  { id: "8a894b48-7fde-406b-9cdd-8dc7536b1648", nombre: "OSCAR GÓMEZ", dorsal: 1, equipo: "CE Europa", temporada: "2026/27", activo: true },
-  { id: "94dc8b4e-3db5-49b5-981a-5222e0a136a2", nombre: "OSCAR PULIDO", dorsal: 13, equipo: "CE Europa", temporada: "2026/27", activo: true },
+// 25 Jugadores activos actuales de la plantilla oficial
+export const CURRENT_ACTIVE_JUGADORES: JugadorSimple[] = [
+  { id: "ab298ab8-69cc-4c04-a572-a795f1c9c29d", nombre: "ADRI EXPÓSITO", apodo: "EXPÓSITO", dorsal: "11", posicion: "INTERIOR IZQUIERDO", equipo: "CE Europa", activo: true },
+  { id: "7b9ea804-6620-4222-addc-bd92ed568738", nombre: "ADRIÁ PADILLO", apodo: "PADILLO", dorsal: "22", posicion: "CARRIL DERECHO", equipo: "CE Europa", activo: true },
+  { id: "761ccd3e-f070-401a-8c64-d8efe5a19601", nombre: "ALBERT TOLOSA", apodo: "TITO", dorsal: "23", posicion: "PIVOTE DERECHO", equipo: "CE Europa", activo: true },
+  { id: "5b2a3f2a-59d4-4acc-9edb-8fad83e23255", nombre: "ÀLEX CANO", apodo: "CANO", dorsal: "4", posicion: "CENTRAL", equipo: "CE Europa", activo: true },
+  { id: "98b96ba6-452b-42d0-98a7-46494805f57d", nombre: "ARNAU CAMPENY", apodo: "CAMPENY", dorsal: "5", posicion: "CENTRAL IZQUIERDO", equipo: "CE Europa", activo: true },
+  { id: "98b0633a-766d-4e9f-a414-fe6caaff1216", nombre: "ENOL COTO", apodo: "ENOL", dorsal: "2", posicion: "CARRIL DERECHO", equipo: "CE Europa", activo: true },
+  { id: "c7e00847-0ee8-4179-9ce9-baeeab36b68f", nombre: "FLAVIO RIBEIRO", apodo: "FLAVIO", dorsal: "7", posicion: "CARRIL IZQUIERDO", equipo: "CE Europa", activo: true },
+  { id: "99f7e626-3a56-4713-aa74-cf40457b7f42", nombre: "GORI GRACIA", apodo: "GORI", dorsal: "8", posicion: "PIVOTE DERECHO", equipo: "CE Europa", activo: true },
+  { id: "814b1a79-cfb7-4043-b2c6-44373911909e", nombre: "GUILLEM CARDELÚS", apodo: "CARDELÚS", dorsal: "16", posicion: "CENTRAL DERECHO", equipo: "CE Europa", activo: true },
+  { id: "09c8253e-6341-4afa-99c8-9e1fd4e6da9d", nombre: "IBUKI NEMOTO", apodo: "IBUKI", dorsal: null, posicion: "INTERIOR IZQUIERDO", equipo: "CE Europa", activo: true },
+  { id: "09c711ca-94ef-4e87-bb2b-eac760b560a5", nombre: "JOAN MASCARÓ", apodo: "MASCARÓ", dorsal: "19", posicion: "INTERIOR DERECHO", equipo: "CE Europa", activo: true },
+  { id: "65361137-e803-4ee7-81e2-cffe149ad3ac", nombre: "JOAN PUIG", apodo: "JOAN PUIG", dorsal: "6", posicion: "CARRIL IZQUIERDO", equipo: "CE Europa", activo: true },
+  { id: "22221b7a-3581-40f1-9d6f-dbc98a22a8c4", nombre: "JOEL CADENAS", apodo: "CADENAS", dorsal: null, posicion: "INTERIOR DERECHO", equipo: "CE Europa", activo: true },
+  { id: "9658fd9f-9012-443f-a528-14368b8b6436", nombre: "KHALID NOUREDDINE", apodo: "KHALID", dorsal: "9", posicion: "DELANTERO", equipo: "CE Europa", activo: true },
+  { id: "54d42bc5-1d21-4d00-afea-0a8929f962de", nombre: "LUCAS MADRIGAL", apodo: "LUCAS", dorsal: "1", posicion: "PORTERO", equipo: "CE Europa", activo: true },
+  { id: "d2f1ebac-066f-409c-a6d1-c0a45cdee954", nombre: "MARC ANGLÈS", apodo: "ANGLÈS", dorsal: "10", posicion: "INTERIOR DERECHO", equipo: "CE Europa", activo: true },
+  { id: "2bdda3ea-4c14-44c4-9bba-197d22816d32", nombre: "MARCEL SGRÒ", apodo: "MARCEL", dorsal: "3", posicion: "CENTRAL DERECHO", equipo: "CE Europa", activo: true },
+  { id: "5f0c7be3-d906-4bb1-9788-82a94109287e", nombre: "NIL RUIZ", apodo: "NIL", dorsal: "13", posicion: "PORTERO", equipo: "CE Europa", activo: true },
+  { id: "55dfbdf1-9c07-477d-a218-827b7c45a580", nombre: "PABLO GARCIA", apodo: "PABLO", dorsal: null, posicion: "CENTRAL IZQ", equipo: "CE Europa", activo: true },
+  { id: "0c98b71d-b2a5-40bb-92bc-412e88c68e9d", nombre: "PEDRO CANCELO", apodo: "PEDRO", dorsal: "20", posicion: "CARRIL IZQUIERDO", equipo: "CE Europa", activo: true },
+  { id: "24c7dc44-6a31-4ecd-b2e3-7c13f0c8e67d", nombre: "SANTI PALLARÉS", apodo: "SANTI", dorsal: "21", posicion: "CARRIL DERECHO", equipo: "CE Europa", activo: true },
+  { id: "de8c9709-f1a3-43b2-836e-e4b12faccfa9", nombre: "TETO MARTÍN", apodo: "TETO", dorsal: "18", posicion: "INTERIOR IZQUIERDO", equipo: "CE Europa", activo: true },
+  { id: "f2370522-a458-40bc-b7af-788063bc1b81", nombre: "VICTOR EDO", apodo: "EDO", dorsal: "15", posicion: "CENTRAL IZQUIERDO", equipo: "CE Europa", activo: true },
+  { id: "e910d5be-c87a-4914-b77e-6a160a0a5c06", nombre: "VÍCTOR MORALES", apodo: "MORALES", dorsal: "14", posicion: "PIVOTE IZQUIERDO", equipo: "CE Europa", activo: true },
+  { id: "d93e2fef-726e-4dcf-95d8-e8625701acab", nombre: "YOUSSEF ZAYZOUN", apodo: "YOUSSEF", dorsal: "17", posicion: "DELANTERO", equipo: "CE Europa", activo: true },
 ];
+export const INITIAL_MANRESA_JUGADORES = CURRENT_ACTIVE_JUGADORES;
 
 // Configuración de navegación estándar
 const teamsBySeason = {
@@ -105,111 +127,23 @@ const databaseScreens = ["BBDD", "BBDD_GPS", "BBDD_LESIONES", "BBDD_TESTS", "BBD
 
 const DEFAULT_EXCEL_URL = "https://docs.google.com/spreadsheets/d/1JQXKfCrGCxom-N-RM-6nbDqQ0asnL_le0Z4EOwFc5Ds/edit?gid=432486581#gid=432486581";
 
-// Catálogo inicial de Tipos de Multa con precios base reglamentarios
+// Catálogo por defecto: solo multa Wellness a día de hoy (1€ la primera, 2€ la segunda, 3€ la tercera...)
 export const DEFAULT_TIPOS_MULTA: TipoMultaConfig[] = [
   {
-    id: "tm_peso",
-    icon: "⚖️",
-    titulo: "Control de Peso / Báscula",
-    descripcion: "No registrar el peso en un día con evento asignado",
-    importe: 2,
-    categoria: "Preparación Física",
-  },
-  {
-    id: "tm_well_tarde",
+    id: "tm_wellness",
     icon: "⏱️",
-    titulo: "No realizar el wellness antes de las 12:30",
-    descripcion: "No realizar el wellness antes de las 12:30 en un día con sesión asignada",
-    importe: 2,
+    titulo: "Cuestionario Wellness",
+    descripcion: "No realizar el cuestionario Wellness o completarlo después de la hora límite",
+    importe: 1,
     categoria: "Preparación Física",
-  },
-  {
-    id: "tm_well_no",
-    icon: "❌",
-    titulo: "No realizar el cuestionario Wellness",
-    descripcion: "No realizar el cuestionario Wellness en día con evento asignado",
-    importe: 2,
-    categoria: "Preparación Física",
-  },
-  {
-    id: "tm_gps",
-    icon: "⚡",
-    titulo: "GPS / Pulsómetro",
-    descripcion: "No llevar o no encender el dispositivo GPS / pulsómetro",
-    importe: 10,
-    categoria: "Preparación Física",
-  },
-  {
-    id: "tm_ret_gym",
-    icon: "⏱️",
-    titulo: "Retraso Gimnasio / Activación",
-    descripcion: "Llegada tardía a la sesión de fuerza o activación",
-    importe: 10,
-    categoria: "Preparación Física",
-  },
-  {
-    id: "tm_material",
-    icon: "🏋️",
-    titulo: "Material sin Recoger",
-    descripcion: "Dejar mancuernas, discos o gomas tiradas en el gimnasio",
-    importe: 15,
-    categoria: "Preparación Física",
-  },
-  {
-    id: "tm_prevencion",
-    icon: "🏃",
-    titulo: "Rutina de Prevención",
-    descripcion: "No realizar la rutina de prevención / warm-up individual",
-    importe: 10,
-    categoria: "Preparación Física",
-  },
-  {
-    id: "tm_suple",
-    icon: "🥤",
-    titulo: "Suplementación / Batido",
-    descripcion: "No tomar la suplementación o batido recuperador pautado",
-    importe: 5,
-    categoria: "Preparación Física",
-  },
-  {
-    id: "tm_ropa",
-    icon: "👟",
-    titulo: "Indumentaria Gimnasio",
-    descripcion: "Calzado o ropa inadecuada durante el entrenamiento de fuerza",
-    importe: 10,
-    categoria: "Preparación Física",
-  },
-  {
-    id: "tm_movil",
-    icon: "📱",
-    titulo: "Teléfono Móvil",
-    descripcion: "Uso de teléfono móvil en charla o vestuario",
-    importe: 20,
-    categoria: "Vestuario",
-  },
-  {
-    id: "tm_retraso_conv",
-    icon: "⏰",
-    titulo: "Retraso Convocatoria",
-    descripcion: "Llegada tarde a charla o autobús",
-    importe: 25,
-    categoria: "Vestuario",
-  },
-  {
-    id: "tm_fisio",
-    icon: "🩺",
-    titulo: "No avisar a Fisio",
-    descripcion: "No reportar molestia muscular antes de la sesión",
-    importe: 20,
-    categoria: "Médico / Fisioterapia",
-  },
-  {
-    id: "tm_menu",
-    icon: "🥗",
-    titulo: "Menú no reglamentario",
-    descripcion: "Incumplimiento de pauta nutricional en concentración",
-    importe: 15,
-    categoria: "Nutrición",
+    activo: true,
+    modeloCalculo: "progresivo",
+    precioBase: 1,
+    incremento: 1,
+    importeFijo: 1,
+    fechaInicioCiclo: "2026-11-23",
+    esAutomatica: true,
+    horaLimite: "12:30",
   },
 ];
 
@@ -580,10 +514,17 @@ function extractRecordPlayerName(r: any): string {
   return "";
 }
 
-function extractRecordSubmissionTime(r: any): { timeStr: string; isLate: boolean; hours: number; minutes: number } {
+function extractRecordSubmissionTime(r: any, horaLimiteStr: string = "12:30"): { timeStr: string; isLate: boolean; hours: number; minutes: number } {
   if (!r) return { timeStr: "", isLate: false, hours: 0, minutes: 0 };
-  const keys = Object.keys(r);
+  let limitMins = 750; // default 12:30
+  if (horaLimiteStr) {
+    const lMatch = String(horaLimiteStr).match(/(\d{1,2})[:\.](\d{2})/);
+    if (lMatch) {
+      limitMins = parseInt(lMatch[1], 10) * 60 + parseInt(lMatch[2], 10);
+    }
+  }
 
+  const keys = Object.keys(r);
   let raw = r["_colI"] ?? r["_col8"] ?? (keys.length > 8 ? r[keys[8]] : "") ?? r["Hora"] ?? r["Hora de finalización"] ?? r["Hora entrega"] ?? "";
   let str = String(raw).trim();
 
@@ -599,7 +540,6 @@ function extractRecordSubmissionTime(r: any): { timeStr: string; isLate: boolean
 
     const formatted = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}h`;
     const totalMins = h * 60 + m;
-    const limitMins = 12 * 60 + 30; // 12:30h limit
 
     return {
       timeStr: formatted,
@@ -619,7 +559,7 @@ function extractRecordSubmissionTime(r: any): { timeStr: string; isLate: boolean
     const totalMins = h * 60 + m;
     return {
       timeStr: formatted,
-      isLate: totalMins > 750,
+      isLate: totalMins > limitMins,
       hours: h,
       minutes: m,
     };
@@ -637,7 +577,7 @@ function extractRecordSubmissionTime(r: any): { timeStr: string; isLate: boolean
       const totalMins = h * 60 + m;
       return {
         timeStr: formatted,
-        isLate: totalMins > 750,
+        isLate: totalMins > limitMins,
         hours: h,
         minutes: m,
       };
@@ -654,7 +594,7 @@ function extractRecordSubmissionTime(r: any): { timeStr: string; isLate: boolean
       const totalMins = h * 60 + m;
       return {
         timeStr: formatted,
-        isLate: totalMins > 750,
+        isLate: totalMins > limitMins,
         hours: h,
         minutes: m,
       };
@@ -662,6 +602,60 @@ function extractRecordSubmissionTime(r: any): { timeStr: string; isLate: boolean
   }
 
   return { timeStr: str || "—", isLate: false, hours: 0, minutes: 0 };
+}
+
+// Cálculo dinámico de importe por tipo de tarificación y reincidencia en el ciclo activo
+export function calculatePlayerFineAmount(
+  tipo: TipoMultaConfig,
+  jugadorId: string,
+  targetDate: string,
+  allMultas: Multa[],
+  currentMultaId?: string
+): { importe: number; reincidencia: "1ª Falta" | "2ª Falta" | "Reincidente"; numFalta: number } {
+  if (tipo.modeloCalculo === "fijo") {
+    const fix = tipo.importeFijo ?? tipo.importe ?? 5;
+    return {
+      importe: fix,
+      reincidencia: "1ª Falta",
+      numFalta: 1,
+    };
+  }
+
+  // Modelo Progresivo (1€ la primera, 2€ la segunda, 3€ la tercera...)
+  const fechaInicio = tipo.fechaInicioCiclo || "2026-11-23";
+  const base = Number(tipo.precioBase) || 1;
+  const inc = Number(tipo.incremento) || 1;
+
+  // Filtrar multas previas del jugador para este tipo dentro del ciclo activo
+  const previas = (allMultas || []).filter((m) => {
+    if (!m || m.jugador_id !== jugadorId) return false;
+    const isThisType =
+      m.tipo_id === tipo.id ||
+      (tipo.id.includes("well") && (m.concepto.includes("Wellness") || m.concepto.includes("Cuestionario"))) ||
+      (tipo.titulo && m.concepto && m.concepto.toLowerCase().includes(tipo.titulo.toLowerCase()));
+    if (!isThisType) return false;
+
+    // Dentro del ciclo actual
+    if (!m.fecha || m.fecha < fechaInicio) return false;
+
+    // Excluir la multa que se está evaluando si coincide ID
+    if (currentMultaId && m.id === currentMultaId) return false;
+
+    // Si es anterior, siempre cuenta
+    if (m.fecha < targetDate) return true;
+
+    // Si es del mismo día, cuenta si no es la misma multa siendo evaluada
+    if (m.fecha === targetDate && currentMultaId && m.id !== currentMultaId) return true;
+
+    return false;
+  });
+
+  const numFalta = previas.length + 1;
+  const importe = base + (numFalta - 1) * inc;
+  const reincidencia: "1ª Falta" | "2ª Falta" | "Reincidente" =
+    numFalta === 1 ? "1ª Falta" : numFalta === 2 ? "2ª Falta" : "Reincidente";
+
+  return { importe, reincidencia, numFalta };
 }
 
 // Helper para obtener lista negra permanente de multas eliminadas
@@ -706,14 +700,33 @@ export const isMultaDeleted = (
   return false;
 };
 
-// Helper para limpiar multas con la lista negra y excepciones conocidas
-export const cleanMultas = (list: Multa[], blacklist: { ids: Set<string>; signatures: Set<string> }, eventos?: any[], bloquesEventos?: any[]): Multa[] => {
+// Helper para limpiar multas con la lista negra y solo jugadores activos actuales
+export const cleanMultas = (
+  list: Multa[],
+  blacklist: { ids: Set<string>; signatures: Set<string> },
+  eventos?: any[],
+  bloquesEventos?: any[],
+  activePlayerIds?: Set<string>,
+  activePlayerNames?: Set<string>
+): Multa[] => {
   return list
     .filter((m) => {
+      if (!m || !m.id) return false;
       if (isMultaDeleted(m, blacklist)) return false;
-      const isWellness = m.concepto.includes("Wellness") || m.concepto.includes("Cuestionario");
+
+      // SOLO jugadores activos actuales
+      if (activePlayerIds && activePlayerNames && activePlayerIds.size > 0) {
+        const hasId = activePlayerIds.has(m.jugador_id);
+        const normName = normalizeNameStr(m.jugador_nombre || "");
+        const hasName = activePlayerNames.has(normName);
+        if (!hasId && !hasName) {
+          return false;
+        }
+      }
+
+      const isWellness = m.concepto && (m.concepto.includes("Wellness") || m.concepto.includes("Cuestionario"));
       if (isWellness) {
-        // Excluir si es día de partido (tanto oficial conocido como partido programado en planificación)
+        // Excluir si es día de partido
         if (isMatchDateOrEvent(m.fecha, eventos)) {
           return false;
         }
@@ -725,24 +738,9 @@ export const cleanMultas = (list: Multa[], blacklist: { ids: Set<string>; signat
       return true;
     })
     .map((m) => {
-      let jNombre = m.jugador_nombre;
-      let jId = m.jugador_id;
-      if (
-        m.jugador_id === "b6877a25-e6de-48f3-aab3-1ae48a53e317" ||
-        jNombre.toLowerCase().includes("pochito") ||
-        jNombre.toLowerCase().includes("josep lluis")
-      ) {
-        jNombre = "POCHITO";
-      } else if (jNombre.toLowerCase().includes("daouda")) {
-        jNombre = "DAOUDA KONÉ";
-        jId = "daouda_kone_merged_id";
-      }
       let com = m.comentario ? m.comentario.replace(/\s*\([^)]*\)/g, "").trim() : "";
       return {
         ...m,
-        jugador_id: jId,
-        jugador_nombre: jNombre,
-        jugador_apodo: undefined,
         comentario: com,
       };
     });
@@ -795,16 +793,18 @@ export default function MultasPage() {
     return Array.from(new Set(seasons.flatMap((seasonOption) => teamsBySeason[seasonOption] ?? [])));
   }, [seasons]);
 
-  // Multas data & Real BBDD State (Initialised directly from real-multas-data, then synchronized from DB / localStorage on mount)
-  const [multas, setMultas] = useState<Multa[]>(REAL_MULTAS_DATA as Multa[]);
-  const [todosJugadores, setTodosJugadores] = useState<JugadorSimple[]>(INITIAL_MANRESA_JUGADORES);
+  // Multas data & Real BBDD State (Solo jugadores activos actuales de la plantilla)
+  const [multas, setMultas] = useState<Multa[]>([]);
+  const [todosJugadores, setTodosJugadores] = useState<JugadorSimple[]>(CURRENT_ACTIVE_JUGADORES);
   const [planificacionEventos, setPlanificacionEventos] = useState<any[]>([]);
   const [bloquesEventos, setBloquesEventos] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<"generador_informe" | "detector_wellness" | "catalogo_tipos" | "ranking">("generador_informe");
   const [isLoadingRealData, setIsLoadingRealData] = useState<boolean>(false);
 
-  // Tipos de multa personalizables
+  // Tipos de multa personalizables y configuración de conteo
   const [tiposMultaCatalogo, setTiposMultaCatalogo] = useState<TipoMultaConfig[]>(DEFAULT_TIPOS_MULTA);
+  const [wellnessHoraLimite, setWellnessHoraLimite] = useState<string>("12:30");
+  const [wellnessFechaInicioCiclo, setWellnessFechaInicioCiclo] = useState<string>("2026-11-23");
 
   // Filtros del Generador de Informes (Vacíos por defecto para mostrar todos los datos de la temporada)
   const [reportFechaDesde, setReportFechaDesde] = useState<string>("");
@@ -818,9 +818,15 @@ export default function MultasPage() {
   const [editingTipoMulta, setEditingTipoMulta] = useState<TipoMultaConfig | null>(null);
   const [tipoFormTitulo, setTipoFormTitulo] = useState<string>("");
   const [tipoFormDescripcion, setTipoFormDescripcion] = useState<string>("");
-  const [tipoFormImporte, setTipoFormImporte] = useState<number>(2);
+  const [tipoFormImporte, setTipoFormImporte] = useState<number>(1);
   const [tipoFormCategoria, setTipoFormCategoria] = useState<Multa["categoria"]>("Preparación Física");
-  const [tipoFormIcon, setTipoFormIcon] = useState<string>("⚠️");
+  const [tipoFormIcon, setTipoFormIcon] = useState<string>("⏱️");
+  const [tipoFormModelo, setTipoFormModelo] = useState<"progresivo" | "fijo">("progresivo");
+  const [tipoFormPrecioBase, setTipoFormPrecioBase] = useState<number>(1);
+  const [tipoFormIncremento, setTipoFormIncremento] = useState<number>(1);
+  const [tipoFormFechaInicio, setTipoFormFechaInicio] = useState<string>("2026-11-23");
+  const [tipoFormHoraLimite, setTipoFormHoraLimite] = useState<string>("12:30");
+  const [tipoFormEsAutomatica, setTipoFormEsAutomatica] = useState<boolean>(false);
 
   // Modal editar multa individual
   const [editingMulta, setEditingMulta] = useState<Multa | null>(null);
@@ -831,7 +837,7 @@ export default function MultasPage() {
 
   // Modal añadir multa manual al informe
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
-  const [addJugadorId, setAddJugadorId] = useState<string>(INITIAL_MANRESA_JUGADORES[0].id);
+  const [addJugadorId, setAddJugadorId] = useState<string>(CURRENT_ACTIVE_JUGADORES[0].id);
   const [addFecha, setAddFecha] = useState<string>(() => {
     const d = new Date();
     const y = d.getFullYear();
@@ -839,9 +845,9 @@ export default function MultasPage() {
     const day = String(d.getDate()).padStart(2, "0");
     return `${y}-${m}-${day}`;
   });
-  const [addTipoId, setAddTipoId] = useState<string>("");
-  const [addConcepto, setAddConcepto] = useState<string>("");
-  const [addImporte, setAddImporte] = useState<number>(2);
+  const [addTipoId, setAddTipoId] = useState<string>("tm_wellness");
+  const [addConcepto, setAddConcepto] = useState<string>("Cuestionario Wellness");
+  const [addImporte, setAddImporte] = useState<number>(1);
   const [addCategoria, setAddCategoria] = useState<Multa["categoria"]>("Preparación Física");
   const [addComentario, setAddComentario] = useState<string>("");
 
@@ -967,93 +973,85 @@ export default function MultasPage() {
         setActiveTab(savedTab as any);
       }
       
-      const savedTipos = localStorage.getItem("tipos_multa_catalogo_v2");
+      const savedHora = localStorage.getItem("wellness_hora_limite");
+      if (savedHora) setWellnessHoraLimite(savedHora);
+
+      const savedFechaCiclo = localStorage.getItem("wellness_fecha_inicio_ciclo");
+      if (savedFechaCiclo) setWellnessFechaInicioCiclo(savedFechaCiclo);
+
+      const savedTipos = localStorage.getItem("tipos_multa_catalogo_v3");
       if (savedTipos) {
-        const parsedTipos: TipoMultaConfig[] = JSON.parse(savedTipos);
-        const updatedTipos = parsedTipos.map((t) => {
-          if ((t.id === "tm_well_tarde" || t.id === "tm_well_no" || t.id === "tm_peso") && t.importe === 5) {
-            return { ...t, importe: 2 };
+        try {
+          const parsedTipos: TipoMultaConfig[] = JSON.parse(savedTipos);
+          if (Array.isArray(parsedTipos) && parsedTipos.length > 0) {
+            setTiposMultaCatalogo(parsedTipos);
           }
-          return t;
-        });
-        setTiposMultaCatalogo(updatedTipos);
+        } catch (e) {}
       } else {
         setTiposMultaCatalogo(DEFAULT_TIPOS_MULTA);
-        localStorage.setItem("tipos_multa_catalogo_v2", JSON.stringify(DEFAULT_TIPOS_MULTA));
       }
 
       const blacklist = getDeletedBlacklist();
       cleanupObsoleteLocalStorage();
 
-      const savedMultas = localStorage.getItem("multas_registro_v9");
+      const savedMultas = localStorage.getItem("multas_registro_v10");
       if (savedMultas) {
         try {
           const parsed = JSON.parse(savedMultas);
           if (Array.isArray(parsed)) {
-            const cleaned = cleanMultas(parsed, blacklist, planificacionEventos, bloquesEventos);
+            const activeIds = new Set(todosJugadores.map((j) => j.id));
+            const activeNames = new Set(todosJugadores.map((j) => normalizeNameStr(j.nombre)));
+            const cleaned = cleanMultas(parsed, blacklist, planificacionEventos, bloquesEventos, activeIds, activeNames);
             setMultas(cleaned);
-            saveMultasToDatabase(cleaned as StoredMulta[]);
-          } else {
-            const initial = cleanMultas(REAL_MULTAS_DATA as Multa[], blacklist, planificacionEventos, bloquesEventos);
-            setMultas(initial);
-            saveMultasToDatabase(initial as StoredMulta[]);
           }
-        } catch (e) {
-          const initial = cleanMultas(REAL_MULTAS_DATA as Multa[], blacklist, planificacionEventos, bloquesEventos);
-          setMultas(initial);
-          saveMultasToDatabase(initial as StoredMulta[]);
-        }
-      } else {
-        // Cargar desde IndexedDB o inicializar con REAL_MULTAS_DATA
-        loadMultasFromDatabase().then((dbData) => {
-          if (dbData && dbData.length > 0) {
-            const cleaned = cleanMultas(dbData, blacklist, planificacionEventos, bloquesEventos);
-            setMultas(cleaned);
-            saveMultasToDatabase(cleaned as StoredMulta[]);
-          } else {
-            const initial = cleanMultas(REAL_MULTAS_DATA as Multa[], blacklist, planificacionEventos, bloquesEventos);
-            setMultas(initial);
-            saveMultasToDatabase(initial as StoredMulta[]);
-          }
-        }).catch(() => {
-          const initial = cleanMultas(REAL_MULTAS_DATA as Multa[], blacklist, planificacionEventos, bloquesEventos);
-          setMultas(initial);
-          saveMultasToDatabase(initial as StoredMulta[]);
-        });
+        } catch (e) {}
       }
-    } catch (e) {
-      setMultas(REAL_MULTAS_DATA as Multa[]);
-    }
+    } catch (e) {}
   }, []);
 
-  // Carga e hidratación en background de datos adicionales
+  // Carga e hidratación en background de datos adicionales desde BBDD y Supabase
   useEffect(() => {
     let isMounted = true;
     async function loadAdditionalRealData() {
       try {
         setIsLoadingRealData(true);
-        const [jugadores, ses, sheetRes, bloquesRes] = await Promise.all([
+        const [jugadores, ses, sheetRes, bloquesRes, serverConfig, serverRecords] = await Promise.all([
           getActiveJugadores().catch(() => null),
           getSesionesDiaRange().catch(() => null),
           fetchLiveWellnessSheet(DEFAULT_EXCEL_URL).catch(() => null),
           getEventosBloquesBBDD().catch(() => null),
+          getMultasConfigServer().catch(() => null),
+          getMultasRecordsServer().catch(() => null),
         ]);
 
         const sheetRecords: any[] = sheetRes && (sheetRes as any).data && Array.isArray((sheetRes as any).data) ? (sheetRes as any).data : [];
 
         if (!isMounted) return;
 
+        let currentActive = CURRENT_ACTIVE_JUGADORES;
         if (jugadores && Array.isArray(jugadores) && jugadores.length > 0) {
-          const filteredManresa = jugadores.filter(
-            (j) =>
-              (j.equipo || "").toLowerCase().includes("manresa") ||
-              j.temporada === "2026/27" ||
-              !j.equipo
-          );
-          if (filteredManresa.length > 0) {
-            setTodosJugadores(filteredManresa);
+          const activeOnly = jugadores.filter((j) => j.activo !== false);
+          if (activeOnly.length > 0) {
+            currentActive = activeOnly;
+            setTodosJugadores(activeOnly);
           }
         }
+
+        const activeIds = new Set(currentActive.map((j) => j.id));
+        const activeNames = new Set(currentActive.map((j) => normalizeNameStr(j.nombre)));
+
+        if (serverConfig) {
+          if (Array.isArray(serverConfig.tipos) && serverConfig.tipos.length > 0) {
+            setTiposMultaCatalogo(serverConfig.tipos);
+          }
+          if (serverConfig.wellnessHoraLimite) {
+            setWellnessHoraLimite(serverConfig.wellnessHoraLimite);
+          }
+          if (serverConfig.wellnessFechaInicioCiclo) {
+            setWellnessFechaInicioCiclo(serverConfig.wellnessFechaInicioCiclo);
+          }
+        }
+
         if (ses && Array.isArray(ses)) {
           setPlanificacionEventos(ses);
         }
@@ -1063,8 +1061,27 @@ export default function MultasPage() {
         if (bloquesRes && typeof bloquesRes === "object") {
           setBloquesEventos(Object.values(bloquesRes));
         }
+
+        if (Array.isArray(serverRecords)) {
+          const blacklist = getDeletedBlacklist();
+          const cleaned = cleanMultas(
+            serverRecords,
+            blacklist,
+            ses || undefined,
+            bloquesRes ? Object.values(bloquesRes) : undefined,
+            activeIds,
+            activeNames
+          );
+          setMultas(cleaned);
+          saveMultasToDatabase(cleaned as StoredMulta[]).catch(() => {});
+          if (typeof window !== "undefined") {
+            try {
+              localStorage.setItem("multas_registro_v10", JSON.stringify(cleaned));
+            } catch (e) {}
+          }
+        }
       } catch (err) {
-        console.error("Error al cargar datos en segundo plano:", err);
+        console.error("Error al cargar datos de multas en segundo plano:", err);
       } finally {
         if (isMounted) setIsLoadingRealData(false);
       }
@@ -1076,10 +1093,21 @@ export default function MultasPage() {
     };
   }, [team]);
 
-  // Guardar multas en la BBDD (IndexedDB + localStorage de forma segura y compacta)
+  // Guardar multas en la BBDD (Supabase + IndexedDB + localStorage de forma segura y compacta)
   const saveMultasToStorage = (updated: Multa[]) => {
-    setMultas(updated);
-    saveMultasToDatabase(updated as StoredMulta[]).catch(() => {});
+    const activeIds = new Set(todosJugadores.map((j) => j.id));
+    const activeNames = new Set(todosJugadores.map((j) => normalizeNameStr(j.nombre)));
+    const activeOnly = updated.filter(
+      (m) => activeIds.has(m.jugador_id) || activeNames.has(normalizeNameStr(m.jugador_nombre))
+    );
+    setMultas(activeOnly);
+    saveMultasToDatabase(activeOnly as StoredMulta[]).catch(() => {});
+    saveMultasRecordsServer(activeOnly).catch(() => {});
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("multas_registro_v10", JSON.stringify(activeOnly));
+      } catch (e) {}
+    }
   };
 
   // Manejar edición directa del campo observaciones en la tabla
@@ -1088,12 +1116,25 @@ export default function MultasPage() {
     saveMultasToStorage(updated);
   };
 
-  // Guardar catálogo de tipos de multa
-  const saveTiposCatalogo = (updated: TipoMultaConfig[]) => {
+  // Guardar catálogo de tipos de multa en Supabase y localmente
+  const saveTiposCatalogo = (updated: TipoMultaConfig[], newHora?: string, newFechaCiclo?: string) => {
     setTiposMultaCatalogo(updated);
+    const hora = newHora || wellnessHoraLimite;
+    const fecha = newFechaCiclo || wellnessFechaInicioCiclo;
+    if (newHora) setWellnessHoraLimite(newHora);
+    if (newFechaCiclo) setWellnessFechaInicioCiclo(newFechaCiclo);
+
+    saveMultasConfigServer({
+      tipos: updated as TipoMultaConfigServer[],
+      wellnessHoraLimite: hora,
+      wellnessFechaInicioCiclo: fecha,
+    }).catch(() => {});
+
     if (typeof window !== "undefined") {
       try {
-        localStorage.setItem("tipos_multa_catalogo_v2", JSON.stringify(updated));
+        localStorage.setItem("tipos_multa_catalogo_v3", JSON.stringify(updated));
+        localStorage.setItem("wellness_hora_limite", hora);
+        localStorage.setItem("wellness_fecha_inicio_ciclo", fecha);
       } catch (e) {}
     }
   };
@@ -1125,26 +1166,33 @@ export default function MultasPage() {
     setRefreshSuccessMessage(null);
     try {
       // 1. Sincronizar jugadores, eventos de planificación y respuestas del Google Sheet en vivo
-      const [jugadores, ses, sheetRes, bloquesRes, dbData] = await Promise.all([
+      const [jugadores, ses, sheetRes, bloquesRes, serverRecords, serverConfig] = await Promise.all([
         getActiveJugadores().catch(() => null),
         getSesionesDiaRange().catch(() => null),
         fetchLiveWellnessSheet(excelUrl || DEFAULT_EXCEL_URL).catch(() => null),
         getEventosBloquesBBDD().catch(() => null),
-        loadMultasFromDatabase().catch(() => null),
+        getMultasRecordsServer().catch(() => null),
+        getMultasConfigServer().catch(() => null),
       ]);
 
       const activePlayers = (jugadores && Array.isArray(jugadores) && jugadores.length > 0
-        ? jugadores
+        ? jugadores.filter((j) => j.activo !== false)
         : todosJugadores
-      ).filter(
-        (j) =>
-          (j.equipo || "").toLowerCase().includes("manresa") ||
-          j.temporada === "2026/27" ||
-          !j.equipo
       );
 
       if (activePlayers.length > 0) {
         setTodosJugadores(activePlayers);
+      }
+
+      const activeIds = new Set(activePlayers.map((j) => j.id));
+      const activeNames = new Set(activePlayers.map((j) => normalizeNameStr(j.nombre)));
+
+      if (serverConfig) {
+        if (Array.isArray(serverConfig.tipos) && serverConfig.tipos.length > 0) {
+          setTiposMultaCatalogo(serverConfig.tipos);
+        }
+        if (serverConfig.wellnessHoraLimite) setWellnessHoraLimite(serverConfig.wellnessHoraLimite);
+        if (serverConfig.wellnessFechaInicioCiclo) setWellnessFechaInicioCiclo(serverConfig.wellnessFechaInicioCiclo);
       }
 
       if (ses && Array.isArray(ses)) {
@@ -1161,23 +1209,9 @@ export default function MultasPage() {
 
       // 2. Cargar lista negra y registros guardados
       const blacklist = getDeletedBlacklist();
-      let rawList: Multa[] = REAL_MULTAS_DATA as Multa[];
+      let rawList: Multa[] = Array.isArray(serverRecords) ? serverRecords : multas;
 
-      if (typeof window !== "undefined") {
-        try {
-          const savedMultas = localStorage.getItem("multas_registro_v9");
-          if (savedMultas) {
-            const parsed = JSON.parse(savedMultas);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              rawList = parsed;
-            }
-          } else if (dbData && dbData.length > 0) {
-            rawList = dbData as Multa[];
-          }
-        } catch (e) {}
-      }
-
-      // 3. Procesar respuestas del sheet y generar multas de wellness automáticas para fechas activas (incluyendo hoy)
+      // 3. Procesar respuestas del sheet y generar multas de wellness automáticas para fechas activas
       const newAutoMultas: Multa[] = [];
       const datesInSheet = new Set<string>();
       sheetRecords.forEach((r) => {
@@ -1188,18 +1222,17 @@ export default function MultasPage() {
       const todayStr = new Date().toISOString().split("T")[0];
       if (todayStr) datesInSheet.add(todayStr);
 
-      const latePrice = tiposMultaCatalogo.find((t) => t.id === "tm_well_tarde")?.importe ?? 2;
-      const noRespPrice = tiposMultaCatalogo.find((t) => t.id === "tm_well_no")?.importe ?? 2;
+      const horaLimiteToCheck = serverConfig?.wellnessHoraLimite || wellnessHoraLimite || "12:30";
+      const wellnessTipo = (serverConfig?.tipos || tiposMultaCatalogo).find((t: any) => t.id.includes("well") || t.esAutomatica) || DEFAULT_TIPOS_MULTA[0];
 
       datesInSheet.forEach((dStr) => {
-        // Los días de partido NUNCA se multan por no contestar ni por retraso de Wellness
+        // Los días de partido NUNCA se multan
         if (isMatchDateOrEvent(dStr, ses || planificacionEventos)) return;
         
         // Los días sin entrenamiento (sin eventos Co/Op) NUNCA se multan
         if (!hasCoOrOpEventInDB(dStr, ses || planificacionEventos, bloquesRes ? Object.values(bloquesRes) : bloquesEventos)) return;
 
         const daySheetRecords = sheetRecords.filter((r) => extractRecordDateISO(r) === dStr);
-        // Procesar si hay respuestas en la hoja de ese día
         if (daySheetRecords.length === 0) return;
 
         activePlayers.forEach((j) => {
@@ -1207,7 +1240,7 @@ export default function MultasPage() {
             const rawPlayer = extractRecordPlayerName(r);
             return matchPlayerName(rawPlayer, j);
           });
-          const submission = rec ? extractRecordSubmissionTime(rec) : null;
+          const submission = rec ? extractRecordSubmissionTime(rec, horaLimiteToCheck) : null;
 
           const isDeletedByUser =
             blacklist.ids.has(`${j.id}_${dStr}`) ||
@@ -1221,6 +1254,7 @@ export default function MultasPage() {
             const uniqueId = `real_well_no_${j.id}_${dStr}`;
             const yaExiste = rawList.some((m) => m.id === uniqueId || (m.jugador_id === j.id && m.fecha === dStr && (m.concepto.includes("Wellness") || m.concepto.includes("Cuestionario"))));
             if (!yaExiste && !blacklist.ids.has(uniqueId)) {
+              const calc = calculatePlayerFineAmount(wellnessTipo, j.id, dStr, [...rawList, ...newAutoMultas]);
               newAutoMultas.push({
                 id: uniqueId,
                 fecha: dStr,
@@ -1232,16 +1266,18 @@ export default function MultasPage() {
                 equipo: team || "CE Europa",
                 categoria: "Preparación Física",
                 concepto: "No realizar el cuestionario Wellness",
-                importe: noRespPrice,
-                reincidencia: "1ª Falta",
+                importe: calc.importe,
+                reincidencia: calc.reincidencia,
                 comentario: "",
                 creado_por: "Detector Automático",
+                tipo_id: wellnessTipo.id,
               });
             }
           } else if (submission && submission.isLate) {
             const uniqueId = `real_well_tarde_${j.id}_${dStr}`;
             const yaExiste = rawList.some((m) => m.id === uniqueId || (m.jugador_id === j.id && m.fecha === dStr && (m.concepto.includes("Wellness") || m.concepto.includes("Cuestionario"))));
             if (!yaExiste && !blacklist.ids.has(uniqueId)) {
+              const calc = calculatePlayerFineAmount(wellnessTipo, j.id, dStr, [...rawList, ...newAutoMultas]);
               newAutoMultas.push({
                 id: uniqueId,
                 fecha: dStr,
@@ -1252,11 +1288,12 @@ export default function MultasPage() {
                 jugador_foto: j.foto_url || undefined,
                 equipo: team || "CE Europa",
                 categoria: "Preparación Física",
-                concepto: "No realizar el wellness antes de las 12:30",
-                importe: latePrice,
-                reincidencia: "1ª Falta",
-                comentario: `Entregado tarde a las ${submission.timeStr}`,
+                concepto: `No realizar el wellness antes de las ${horaLimiteToCheck}`,
+                importe: calc.importe,
+                reincidencia: calc.reincidencia,
+                comentario: `Entregado tarde a las ${submission.timeStr} (límite: ${horaLimiteToCheck})`,
                 creado_por: "Detector Automático",
+                tipo_id: wellnessTipo.id,
               });
             }
           }
@@ -1264,18 +1301,12 @@ export default function MultasPage() {
       });
 
       const combined = [...newAutoMultas, ...rawList];
-      const cleaned = cleanMultas(combined, blacklist, ses || planificacionEventos, bloquesRes ? Object.values(bloquesRes) : bloquesEventos);
-      setMultas(cleaned);
-      saveMultasToDatabase(cleaned as StoredMulta[]).catch(() => {});
-      if (typeof window !== "undefined") {
-        try {
-          localStorage.setItem("multas_registro_v9", JSON.stringify(cleaned));
-        } catch (e) {}
-      }
+      const cleaned = cleanMultas(combined, blacklist, ses || planificacionEventos, bloquesRes ? Object.values(bloquesRes) : bloquesEventos, activeIds, activeNames);
+      saveMultasToStorage(cleaned);
 
       const timeNow = new Date().toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
       const addedMsg = newAutoMultas.length > 0 ? ` (+${newAutoMultas.length} multas nuevas detectadas)` : "";
-      setRefreshSuccessMessage(`✓ Multas y datos actualizados correctamente (${timeNow})${addedMsg} — ${cleaned.length} registros cargados`);
+      setRefreshSuccessMessage(`✓ Multas actualizadas correctamente (${timeNow})${addedMsg} — ${cleaned.length} registros cargados`);
       setTimeout(() => {
         setRefreshSuccessMessage(null);
       }, 5000);
@@ -1285,7 +1316,7 @@ export default function MultasPage() {
     } finally {
       setIsRefreshingAll(false);
     }
-  }, [excelUrl, team, todosJugadores, tiposMultaCatalogo, planificacionEventos, bloquesEventos]);
+  }, [excelUrl, team, todosJugadores, tiposMultaCatalogo, planificacionEventos, bloquesEventos, multas, wellnessHoraLimite, wellnessFechaInicioCiclo]);
 
   // Comprobar si el día tiene eventos asignados Co o Op y si es día de partido
   const hasPlanificacionEventsForDate = useCallback(
@@ -1396,17 +1427,17 @@ export default function MultasPage() {
       }
     });
 
-    const latePrice = tiposMultaCatalogo.find((t) => t.id === "tm_well_tarde")?.importe ?? 2;
-    const noRespPrice = tiposMultaCatalogo.find((t) => t.id === "tm_well_no")?.importe ?? 2;
+    const wellnessTipo = tiposMultaCatalogo.find((t) => t.id.includes("well") || t.esAutomatica) || DEFAULT_TIPOS_MULTA[0];
 
     const rows = todosJugadores.map((jugador) => {
       const record = recordsMap.get(jugador.id);
-      const submission = record ? extractRecordSubmissionTime(record) : null;
+      const submission = record ? extractRecordSubmissionTime(record, wellnessHoraLimite) : null;
 
       let status: "OK" | "TARDE" | "NO_REALIZADO" | "EXENTO" = "OK";
       let motivo = "Wellness completado a tiempo";
       let importeSugerido = 0;
       let horaTexto = submission?.timeStr || "—";
+      let reincidenciaLabel: "1ª Falta" | "2ª Falta" | "Reincidente" = "1ª Falta";
 
       if (isMatchDay) {
         status = "EXENTO";
@@ -1418,12 +1449,16 @@ export default function MultasPage() {
         importeSugerido = 0;
       } else if (!record) {
         status = "NO_REALIZADO";
-        motivo = "No ha realizado el cuestionario Wellness";
-        importeSugerido = noRespPrice;
+        const calc = calculatePlayerFineAmount(wellnessTipo, jugador.id, wellnessDate, multas);
+        importeSugerido = calc.importe;
+        reincidenciaLabel = calc.reincidencia;
+        motivo = `No ha realizado el cuestionario Wellness (${calc.reincidencia}: ${calc.importe}€)`;
       } else if (submission && submission.isLate) {
         status = "TARDE";
-        motivo = `Wellness enviado tarde a las ${submission.timeStr}`;
-        importeSugerido = latePrice;
+        const calc = calculatePlayerFineAmount(wellnessTipo, jugador.id, wellnessDate, multas);
+        importeSugerido = calc.importe;
+        reincidenciaLabel = calc.reincidencia;
+        motivo = `Enviado tarde a las ${submission.timeStr} (límite: ${wellnessHoraLimite}) — ${calc.reincidencia}: ${calc.importe}€`;
       }
 
       const blacklist = typeof window !== "undefined" ? {
@@ -1458,6 +1493,7 @@ export default function MultasPage() {
         motivo: currentMotivo,
         importe: currentImporte,
         isChecked,
+        reincidenciaLabel,
       };
     });
 
@@ -1473,7 +1509,7 @@ export default function MultasPage() {
       countOk: rows.filter((r) => r.status === "OK").length,
       countExento: rows.filter((r) => r.status === "EXENTO").length,
     };
-  }, [wellnessDate, liveSheetRecords, todosJugadores, tiposMultaCatalogo, hasPlanificacionEventsForDate, checkedAutoMultas, customImportes, customComentarios, bloquesEventos]);
+  }, [wellnessDate, liveSheetRecords, todosJugadores, tiposMultaCatalogo, hasPlanificacionEventsForDate, checkedAutoMultas, customImportes, customComentarios, bloquesEventos, multas, wellnessHoraLimite]);
 
   // Aplicar e incorporar multas automáticas detectadas
   const handleApplyAutoMultas = () => {
@@ -1482,6 +1518,7 @@ export default function MultasPage() {
       signatures: new Set<string>(JSON.parse(localStorage.getItem("multas_deleted_signatures_v1") || "[]")),
     } : { ids: new Set<string>(), signatures: new Set<string>() };
 
+    const wellnessTipo = tiposMultaCatalogo.find((t) => t.id.includes("well") || t.esAutomatica) || DEFAULT_TIPOS_MULTA[0];
     const toAdd: Multa[] = [];
     wellnessAnalysis.rows.forEach((r) => {
       if (r.isChecked && (r.status === "TARDE" || r.status === "NO_REALIZADO")) {
@@ -1497,6 +1534,7 @@ export default function MultasPage() {
         const yaExiste = multas.some((m) => m.id === uniqueId || (m.jugador_id === r.jugador.id && m.fecha === wellnessDate && (m.concepto.includes("Wellness") || m.concepto.includes("Cuestionario"))));
 
         if (!yaExiste) {
+          const calc = calculatePlayerFineAmount(wellnessTipo, r.jugador.id, wellnessDate, multas);
           toAdd.push({
             id: uniqueId,
             fecha: wellnessDate,
@@ -1505,13 +1543,14 @@ export default function MultasPage() {
             jugador_apodo: r.jugador.apodo || undefined,
             jugador_dorsal: r.jugador.dorsal || undefined,
             jugador_foto: r.jugador.foto_url || undefined,
-            equipo: team,
+            equipo: team || "CE Europa",
             categoria: "Preparación Física",
-            concepto: r.status === "TARDE" ? "No realizar el wellness antes de las 12:30" : "No realizar el cuestionario Wellness",
+            concepto: r.status === "TARDE" ? `No realizar el wellness antes de las ${wellnessHoraLimite}` : "No realizar el cuestionario Wellness",
             importe: r.importe,
-            reincidencia: "1ª Falta",
-            comentario: "",
+            reincidencia: calc.reincidencia,
+            comentario: r.status === "TARDE" ? `Entregado fuera de plazo a las ${r.horaTexto} (límite: ${wellnessHoraLimite})` : "",
             creado_por: "Detector Automático",
+            tipo_id: wellnessTipo.id,
           });
         }
       }
@@ -1527,9 +1566,20 @@ export default function MultasPage() {
     }
   };
 
-  // Filtrado robusto de multas para el Generador de Informes
+  // Filtrado robusto de multas para el Generador de Informes (SOLO jugadores activos actuales)
   const filteredMultas = useMemo(() => {
+    const activePlayerIds = new Set(todosJugadores.map((j) => j.id));
+    const activePlayerNames = new Set(todosJugadores.map((j) => normalizeNameStr(j.nombre)));
+
     return multas.filter((m) => {
+      if (!m) return false;
+
+      // SOLO jugadores activos actuales
+      const isActive =
+        activePlayerIds.has(m.jugador_id) ||
+        activePlayerNames.has(normalizeNameStr(m.jugador_nombre || ""));
+      if (!isActive) return false;
+
       // Filtro de fecha desde
       if (reportFechaDesde && m.fecha && m.fecha < reportFechaDesde) {
         return false;
@@ -1570,7 +1620,7 @@ export default function MultasPage() {
 
       return true;
     });
-  }, [multas, reportFechaDesde, reportFechaHasta, filtroTipoMulta, filtroJugador, busqueda, todosJugadores]);
+  }, [multas, todosJugadores, reportFechaDesde, reportFechaHasta, filtroTipoMulta, filtroJugador, busqueda]);
 
   // Verificar si hay observaciones rellenadas para la vista de impresión
   const hasAnyObservation = useMemo(() => {
@@ -1621,18 +1671,14 @@ export default function MultasPage() {
     return sorted[0] || null;
   }, [filteredMultas]);
 
-  // Ranking general por deportista
+  // Ranking general por deportista (SOLO jugadores activos actuales)
   const playerRanking = useMemo(() => {
     const map: Record<string, { id: string; nombre: string; apodo?: string; dorsal?: any; total: number; count: number; multas: Multa[] }> = {};
 
     todosJugadores.forEach((j) => {
-      let jNombre = j.nombre;
-      if (j.id === "b6877a25-e6de-48f3-aab3-1ae48a53e317" || jNombre.toLowerCase().includes("pochito") || jNombre.toLowerCase().includes("josep lluis")) {
-        jNombre = "POCHITO";
-      }
       map[j.id] = {
         id: j.id,
-        nombre: jNombre,
+        nombre: j.nombre,
         apodo: j.apodo || undefined,
         dorsal: j.dorsal || undefined,
         total: 0,
@@ -1642,24 +1688,16 @@ export default function MultasPage() {
     });
 
     filteredMultas.forEach((m) => {
-      let jNombre = m.jugador_nombre;
-      if (m.jugador_id === "b6877a25-e6de-48f3-aab3-1ae48a53e317" || jNombre.toLowerCase().includes("pochito") || jNombre.toLowerCase().includes("josep lluis")) {
-        jNombre = "POCHITO";
+      let targetId = m.jugador_id;
+      if (!map[targetId]) {
+        const matched = todosJugadores.find((j) => matchPlayerName(m.jugador_nombre, j));
+        if (matched) targetId = matched.id;
       }
-      if (!map[m.jugador_id]) {
-        map[m.jugador_id] = {
-          id: m.jugador_id,
-          nombre: jNombre,
-          apodo: m.jugador_apodo,
-          dorsal: m.jugador_dorsal,
-          total: 0,
-          count: 0,
-          multas: [],
-        };
+      if (map[targetId]) {
+        map[targetId].total += m.importe || 0;
+        map[targetId].count += 1;
+        map[targetId].multas.push(m);
       }
-      map[m.jugador_id].total += m.importe || 0;
-      map[m.jugador_id].count += 1;
-      map[m.jugador_id].multas.push(m);
     });
 
     return Object.values(map).sort((a, b) => b.total - a.total || b.count - a.count);
@@ -1737,21 +1775,29 @@ export default function MultasPage() {
     const playerObj = todosJugadores.find((j) => j.id === addJugadorId);
     if (!playerObj) return;
 
+    const matchedTipo = tiposMultaCatalogo.find((t) => t.id === addTipoId);
+    let reincidenciaLabel: "1ª Falta" | "2ª Falta" | "Reincidente" = "1ª Falta";
+    if (matchedTipo) {
+      const calc = calculatePlayerFineAmount(matchedTipo, playerObj.id, addFecha || new Date().toISOString().split("T")[0], multas);
+      reincidenciaLabel = calc.reincidencia;
+    }
+
     const newMulta: Multa = {
       id: `multa_man_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-      fecha: addFecha || "2026-09-13",
+      fecha: addFecha || new Date().toISOString().split("T")[0],
       jugador_id: playerObj.id,
       jugador_nombre: playerObj.nombre,
       jugador_apodo: playerObj.apodo || undefined,
       jugador_dorsal: playerObj.dorsal || undefined,
       jugador_foto: playerObj.foto_url || undefined,
-      equipo: team,
+      equipo: team || "CE Europa",
       categoria: addCategoria,
-      concepto: addConcepto.trim() || "Infracción reglamentaria",
+      concepto: addConcepto.trim() || (matchedTipo ? matchedTipo.titulo : "Infracción reglamentaria"),
       importe: Number(addImporte) || 0,
-      reincidencia: "1ª Falta",
+      reincidencia: reincidenciaLabel,
       comentario: addComentario.trim(),
       creado_por: "Staff Técnico",
+      tipo_id: matchedTipo?.id,
     };
 
     saveMultasToStorage([newMulta, ...multas]);
@@ -2936,6 +2982,95 @@ export default function MultasPage() {
                   />
                 </div>
 
+                <div>
+                  <label style={{ fontSize: "11px", fontWeight: 800, color: "#1e3a8a", display: "block", marginBottom: "3px" }}>
+                    ⏰ Hora Límite Entrega
+                  </label>
+                  <input
+                    type="time"
+                    value={wellnessHoraLimite}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setWellnessHoraLimite(val);
+                      const updated = tiposMultaCatalogo.map((t) =>
+                        t.id === "tm_wellness" ? { ...t, horaLimite: val } : t
+                      );
+                      saveTiposCatalogo(updated, val);
+                    }}
+                    style={{
+                      fontSize: "13px",
+                      fontWeight: 800,
+                      padding: "6px 10px",
+                      borderRadius: "8px",
+                      border: "1.5px solid #3b82f6",
+                      background: "#eff6ff",
+                      color: "#1e3a8a",
+                      outline: "none",
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: "11px", fontWeight: 800, color: "#1e3a8a", display: "block", marginBottom: "3px" }}>
+                    📈 Ciclo 1€ a partir de
+                  </label>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <input
+                      type="date"
+                      value={wellnessFechaInicioCiclo}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setWellnessFechaInicioCiclo(val);
+                        const updated = tiposMultaCatalogo.map((t) =>
+                          t.id === "tm_wellness" ? { ...t, fechaInicioCiclo: val } : t
+                        );
+                        saveTiposCatalogo(updated, undefined, val);
+                      }}
+                      style={{
+                        fontSize: "13px",
+                        fontWeight: 800,
+                        padding: "6px 8px",
+                        borderRadius: "8px",
+                        border: "1.5px solid #3b82f6",
+                        background: "#eff6ff",
+                        color: "#1e3a8a",
+                        outline: "none",
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const today = new Date().toISOString().split("T")[0];
+                        if (
+                          window.confirm(
+                            `¿Reestablecer el cómputo de multas de Wellness a 1€ a partir de hoy (${today})? Las próximas multas volverán a costar 1€ la primera, 2€ la segunda, 3€ la tercera...`
+                          )
+                        ) {
+                          setWellnessFechaInicioCiclo(today);
+                          const updated = tiposMultaCatalogo.map((t) =>
+                            t.id === "tm_wellness" ? { ...t, fechaInicioCiclo: today } : t
+                          );
+                          saveTiposCatalogo(updated, undefined, today);
+                        }
+                      }}
+                      title="Reestablecer contador de faltas a 1€ a partir de hoy"
+                      style={{
+                        fontSize: "11px",
+                        fontWeight: 800,
+                        background: "#10b981",
+                        color: "#ffffff",
+                        border: "none",
+                        padding: "7px 10px",
+                        borderRadius: "8px",
+                        cursor: "pointer",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      🔄 Reestablecer a 1€ hoy
+                    </button>
+                  </div>
+                </div>
+
                 {/* Indicador de Estado de Planificación en esa fecha */}
                 <div style={{ marginTop: "16px" }}>
                   {wellnessAnalysis.isMatchDay ? (
@@ -3130,7 +3265,7 @@ export default function MultasPage() {
                           </span>
                         ) : row.status === "TARDE" ? (
                           <span style={{ fontSize: "11px", fontWeight: 800, color: "#b45309", background: "#fef3c7", padding: "2px 8px", borderRadius: "4px" }}>
-                            ⚠️ Tarde (&gt;12:30h)
+                            ⚠️ Tarde (&gt;{wellnessHoraLimite}h)
                           </span>
                         ) : row.status === "NO_REALIZADO" ? (
                           <span style={{ fontSize: "11px", fontWeight: 800, color: "#b91c1c", background: "#fee2e2", padding: "2px 8px", borderRadius: "4px" }}>
@@ -3327,6 +3462,12 @@ export default function MultasPage() {
                   setTipoFormImporte(5);
                   setTipoFormCategoria("Preparación Física");
                   setTipoFormIcon("⚠️");
+                  setTipoFormModelo("progresivo");
+                  setTipoFormPrecioBase(1);
+                  setTipoFormIncremento(1);
+                  setTipoFormFechaInicio(wellnessFechaInicioCiclo || new Date().toISOString().split("T")[0]);
+                  setTipoFormHoraLimite("12:30");
+                  setTipoFormEsAutomatica(false);
                   setShowTipoMultaModal(true);
                 }}
                 style={{
@@ -3386,35 +3527,108 @@ export default function MultasPage() {
                         </div>
                       </div>
 
-                      <div style={{ fontSize: "18px", fontWeight: 900, color: "#b91c1c" }}>
-                        {tipo.importe} €
+                      <div style={{ textAlign: "right" }}>
+                        {tipo.modeloCalculo === "progresivo" ? (
+                          <>
+                            <div style={{ fontSize: "17px", fontWeight: 900, color: "#1e40af" }}>
+                              {tipo.precioBase ?? 1} € <span style={{ fontSize: "11px", fontWeight: 700, color: "#64748b" }}>base</span>
+                            </div>
+                            <div style={{ fontSize: "10.5px", fontWeight: 800, color: "#2563eb" }}>
+                              +{tipo.incremento ?? 1}€ / falta
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div style={{ fontSize: "18px", fontWeight: 900, color: "#b91c1c" }}>
+                              {tipo.importeFijo ?? tipo.importe ?? 5} €
+                            </div>
+                            <div style={{ fontSize: "10.5px", fontWeight: 700, color: "#64748b" }}>
+                              Tarifa fija
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
 
-                    <p style={{ margin: "8px 0 12px", fontSize: "12px", color: "#64748b" }}>
+                    <p style={{ margin: "8px 0 8px", fontSize: "12px", color: "#64748b" }}>
                       {tipo.descripcion}
                     </p>
+
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "12px" }}>
+                      {tipo.modeloCalculo === "progresivo" ? (
+                        <>
+                          <span style={{ fontSize: "10.5px", fontWeight: 700, color: "#1e40af", background: "#dbeafe", padding: "2px 8px", borderRadius: "5px" }}>
+                            📈 Progresivo (1€, 2€, 3€...)
+                          </span>
+                          <span style={{ fontSize: "10.5px", fontWeight: 700, color: "#065f46", background: "#d1fae5", padding: "2px 8px", borderRadius: "5px" }}>
+                            📅 Ciclo desde: {formatDateDDMM(tipo.fechaInicioCiclo || wellnessFechaInicioCiclo || "2026-11-23")}
+                          </span>
+                        </>
+                      ) : (
+                        <span style={{ fontSize: "10.5px", fontWeight: 700, color: "#475569", background: "#f1f5f9", padding: "2px 8px", borderRadius: "5px" }}>
+                          🏷️ Tarifa Fija
+                        </span>
+                      )}
+                      {tipo.esAutomatica && (
+                        <span style={{ fontSize: "10.5px", fontWeight: 700, color: "#92400e", background: "#fef3c7", padding: "2px 8px", borderRadius: "5px" }}>
+                          ⏰ Límite: {tipo.horaLimite || wellnessHoraLimite || "12:30"}h
+                        </span>
+                      )}
+                    </div>
                   </div>
 
-                  <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", borderTop: "1px solid #f1f5f9", paddingTop: "8px" }}>
+                  <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", borderTop: "1px solid #f1f5f9", paddingTop: "8px", flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAddTipoId(tipo.id);
+                        setAddConcepto(tipo.titulo);
+                        setAddCategoria(tipo.categoria);
+                        const pId = todosJugadores[0]?.id || "";
+                        setAddJugadorId(pId);
+                        const d = new Date().toISOString().split("T")[0];
+                        setAddFecha(d);
+                        const calc = calculatePlayerFineAmount(tipo, pId, d, multas);
+                        setAddImporte(calc.importe);
+                        setShowAddModal(true);
+                      }}
+                      style={{
+                        fontSize: "11px",
+                        fontWeight: 800,
+                        color: "#1e3a8a",
+                        background: "#eff6ff",
+                        border: "1px solid #bfdbfe",
+                        padding: "5px 10px",
+                        borderRadius: "6px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      ➕ Multar Deportista
+                    </button>
                     <button
                       type="button"
                       onClick={() => {
                         setEditingTipoMulta(tipo);
                         setTipoFormTitulo(tipo.titulo);
-                        setTipoFormDescripcion(tipo.descripcion);
-                        setTipoFormImporte(tipo.importe);
+                        setTipoFormDescripcion(tipo.descripcion || "");
+                        setTipoFormImporte(tipo.importeFijo ?? tipo.importe ?? 5);
                         setTipoFormCategoria(tipo.categoria);
-                        setTipoFormIcon(tipo.icon);
+                        setTipoFormIcon(tipo.icon || "⚠️");
+                        setTipoFormModelo(tipo.modeloCalculo || (tipo.id.includes("well") ? "progresivo" : "fijo"));
+                        setTipoFormPrecioBase(tipo.precioBase ?? tipo.importe ?? 1);
+                        setTipoFormIncremento(tipo.incremento ?? 1);
+                        setTipoFormFechaInicio(tipo.fechaInicioCiclo || wellnessFechaInicioCiclo || "2026-11-23");
+                        setTipoFormHoraLimite(tipo.horaLimite || wellnessHoraLimite || "12:30");
+                        setTipoFormEsAutomatica(!!tipo.esAutomatica);
                         setShowTipoMultaModal(true);
                       }}
                       style={{
                         fontSize: "11px",
                         fontWeight: 700,
-                        color: "#1e3a8a",
-                        background: "#eff6ff",
-                        border: "1px solid #bfdbfe",
-                        padding: "4px 10px",
+                        color: "#334155",
+                        background: "#f8fafc",
+                        border: "1px solid #cbd5e1",
+                        padding: "5px 10px",
                         borderRadius: "6px",
                         cursor: "pointer",
                       }}
@@ -3424,9 +3638,12 @@ export default function MultasPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        if (window.confirm(`¿Eliminar el tipo de multa "${tipo.titulo}"?`)) {
-                          saveTiposCatalogo(tiposMultaCatalogo.filter((t) => t.id !== tipo.id));
+                        if (tipo.id === "tm_wellness") {
+                          if (!window.confirm(`"${tipo.titulo}" es la multa del detector automático de Wellness. ¿Seguro que deseas eliminarla?`)) return;
+                        } else {
+                          if (!window.confirm(`¿Eliminar el tipo de multa "${tipo.titulo}"?`)) return;
                         }
+                        saveTiposCatalogo(tiposMultaCatalogo.filter((t) => t.id !== tipo.id));
                       }}
                       style={{
                         fontSize: "11px",
@@ -3434,7 +3651,7 @@ export default function MultasPage() {
                         color: "#dc2626",
                         background: "#fef2f2",
                         border: "1px solid #fecaca",
-                        padding: "4px 10px",
+                        padding: "5px 10px",
                         borderRadius: "6px",
                         cursor: "pointer",
                       }}
@@ -3451,183 +3668,256 @@ export default function MultasPage() {
         {/* ══════════════════════════════════════════════════════════════ */}
         {/* MODAL: AÑADIR MULTA MANUAL AL INFORME                         */}
         {/* ══════════════════════════════════════════════════════════════ */}
-        {showAddModal && (
-          <div
-            style={{
-              position: "fixed",
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: "rgba(15, 23, 42, 0.6)",
-              backdropFilter: "blur(4px)",
-              zIndex: 9999,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: "16px",
-            }}
-            onClick={() => setShowAddModal(false)}
-          >
+        {showAddModal && (() => {
+          const activeSelectedTipo = tiposMultaCatalogo.find((t) => t.id === addTipoId);
+          const currentCalc = activeSelectedTipo && addJugadorId ? calculatePlayerFineAmount(activeSelectedTipo, addJugadorId, addFecha || new Date().toISOString().split("T")[0], multas) : null;
+
+          return (
             <div
               style={{
-                background: "#ffffff",
-                borderRadius: "14px",
-                border: "1px solid #cbd5e1",
-                boxShadow: "0 20px 30px -5px rgba(0, 0, 0, 0.3)",
-                width: "520px",
-                maxWidth: "95vw",
-                overflow: "hidden",
+                position: "fixed",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: "rgba(15, 23, 42, 0.6)",
+                backdropFilter: "blur(4px)",
+                zIndex: 9999,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "16px",
               }}
-              onClick={(e) => e.stopPropagation()}
+              onClick={() => setShowAddModal(false)}
             >
-              <div style={{ background: "#0f172a", color: "#ffffff", padding: "14px 18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 900 }}>+ Añadir Multa al Registro</h3>
-                <button type="button" onClick={() => setShowAddModal(false)} style={{ background: "transparent", border: "none", color: "#cbd5e1", fontSize: "16px", cursor: "pointer" }}>✕</button>
-              </div>
-
-              <form onSubmit={handleAddMultaSubmit} style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: "12px" }}>
-                <div>
-                  <label style={{ fontSize: "11px", fontWeight: 800, color: "#1e3a8a", display: "block", marginBottom: "4px" }}>
-                    🏃 Deportista Registrado
-                  </label>
-                  <select
-                    value={addJugadorId}
-                    onChange={(e) => setAddJugadorId(e.target.value)}
-                    required
-                    style={{ width: "100%", fontSize: "13px", padding: "8px 10px", borderRadius: "8px", border: "1px solid #cbd5e1", background: "#f8fafc" }}
-                  >
-                    <option value="" disabled>Selecciona deportista...</option>
-                    {todosJugadores.map((j) => (
-                      <option key={j.id} value={j.id}>
-                        {j.dorsal ? `#${j.dorsal} ` : ""}{(j.apodo || j.nombre || "").toUpperCase()} {j.apodo ? `(${j.apodo})` : ""}
-                      </option>
-                    ))}
-                  </select>
+              <div
+                style={{
+                  background: "#ffffff",
+                  borderRadius: "14px",
+                  border: "1px solid #cbd5e1",
+                  boxShadow: "0 20px 30px -5px rgba(0, 0, 0, 0.3)",
+                  width: "540px",
+                  maxWidth: "95vw",
+                  maxHeight: "90vh",
+                  overflowY: "auto",
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div style={{ background: "#0f172a", color: "#ffffff", padding: "14px 18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 900 }}>+ Añadir Multa al Registro</h3>
+                  <button type="button" onClick={() => setShowAddModal(false)} style={{ background: "transparent", border: "none", color: "#cbd5e1", fontSize: "16px", cursor: "pointer" }}>✕</button>
                 </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                <form onSubmit={handleAddMultaSubmit} style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: "12px" }}>
                   <div>
                     <label style={{ fontSize: "11px", fontWeight: 800, color: "#1e3a8a", display: "block", marginBottom: "4px" }}>
-                      📅 Fecha de la Infracción
-                    </label>
-                    <input
-                      type="date"
-                      value={addFecha}
-                      onChange={(e) => setAddFecha(e.target.value)}
-                      required
-                      style={{ width: "100%", fontSize: "12.5px", padding: "7px 10px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
-                    />
-                  </div>
-
-                  <div>
-                    <label style={{ fontSize: "11px", fontWeight: 800, color: "#1e3a8a", display: "block", marginBottom: "4px" }}>
-                      ⚖️ Tipo Predefinido
+                      🏃 Deportista Registrado
                     </label>
                     <select
-                      value={addTipoId}
+                      value={addJugadorId}
                       onChange={(e) => {
-                        const val = e.target.value;
-                        setAddTipoId(val);
-                        const match = tiposMultaCatalogo.find((t) => t.id === val);
-                        if (match) {
-                          setAddConcepto(match.titulo);
-                          setAddImporte(match.importe);
-                          setAddCategoria(match.categoria);
+                        const newJId = e.target.value;
+                        setAddJugadorId(newJId);
+                        if (activeSelectedTipo) {
+                          const calc = calculatePlayerFineAmount(activeSelectedTipo, newJId, addFecha, multas);
+                          setAddImporte(calc.importe);
                         }
                       }}
-                      style={{ width: "100%", fontSize: "12.5px", padding: "7px 10px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
+                      required
+                      style={{ width: "100%", fontSize: "13px", padding: "8px 10px", borderRadius: "8px", border: "1px solid #cbd5e1", background: "#f8fafc" }}
                     >
-                      <option value="">Personalizado...</option>
-                      {tiposMultaCatalogo.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.icon} {t.titulo} ({t.importe}€)
+                      <option value="" disabled>Selecciona deportista...</option>
+                      {todosJugadores.map((j) => (
+                        <option key={j.id} value={j.id}>
+                          {j.dorsal ? `#${j.dorsal} ` : ""}{(j.apodo || j.nombre || "").toUpperCase()} {j.apodo ? `(${j.apodo})` : ""}
                         </option>
                       ))}
                     </select>
                   </div>
-                </div>
 
-                <div>
-                  <label style={{ fontSize: "11px", fontWeight: 800, color: "#1e3a8a", display: "block", marginBottom: "4px" }}>
-                    Concepto / Motivo de la Multa
-                  </label>
-                  <input
-                    type="text"
-                    value={addConcepto}
-                    onChange={(e) => setAddConcepto(e.target.value)}
-                    placeholder="Ej: Cuestionario Wellness (>12:30h), Retraso gimnasio..."
-                    required
-                    style={{ width: "100%", fontSize: "12.5px", padding: "7px 10px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
-                  />
-                </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                    <div>
+                      <label style={{ fontSize: "11px", fontWeight: 800, color: "#1e3a8a", display: "block", marginBottom: "4px" }}>
+                        📅 Fecha de la Infracción
+                      </label>
+                      <input
+                        type="date"
+                        value={addFecha}
+                        onChange={(e) => {
+                          const newF = e.target.value;
+                          setAddFecha(newF);
+                          if (activeSelectedTipo && addJugadorId) {
+                            const calc = calculatePlayerFineAmount(activeSelectedTipo, addJugadorId, newF, multas);
+                            setAddImporte(calc.importe);
+                          }
+                        }}
+                        required
+                        style={{ width: "100%", fontSize: "12.5px", padding: "7px 10px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
+                      />
+                    </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                    <div>
+                      <label style={{ fontSize: "11px", fontWeight: 800, color: "#1e3a8a", display: "block", marginBottom: "4px" }}>
+                        ⚖️ Tipo de Multa
+                      </label>
+                      <select
+                        value={addTipoId}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setAddTipoId(val);
+                          const match = tiposMultaCatalogo.find((t) => t.id === val);
+                          if (match) {
+                            setAddConcepto(match.titulo);
+                            setAddCategoria(match.categoria);
+                            const calc = calculatePlayerFineAmount(match, addJugadorId, addFecha, multas);
+                            setAddImporte(calc.importe);
+                          }
+                        }}
+                        style={{ width: "100%", fontSize: "12.5px", padding: "7px 10px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
+                      >
+                        <option value="">Personalizado...</option>
+                        {tiposMultaCatalogo.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.icon} {t.titulo} ({t.modeloCalculo === "progresivo" ? `${t.precioBase ?? 1}€ base` : `${t.importeFijo ?? t.importe}€`})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
                   <div>
                     <label style={{ fontSize: "11px", fontWeight: 800, color: "#1e3a8a", display: "block", marginBottom: "4px" }}>
-                      Importe (€)
+                      Concepto / Motivo de la Multa
                     </label>
                     <input
-                      type="number"
-                      value={addImporte}
-                      onChange={(e) => setAddImporte(Number(e.target.value) || 0)}
+                      type="text"
+                      value={addConcepto}
+                      onChange={(e) => setAddConcepto(e.target.value)}
+                      placeholder="Ej: Cuestionario Wellness (>12:30h), Retraso gimnasio..."
                       required
-                      min={0}
-                      style={{ width: "100%", fontSize: "12.5px", fontWeight: 800, padding: "7px 10px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
+                      style={{ width: "100%", fontSize: "12.5px", padding: "7px 10px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
                     />
                   </div>
 
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                    <div>
+                      <label style={{ fontSize: "11px", fontWeight: 800, color: "#1e3a8a", display: "block", marginBottom: "4px" }}>
+                        Importe (€)
+                      </label>
+                      <input
+                        type="number"
+                        value={addImporte}
+                        onChange={(e) => setAddImporte(Number(e.target.value) || 0)}
+                        required
+                        min={0}
+                        style={{ width: "100%", fontSize: "13px", fontWeight: 900, padding: "7px 10px", borderRadius: "8px", border: "1.5px solid #2563eb", color: "#1e3a8a" }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: "11px", fontWeight: 800, color: "#1e3a8a", display: "block", marginBottom: "4px" }}>
+                        Categoría
+                      </label>
+                      <select
+                        value={addCategoria}
+                        onChange={(e) => setAddCategoria(e.target.value as any)}
+                        style={{ width: "100%", fontSize: "12.5px", padding: "7px 10px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
+                      >
+                        <option value="Preparación Física">Preparación Física</option>
+                        <option value="Vestuario">Vestuario</option>
+                        <option value="Médico / Fisioterapia">Médico / Fisioterapia</option>
+                        <option value="Nutrición">Nutrición</option>
+                        <option value="Técnico / Táctico">Técnico / Táctico</option>
+                        <option value="Otros">Otros</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* CAJA INFORMATIVA DE CÁLCULO DE TARIFA */}
+                  {activeSelectedTipo && currentCalc && (
+                    <div
+                      style={{
+                        fontSize: "11.5px",
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        background: activeSelectedTipo.modeloCalculo === "progresivo" ? "#eff6ff" : "#f8fafc",
+                        border: activeSelectedTipo.modeloCalculo === "progresivo" ? "1px solid #bfdbfe" : "1px solid #cbd5e1",
+                        color: activeSelectedTipo.modeloCalculo === "progresivo" ? "#1e40af" : "#334155",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        gap: "10px",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <div>
+                        {activeSelectedTipo.modeloCalculo === "progresivo" ? (
+                          <>
+                            <strong>📈 Modelo Progresivo Activo:</strong> Falta #{currentCalc.numFalta} del jugador en este ciclo (desde {formatDateDDMM(activeSelectedTipo.fechaInicioCiclo || wellnessFechaInicioCiclo || "2026-11-23")}).
+                            <br />
+                            Precio sugerido calculado: <strong>{currentCalc.importe} €</strong> ({currentCalc.reincidencia}).
+                          </>
+                        ) : (
+                          <>
+                            <strong>🏷️ Tarifa Fija:</strong> Importe estándar de <strong>{activeSelectedTipo.importeFijo ?? activeSelectedTipo.importe} €</strong> por infracción.
+                          </>
+                        )}
+                      </div>
+
+                      {addImporte !== currentCalc.importe && (
+                        <button
+                          type="button"
+                          onClick={() => setAddImporte(currentCalc.importe)}
+                          style={{
+                            fontSize: "10.5px",
+                            fontWeight: 800,
+                            background: "#2563eb",
+                            color: "#ffffff",
+                            border: "none",
+                            padding: "4px 8px",
+                            borderRadius: "5px",
+                            cursor: "pointer",
+                          }}
+                        >
+                          ↺ Aplicar sugerido ({currentCalc.importe}€)
+                        </button>
+                      )}
+                    </div>
+                  )}
+
                   <div>
                     <label style={{ fontSize: "11px", fontWeight: 800, color: "#1e3a8a", display: "block", marginBottom: "4px" }}>
-                      Categoría
+                      Observaciones (Opcional)
                     </label>
-                    <select
-                      value={addCategoria}
-                      onChange={(e) => setAddCategoria(e.target.value as any)}
-                      style={{ width: "100%", fontSize: "12.5px", padding: "7px 10px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
-                    >
-                      <option value="Preparación Física">Preparación Física</option>
-                      <option value="Vestuario">Vestuario</option>
-                      <option value="Médico / Fisioterapia">Médico / Fisioterapia</option>
-                      <option value="Nutrición">Nutrición</option>
-                      <option value="Técnico / Táctico">Técnico / Táctico</option>
-                      <option value="Otros">Otros</option>
-                    </select>
+                    <textarea
+                      value={addComentario}
+                      onChange={(e) => setAddComentario(e.target.value)}
+                      placeholder="Detalles adicionales opcionales..."
+                      rows={2}
+                      style={{ width: "100%", fontSize: "12px", padding: "7px 10px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
+                    />
                   </div>
-                </div>
 
-                <div>
-                  <label style={{ fontSize: "11px", fontWeight: 800, color: "#1e3a8a", display: "block", marginBottom: "4px" }}>
-                    Observaciones (Opcional)
-                  </label>
-                  <textarea
-                    value={addComentario}
-                    onChange={(e) => setAddComentario(e.target.value)}
-                    placeholder="Detalles adicionales opcionales..."
-                    rows={2}
-                    style={{ width: "100%", fontSize: "12px", padding: "7px 10px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
-                  />
-                </div>
-
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px" }}>
-                  <button
-                    type="button"
-                    onClick={() => setShowAddModal(false)}
-                    style={{ fontSize: "12px", fontWeight: 700, color: "#64748b", background: "#f1f5f9", padding: "8px 16px", borderRadius: "8px", border: "1px solid #cbd5e1", cursor: "pointer" }}
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    style={{ fontSize: "12px", fontWeight: 800, color: "#ffffff", background: "#1e3a8a", padding: "8px 20px", borderRadius: "8px", border: "none", cursor: "pointer" }}
-                  >
-                    Guardar Multa
-                  </button>
-                </div>
-              </form>
+                  <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px" }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddModal(false)}
+                      style={{ fontSize: "12px", fontWeight: 700, color: "#64748b", background: "#f1f5f9", padding: "8px 16px", borderRadius: "8px", border: "1px solid #cbd5e1", cursor: "pointer" }}
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      style={{ fontSize: "12px", fontWeight: 800, color: "#ffffff", background: "#1e3a8a", padding: "8px 20px", borderRadius: "8px", border: "none", cursor: "pointer" }}
+                    >
+                      Guardar Multa
+                    </button>
+                  </div>
+                </form>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* ══════════════════════════════════════════════════════════════ */}
         {/* MODAL: EDITAR MULTA EXISTENTE                                 */}
@@ -3774,9 +4064,10 @@ export default function MultasPage() {
                 borderRadius: "14px",
                 border: "1px solid #cbd5e1",
                 boxShadow: "0 20px 30px -5px rgba(0, 0, 0, 0.3)",
-                width: "480px",
+                width: "560px",
                 maxWidth: "95vw",
-                overflow: "hidden",
+                maxHeight: "90vh",
+                overflowY: "auto",
               }}
               onClick={(e) => e.stopPropagation()}
             >
@@ -3792,71 +4083,66 @@ export default function MultasPage() {
                   e.preventDefault();
                   if (!tipoFormTitulo.trim()) return;
 
+                  const basePrice = tipoFormModelo === "progresivo" ? (Number(tipoFormPrecioBase) || 1) : (Number(tipoFormImporte) || 0);
+
+                  const updatedType: TipoMultaConfig = {
+                    id: editingTipoMulta ? editingTipoMulta.id : `tm_${Date.now()}`,
+                    titulo: tipoFormTitulo.trim(),
+                    descripcion: tipoFormDescripcion.trim(),
+                    importe: basePrice,
+                    importeFijo: tipoFormModelo === "fijo" ? (Number(tipoFormImporte) || 0) : undefined,
+                    categoria: tipoFormCategoria,
+                    icon: tipoFormIcon || "⚠️",
+                    activo: true,
+                    modeloCalculo: tipoFormModelo,
+                    precioBase: tipoFormModelo === "progresivo" ? (Number(tipoFormPrecioBase) || 1) : undefined,
+                    incremento: tipoFormModelo === "progresivo" ? (Number(tipoFormIncremento) || 1) : undefined,
+                    fechaInicioCiclo: tipoFormModelo === "progresivo" ? tipoFormFechaInicio : undefined,
+                    esAutomatica: tipoFormEsAutomatica,
+                    horaLimite: tipoFormEsAutomatica ? tipoFormHoraLimite : undefined,
+                  };
+
+                  let newTiposList: TipoMultaConfig[];
                   if (editingTipoMulta) {
-                    const updated = tiposMultaCatalogo.map((t) => {
-                      if (t.id === editingTipoMulta.id) {
-                        return {
-                          ...t,
-                          titulo: tipoFormTitulo.trim(),
-                          descripcion: tipoFormDescripcion.trim(),
-                          importe: Number(tipoFormImporte) || 0,
-                          categoria: tipoFormCategoria,
-                          icon: tipoFormIcon,
-                        };
-                      }
-                      return t;
-                    });
-                    saveTiposCatalogo(updated);
+                    newTiposList = tiposMultaCatalogo.map((t) => (t.id === editingTipoMulta.id ? updatedType : t));
                   } else {
-                    const newType: TipoMultaConfig = {
-                      id: `tm_${Date.now()}`,
-                      titulo: tipoFormTitulo.trim(),
-                      descripcion: tipoFormDescripcion.trim(),
-                      importe: Number(tipoFormImporte) || 0,
-                      categoria: tipoFormCategoria,
-                      icon: tipoFormIcon,
-                    };
-                    saveTiposCatalogo([...tiposMultaCatalogo, newType]);
+                    newTiposList = [...tiposMultaCatalogo, updatedType];
                   }
+
+                  const syncedHora = (updatedType.id === "tm_wellness" || updatedType.esAutomatica) ? updatedType.horaLimite : undefined;
+                  const syncedFecha = (updatedType.id === "tm_wellness" || updatedType.modeloCalculo === "progresivo") ? updatedType.fechaInicioCiclo : undefined;
+
+                  saveTiposCatalogo(newTiposList, syncedHora, syncedFecha);
                   setShowTipoMultaModal(false);
                 }}
-                style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: "12px" }}
+                style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: "14px" }}
               >
-                <div style={{ display: "grid", gridTemplateColumns: "60px 1fr", gap: "10px" }}>
+                {/* Icono y Nombre */}
+                <div style={{ display: "grid", gridTemplateColumns: "70px 1fr", gap: "10px" }}>
                   <div>
                     <label style={{ fontSize: "11px", fontWeight: 800, color: "#1e3a8a", display: "block", marginBottom: "4px" }}>Icono</label>
                     <input
                       type="text"
                       value={tipoFormIcon}
                       onChange={(e) => setTipoFormIcon(e.target.value)}
-                      style={{ width: "100%", fontSize: "16px", textAlign: "center", padding: "6px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
+                      style={{ width: "100%", fontSize: "18px", textAlign: "center", padding: "6px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
                     />
                   </div>
                   <div>
-                    <label style={{ fontSize: "11px", fontWeight: 800, color: "#1e3a8a", display: "block", marginBottom: "4px" }}>Nombre del Tipo</label>
+                    <label style={{ fontSize: "11px", fontWeight: 800, color: "#1e3a8a", display: "block", marginBottom: "4px" }}>Nombre del Tipo de Multa</label>
                     <input
                       type="text"
                       value={tipoFormTitulo}
                       onChange={(e) => setTipoFormTitulo(e.target.value)}
-                      placeholder="Ej: Retraso Gimnasio"
+                      placeholder="Ej: Cuestionario Wellness, Retraso Gimnasio, Material..."
                       required
                       style={{ width: "100%", fontSize: "12.5px", padding: "7px 10px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
                     />
                   </div>
                 </div>
 
+                {/* Categoría y Descripción */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                  <div>
-                    <label style={{ fontSize: "11px", fontWeight: 800, color: "#1e3a8a", display: "block", marginBottom: "4px" }}>Importe Base (€)</label>
-                    <input
-                      type="number"
-                      value={tipoFormImporte}
-                      onChange={(e) => setTipoFormImporte(Number(e.target.value) || 0)}
-                      required
-                      min={0}
-                      style={{ width: "100%", fontSize: "12.5px", fontWeight: 800, padding: "7px 10px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
-                    />
-                  </div>
                   <div>
                     <label style={{ fontSize: "11px", fontWeight: 800, color: "#1e3a8a", display: "block", marginBottom: "4px" }}>Categoría</label>
                     <select
@@ -3872,20 +4158,172 @@ export default function MultasPage() {
                       <option value="Otros">Otros</option>
                     </select>
                   </div>
+                  <div>
+                    <label style={{ fontSize: "11px", fontWeight: 800, color: "#1e3a8a", display: "block", marginBottom: "4px" }}>Descripción / Supuesto</label>
+                    <input
+                      type="text"
+                      value={tipoFormDescripcion}
+                      onChange={(e) => setTipoFormDescripcion(e.target.value)}
+                      placeholder="Detalles sobre cuándo aplica..."
+                      style={{ width: "100%", fontSize: "12.5px", padding: "7px 10px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
+                    />
+                  </div>
                 </div>
 
-                <div>
-                  <label style={{ fontSize: "11px", fontWeight: 800, color: "#1e3a8a", display: "block", marginBottom: "4px" }}>Descripción / Supuesto</label>
-                  <textarea
-                    value={tipoFormDescripcion}
-                    onChange={(e) => setTipoFormDescripcion(e.target.value)}
-                    placeholder="Cuándo y cómo se aplica esta infracción..."
-                    rows={2}
-                    style={{ width: "100%", fontSize: "12px", padding: "7px 10px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
-                  />
+                {/* SELECTOR DE MODELO DE COBRO */}
+                <div style={{ borderTop: "1px solid #e2e8f0", paddingTop: "12px" }}>
+                  <label style={{ fontSize: "12px", fontWeight: 900, color: "#0f172a", display: "block", marginBottom: "6px" }}>
+                    💰 Modelo de Cobro y Cómputo del Dinero
+                  </label>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "10px" }}>
+                    <div
+                      onClick={() => setTipoFormModelo("progresivo")}
+                      style={{
+                        border: tipoFormModelo === "progresivo" ? "2px solid #2563eb" : "1px solid #cbd5e1",
+                        background: tipoFormModelo === "progresivo" ? "#eff6ff" : "#f8fafc",
+                        borderRadius: "10px",
+                        padding: "10px",
+                        cursor: "pointer",
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "3px" }}>
+                        <span style={{ fontSize: "16px" }}>📈</span>
+                        <strong style={{ fontSize: "12.5px", color: tipoFormModelo === "progresivo" ? "#1e40af" : "#334155" }}>
+                          Progresivo / Reincidente
+                        </strong>
+                      </div>
+                      <p style={{ margin: 0, fontSize: "11px", color: "#64748b", lineHeight: "1.3" }}>
+                        1€ la 1ª falta, 2€ la 2ª, 3€ la 3ª... hasta que se restablezca el ciclo.
+                      </p>
+                    </div>
+
+                    <div
+                      onClick={() => setTipoFormModelo("fijo")}
+                      style={{
+                        border: tipoFormModelo === "fijo" ? "2px solid #2563eb" : "1px solid #cbd5e1",
+                        background: tipoFormModelo === "fijo" ? "#eff6ff" : "#f8fafc",
+                        borderRadius: "10px",
+                        padding: "10px",
+                        cursor: "pointer",
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "3px" }}>
+                        <span style={{ fontSize: "16px" }}>🏷️</span>
+                        <strong style={{ fontSize: "12.5px", color: tipoFormModelo === "fijo" ? "#1e40af" : "#334155" }}>
+                          Tarifa Fija
+                        </strong>
+                      </div>
+                      <p style={{ margin: 0, fontSize: "11px", color: "#64748b", lineHeight: "1.3" }}>
+                        Importe idéntico fijo por cada falta (ej: 10€ siempre).
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* PARÁMETROS DEL MODELO PROGRESIVO */}
+                  {tipoFormModelo === "progresivo" ? (
+                    <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "10px", padding: "12px", display: "flex", flexDirection: "column", gap: "10px" }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                        <div>
+                          <label style={{ fontSize: "11px", fontWeight: 800, color: "#166534", display: "block", marginBottom: "3px" }}>
+                            1ª Falta: Precio Base (€)
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={tipoFormPrecioBase}
+                            onChange={(e) => setTipoFormPrecioBase(Number(e.target.value) || 0)}
+                            style={{ width: "100%", fontSize: "12.5px", fontWeight: 800, padding: "6px 8px", borderRadius: "6px", border: "1px solid #86efac" }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: "11px", fontWeight: 800, color: "#166534", display: "block", marginBottom: "3px" }}>
+                            Incremento por Reincidencia (+€)
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={tipoFormIncremento}
+                            onChange={(e) => setTipoFormIncremento(Number(e.target.value) || 0)}
+                            style={{ width: "100%", fontSize: "12.5px", fontWeight: 800, padding: "6px 8px", borderRadius: "6px", border: "1px solid #86efac" }}
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "3px" }}>
+                          <label style={{ fontSize: "11px", fontWeight: 800, color: "#166534" }}>
+                            📅 Ciclo Activo a partir de (Reset a {tipoFormPrecioBase}€)
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setTipoFormFechaInicio(new Date().toISOString().split("T")[0])}
+                            style={{ fontSize: "10px", fontWeight: 800, color: "#15803d", background: "#dcfce7", border: "1px solid #86efac", borderRadius: "4px", padding: "2px 6px", cursor: "pointer" }}
+                          >
+                            Hoy ({formatDateDDMM(new Date().toISOString().split("T")[0])})
+                          </button>
+                        </div>
+                        <input
+                          type="date"
+                          value={tipoFormFechaInicio}
+                          onChange={(e) => setTipoFormFechaInicio(e.target.value)}
+                          style={{ width: "100%", fontSize: "12.5px", padding: "6px 8px", borderRadius: "6px", border: "1px solid #86efac" }}
+                        />
+                        <small style={{ fontSize: "10.5px", color: "#4b5563", marginTop: "3px", display: "block" }}>
+                          💡 Las multas anteriores a esta fecha no contarán para la reincidencia. Los jugadores volverán a empezar en {tipoFormPrecioBase}€.
+                        </small>
+                      </div>
+                    </div>
+                  ) : (
+                    /* PARÁMETROS DEL MODELO FIJO */
+                    <div style={{ background: "#f8fafc", border: "1px solid #cbd5e1", borderRadius: "10px", padding: "12px" }}>
+                      <label style={{ fontSize: "11px", fontWeight: 800, color: "#1e3a8a", display: "block", marginBottom: "3px" }}>
+                        Importe Fijo por Infracción (€)
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={tipoFormImporte}
+                        onChange={(e) => setTipoFormImporte(Number(e.target.value) || 0)}
+                        style={{ width: "100%", fontSize: "13px", fontWeight: 800, padding: "7px 10px", borderRadius: "6px", border: "1px solid #cbd5e1" }}
+                      />
+                    </div>
+                  )}
                 </div>
 
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px" }}>
+                {/* CONTROL HORARIO / AUTOMATIZACIÓN */}
+                <div style={{ borderTop: "1px solid #e2e8f0", paddingTop: "12px" }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontSize: "12px", fontWeight: 800, color: "#0f172a" }}>
+                    <input
+                      type="checkbox"
+                      checked={tipoFormEsAutomatica}
+                      onChange={(e) => setTipoFormEsAutomatica(e.target.checked)}
+                      style={{ width: "16px", height: "16px", cursor: "pointer" }}
+                    />
+                    <span>⏰ Multa con Control Horario / Límite de Entrega</span>
+                  </label>
+
+                  {tipoFormEsAutomatica && (
+                    <div style={{ marginTop: "8px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: "8px", padding: "10px" }}>
+                      <label style={{ fontSize: "11px", fontWeight: 800, color: "#92400e", display: "block", marginBottom: "3px" }}>
+                        Hora Límite de Entrega (HH:MM)
+                      </label>
+                      <input
+                        type="time"
+                        value={tipoFormHoraLimite}
+                        onChange={(e) => setTipoFormHoraLimite(e.target.value)}
+                        style={{ fontSize: "13px", fontWeight: 800, padding: "6px 10px", borderRadius: "6px", border: "1px solid #fcd34d", color: "#92400e" }}
+                      />
+                      <small style={{ fontSize: "10.5px", color: "#78350f", display: "block", marginTop: "3px" }}>
+                        Cualquier entrega registrada después de esta hora se considerará fuera de plazo automáticamente.
+                      </small>
+                    </div>
+                  )}
+                </div>
+
+                {/* BOTONES ACCIÓN */}
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px", borderTop: "1px solid #f1f5f9", paddingTop: "12px" }}>
                   <button
                     type="button"
                     onClick={() => setShowTipoMultaModal(false)}
@@ -3897,7 +4335,7 @@ export default function MultasPage() {
                     type="submit"
                     style={{ fontSize: "12px", fontWeight: 800, color: "#ffffff", background: "#1e3a8a", padding: "8px 20px", borderRadius: "8px", border: "none", cursor: "pointer" }}
                   >
-                    Guardar Tipo
+                    Guardar Tipo de Multa
                   </button>
                 </div>
               </form>

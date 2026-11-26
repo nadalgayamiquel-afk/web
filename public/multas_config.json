@@ -1,0 +1,23 @@
+{
+  "wellnessHoraLimite": "12:30",
+  "wellnessFechaInicioCiclo": "2026-11-23",
+  "tipos": [
+    {
+      "id": "tm_wellness",
+      "icon": "⏱️",
+      "titulo": "Cuestionario Wellness",
+      "descripcion": "No realizar el cuestionario o completarlo después de la hora límite",
+      "importe": 1,
+      "categoria": "Preparación Física",
+      "activo": true,
+      "modeloCalculo": "progresivo",
+      "precioBase": 1,
+      "incremento": 1,
+      "importeFijo": 1,
+      "fechaInicioCiclo": "2026-11-23",
+      "esAutomatica": true,
+      "horaLimite": "12:30"
+    }
+  ],
+  "updatedAt": "2026-11-26T16:30:00.000Z"
+}

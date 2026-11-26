@@ -5141,6 +5141,202 @@ export async function saveWeeklyRatioColumnsServer(
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// MULTAS: CONFIGURACIÓN, BAREMOS Y REGISTRO OFICIAL
+// ═══════════════════════════════════════════════════════════════════
+const MULTAS_CONFIG_UUID = "00000000-0000-0000-0000-000000000005";
+const MULTAS_RECORDS_UUID = "00000000-0000-0000-0000-000000000006";
+
+export interface TipoMultaConfigServer {
+  id: string;
+  titulo: string;
+  descripcion: string;
+  importe: number;
+  categoria: "Preparación Física" | "Vestuario" | "Médico / Fisioterapia" | "Nutrición" | "Técnico / Táctico" | "Otros";
+  icon: string;
+  activo: boolean;
+  modeloCalculo: "progresivo" | "fijo";
+  importeFijo: number;
+  precioBase: number;
+  incremento: number;
+  fechaInicioCiclo: string;
+  esAutomatica?: boolean;
+  horaLimite?: string;
+}
+
+export interface MultasConfigData {
+  tipos: TipoMultaConfigServer[];
+  wellnessHoraLimite: string;
+  wellnessFechaInicioCiclo: string;
+  updatedAt?: string;
+}
+
+const DEFAULT_MULTAS_CONFIG: MultasConfigData = {
+  wellnessHoraLimite: "12:30",
+  wellnessFechaInicioCiclo: "2026-11-23",
+  tipos: [
+    {
+      id: "tm_wellness",
+      icon: "⏱️",
+      titulo: "Cuestionario Wellness",
+      descripcion: "No realizar el cuestionario o completarlo después de la hora límite",
+      importe: 1,
+      categoria: "Preparación Física",
+      activo: true,
+      modeloCalculo: "progresivo",
+      precioBase: 1,
+      incremento: 1,
+      importeFijo: 1,
+      fechaInicioCiclo: "2026-11-23",
+      esAutomatica: true,
+      horaLimite: "12:30",
+    },
+  ],
+};
+
+export async function getMultasConfigServer(): Promise<MultasConfigData> {
+  try {
+    const supabase = getServerSupabase();
+    const { data: dbRow } = await supabase
+      .from("db_testing")
+      .select("data")
+      .eq("id", MULTAS_CONFIG_UUID)
+      .eq("test_type_id", "multas_config")
+      .maybeSingle();
+
+    if (dbRow?.data && typeof dbRow.data === "object") {
+      const data = dbRow.data as MultasConfigData;
+      if (Array.isArray(data.tipos) && data.tipos.length > 0) {
+        return {
+          tipos: data.tipos,
+          wellnessHoraLimite: data.wellnessHoraLimite || "12:30",
+          wellnessFechaInicioCiclo: data.wellnessFechaInicioCiclo || "2026-11-23",
+          updatedAt: data.updatedAt,
+        };
+      }
+    }
+
+    const path = require("path");
+    const filePath = path.join(process.cwd(), "public", "multas_config.json");
+    if (fs.existsSync(filePath)) {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+        if (parsed && Array.isArray(parsed.tipos) && parsed.tipos.length > 0) {
+          return {
+            tipos: parsed.tipos,
+            wellnessHoraLimite: parsed.wellnessHoraLimite || "12:30",
+            wellnessFechaInicioCiclo: parsed.wellnessFechaInicioCiclo || "2026-11-23",
+            updatedAt: parsed.updatedAt,
+          };
+        }
+      } catch (err) {}
+    }
+  } catch (e) {
+    console.error("Error reading multas config from server:", e);
+  }
+  return DEFAULT_MULTAS_CONFIG;
+}
+
+export async function saveMultasConfigServer(
+  config: Partial<MultasConfigData>
+): Promise<{ success: boolean; config: MultasConfigData }> {
+  try {
+    const existing = await getMultasConfigServer();
+    const payload: MultasConfigData = {
+      tipos: Array.isArray(config.tipos) && config.tipos.length > 0 ? config.tipos : existing.tipos,
+      wellnessHoraLimite: config.wellnessHoraLimite || existing.wellnessHoraLimite || "12:30",
+      wellnessFechaInicioCiclo: config.wellnessFechaInicioCiclo || existing.wellnessFechaInicioCiclo || "2026-11-23",
+      updatedAt: new Date().toISOString(),
+    };
+
+    const supabase = getServerSupabase();
+    await supabase.from("db_testing").upsert({
+      id: MULTAS_CONFIG_UUID,
+      name: "Configuración Tipos y Baremos de Multas",
+      test_type_id: "multas_config",
+      structure: "CONFIG",
+      data: payload,
+    });
+
+    try {
+      const path = require("path");
+      const filePath = path.join(process.cwd(), "public", "multas_config.json");
+      fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), "utf8");
+    } catch (e) {}
+
+    return { success: true, config: payload };
+  } catch (e) {
+    console.error("Error saving multas config to server:", e);
+    return { success: false, config: DEFAULT_MULTAS_CONFIG };
+  }
+}
+
+export async function getMultasRecordsServer(): Promise<any[]> {
+  try {
+    const supabase = getServerSupabase();
+    const { data: dbRow } = await supabase
+      .from("db_testing")
+      .select("data")
+      .eq("id", MULTAS_RECORDS_UUID)
+      .eq("test_type_id", "multas_records")
+      .maybeSingle();
+
+    if (dbRow?.data && typeof dbRow.data === "object") {
+      const multas = (dbRow.data as any).multas;
+      if (Array.isArray(multas)) {
+        return multas;
+      }
+    }
+
+    const path = require("path");
+    const filePath = path.join(process.cwd(), "public", "multas_records.json");
+    if (fs.existsSync(filePath)) {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+        if (Array.isArray(parsed?.multas)) {
+          return parsed.multas;
+        }
+      } catch (err) {}
+    }
+  } catch (e) {
+    console.error("Error reading multas records from server:", e);
+  }
+  return [];
+}
+
+export async function saveMultasRecordsServer(
+  records: any[]
+): Promise<{ success: boolean; count: number }> {
+  try {
+    const valid = Array.isArray(records) ? records : [];
+    const payload = {
+      multas: valid,
+      count: valid.length,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const supabase = getServerSupabase();
+    await supabase.from("db_testing").upsert({
+      id: MULTAS_RECORDS_UUID,
+      name: "Registro Oficial de Multas",
+      test_type_id: "multas_records",
+      structure: "REGISTRO",
+      data: payload,
+    });
+
+    try {
+      const path = require("path");
+      const filePath = path.join(process.cwd(), "public", "multas_records.json");
+      fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), "utf8");
+    } catch (e) {}
+
+    return { success: true, count: valid.length };
+  } catch (e) {
+    console.error("Error saving multas records to server:", e);
+    return { success: false, count: 0 };
+  }
+}
+
 export async function getExternalLinksBBDD(): Promise<ExternalDatabaseLinks> {
   try {
     const supabase = getServerSupabase();

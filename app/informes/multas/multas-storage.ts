@@ -56,8 +56,10 @@ export function cleanupObsoleteLocalStorage(): void {
       "multas_registro_v6",
       "multas_registro_v7",
       "multas_registro_v8",
+      "multas_registro_v9",
       "multas_deleted_ids",
       "tipos_multa_catalogo",
+      "tipos_multa_catalogo_v2",
     ];
 
     obsoleteKeys.forEach((k) => {
@@ -111,7 +113,7 @@ export async function saveMultasToDatabase(multas: StoredMulta[]): Promise<void>
         comentario: m.comentario,
         creado_por: m.creado_por,
       }));
-      localStorage.setItem("multas_registro_v9", JSON.stringify(compactList));
+      localStorage.setItem("multas_registro_v10", JSON.stringify(compactList));
     } catch (quotaError) {
       // Si la cuota de localStorage se supera, limpiar claves obsoletas adicionales
       try {
@@ -149,7 +151,7 @@ export async function loadMultasFromDatabase(): Promise<StoredMulta[] | null> {
   // 2. Respaldo desde localStorage
   if (typeof window !== "undefined") {
     try {
-      const raw = localStorage.getItem("multas_registro_v9");
+      const raw = localStorage.getItem("multas_registro_v10");
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed) && parsed.length > 0) {
