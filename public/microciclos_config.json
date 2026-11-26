@@ -1,0 +1,86 @@
+{
+  "microcycles": [
+    {
+      "id": "mc-2026-11-30_2026-12-06",
+      "nombre": "Microciclo 30 nov al 6 dic (Doble Partido)",
+      "start": "2026-11-30",
+      "end": "2026-12-06",
+      "tipo": "doble_partido"
+    },
+    {
+      "id": "mc-2026-11-23_2026-11-29",
+      "nombre": "Microciclo 23 nov al 29 nov (vs Villarreal CF B)",
+      "start": "2026-11-23",
+      "end": "2026-11-29",
+      "tipo": "media"
+    },
+    {
+      "id": "mc-2026-11-16_2026-11-22",
+      "nombre": "Microciclo 16 nov al 22 nov",
+      "start": "2026-11-16",
+      "end": "2026-11-22",
+      "tipo": "media"
+    },
+    {
+      "id": "mc-2026-11-09_2026-11-15",
+      "nombre": "Microciclo 9 nov al 15 nov",
+      "start": "2026-11-09",
+      "end": "2026-11-15",
+      "tipo": "media"
+    },
+    {
+      "id": "mc-2026-11-02_2026-11-08",
+      "nombre": "Microciclo 2 nov al 8 nov (Semana Larga)",
+      "start": "2026-11-02",
+      "end": "2026-11-08",
+      "tipo": "largo"
+    },
+    {
+      "id": "mc-2026-10-26_2026-11-01",
+      "nombre": "Microciclo 26 oct al 1 nov (Doble Partido)",
+      "start": "2026-10-26",
+      "end": "2026-11-01",
+      "tipo": "doble_partido"
+    },
+    {
+      "id": "mc-19-25-oct",
+      "nombre": "Microciclo 19 al 25 Octubre",
+      "start": "2026-10-19",
+      "end": "2026-10-25",
+      "tipo": "media"
+    },
+    {
+      "id": "mc-14-18-oct",
+      "nombre": "Microciclo 14 al 18 Octubre",
+      "start": "2026-10-12",
+      "end": "2026-10-18",
+      "tipo": "corto"
+    },
+    {
+      "id": "mc-07-13-oct",
+      "nombre": "Microciclo 7 al 13 Octubre",
+      "start": "2026-10-05",
+      "end": "2026-10-11",
+      "tipo": "media"
+    },
+    {
+      "id": "mc-28sep-04oct",
+      "nombre": "Microciclo 28 Sep al 04 Octubre",
+      "start": "2026-09-28",
+      "end": "2026-10-04",
+      "tipo": "sin_categorizar"
+    }
+  ],
+  "overrides": {
+    "mc-2026-11-30_2026-12-06": "doble_partido",
+    "mc-2026-11-23_2026-11-29": "media",
+    "mc-2026-11-02_2026-11-08": "largo",
+    "mc-2026-10-26_2026-11-01": "doble_partido",
+    "mc-19-25-oct": "media",
+    "mc-14-18-oct": "corto",
+    "mc-07-13-oct": "media",
+    "mc-28sep-04oct": "sin_categorizar"
+  },
+  "deletedIds": [],
+  "updatedAt": "2026-11-26T08:48:01.881Z"
+}

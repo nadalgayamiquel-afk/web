@@ -25,6 +25,8 @@ import {
   deletePlayerRatioTargetsServer,
   getTeamRatioTargetsServer,
   saveTeamRatioTargetsServer,
+  getMicrocyclesConfigServer,
+  saveMicrocyclesConfigServer,
 } from "@/app/actions";
 import {
   useFavoriteGpsVariables,
@@ -166,6 +168,41 @@ function getTargetCompliance(actualRatio: number, targetRatio: number) {
 
 export const DEFAULT_CUSTOM_MICROCICLOS: CustomMicrocycleDef[] = [
   {
+    id: "mc-2026-11-30_2026-12-06",
+    nombre: "Microciclo 30 nov al 6 dic (Doble Partido)",
+    start: "2026-11-30",
+    end: "2026-12-06",
+    tipo: "doble_partido",
+  },
+  {
+    id: "mc-2026-11-23_2026-11-29",
+    nombre: "Microciclo 23 nov al 29 nov (vs Villarreal CF B)",
+    start: "2026-11-23",
+    end: "2026-11-29",
+    tipo: "media",
+  },
+  {
+    id: "mc-2026-11-16_2026-11-22",
+    nombre: "Microciclo 16 nov al 22 nov",
+    start: "2026-11-16",
+    end: "2026-11-22",
+    tipo: "media",
+  },
+  {
+    id: "mc-2026-11-09_2026-11-15",
+    nombre: "Microciclo 9 nov al 15 nov",
+    start: "2026-11-09",
+    end: "2026-11-15",
+    tipo: "media",
+  },
+  {
+    id: "mc-2026-11-02_2026-11-08",
+    nombre: "Microciclo 2 nov al 8 nov (Semana Larga)",
+    start: "2026-11-02",
+    end: "2026-11-08",
+    tipo: "largo",
+  },
+  {
     id: "mc-2026-10-26_2026-11-01",
     nombre: "Microciclo 26 oct al 1 nov",
     start: "2026-10-26",
@@ -182,14 +219,16 @@ export const DEFAULT_CUSTOM_MICROCICLOS: CustomMicrocycleDef[] = [
   {
     id: "mc-14-18-oct",
     nombre: "Microciclo 14 al 18 Octubre",
-    start: "2026-10-14",
+    start: "2026-10-12",
     end: "2026-10-18",
+    tipo: "corto",
   },
   {
     id: "mc-07-13-oct",
     nombre: "Microciclo 7 al 13 Octubre",
-    start: "2026-10-07",
-    end: "2026-10-13",
+    start: "2026-10-05",
+    end: "2026-10-11",
+    tipo: "media",
   },
   {
     id: "mc-28sep-04oct",
@@ -1455,16 +1494,80 @@ export default function CargaExternaSection({
   const [microFormEnd, setMicroFormEnd] = useState<string>("");
   const [microFormError, setMicroFormError] = useState<string>("");
   const [microFormTipo, setMicroFormTipo] = useState<Exclude<MicrocycleType, "todos">>("media");
+  const [saveMicroStatus, setSaveMicroStatus] = useState<string | null>(null);
 
-  const saveCustomMicrocycles = (newMcs: CustomMicrocycleDef[]) => {
+  // Sincronización automática de microciclos desde Base de Datos Supabase al montar
+  useEffect(() => {
+    let isMounted = true;
+    getMicrocyclesConfigServer()
+      .then((serverData) => {
+        if (!isMounted || !serverData) return;
+        if (Array.isArray(serverData.microcycles) && serverData.microcycles.length > 0) {
+          setCustomMicrocycles((prev) => {
+            const map = new Map<string, CustomMicrocycleDef>();
+            serverData.microcycles.forEach((m: CustomMicrocycleDef) => {
+              if (m && m.id) map.set(m.id, m);
+            });
+            prev.forEach((m) => {
+              if (m && m.id && !map.has(m.id)) map.set(m.id, m);
+            });
+            const merged = Array.from(map.values()).sort((a, b) => b.start.localeCompare(a.start));
+            if (typeof window !== "undefined") {
+              try {
+                localStorage.setItem("gps_custom_microcycles", JSON.stringify(merged));
+                if (serverData.overrides && Object.keys(serverData.overrides).length > 0) {
+                  localStorage.setItem("gps_microcycle_type_overrides", JSON.stringify(serverData.overrides));
+                }
+                if (serverData.deletedIds && serverData.deletedIds.length > 0) {
+                  localStorage.setItem("gps_deleted_microcycle_ids", JSON.stringify(serverData.deletedIds));
+                }
+              } catch (e) {}
+            }
+            return merged;
+          });
+        }
+      })
+      .catch((err) => console.warn("Error cargando microciclos de servidor:", err));
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const saveCustomMicrocycles = (
+    newMcs: CustomMicrocycleDef[],
+    overridesToSave?: Record<string, string>,
+    deletedToSave?: string[]
+  ) => {
     setCustomMicrocycles(newMcs);
+    let curOverrides: Record<string, string> = overridesToSave || {};
+    let curDeleted: string[] = deletedToSave || [];
     if (typeof window !== "undefined") {
       try {
         localStorage.setItem("gps_custom_microcycles", JSON.stringify(newMcs));
+        if (!overridesToSave) {
+          const rawO = localStorage.getItem("gps_microcycle_type_overrides");
+          if (rawO) curOverrides = JSON.parse(rawO);
+        }
+        if (!deletedToSave) {
+          const rawD = localStorage.getItem("gps_deleted_microcycle_ids");
+          if (rawD) curDeleted = JSON.parse(rawD);
+        }
       } catch (e) {
         console.error("Error guardando microciclos:", e);
       }
     }
+    setSaveMicroStatus("Guardando...");
+    saveMicrocyclesConfigServer({
+      microcycles: newMcs,
+      overrides: curOverrides,
+      deletedIds: curDeleted,
+    })
+      .then(() => setSaveMicroStatus("Guardado ✓"))
+      .catch((err) => {
+        console.warn("Error guardando microciclos en servidor:", err);
+        setSaveMicroStatus("Error");
+      });
   };
 
   const handleUpdateWeekType = (weekId: string, newTipo: Exclude<MicrocycleType, "todos">) => {
@@ -1568,7 +1671,9 @@ export default function CargaExternaSection({
     addDeletedMicrocycleId(id);
 
     const updated = customMicrocycles.filter((m) => m.id !== id);
-    saveCustomMicrocycles(updated);
+    let curDeleted = getDeletedMicrocycleIds();
+    if (!curDeleted.includes(id)) curDeleted.push(id);
+    saveCustomMicrocycles(updated, undefined, curDeleted);
     if (editingMicroId === id) {
       setEditingMicroId(null);
       setMicroFormName("");
@@ -1580,7 +1685,7 @@ export default function CargaExternaSection({
 
   const handleResetMicrocycles = () => {
     resetDeletedMicrocycles();
-    saveCustomMicrocycles(DEFAULT_CUSTOM_MICROCICLOS);
+    saveCustomMicrocycles(DEFAULT_CUSTOM_MICROCICLOS, {}, []);
     setEditingMicroId(null);
     setMicroFormName("");
     setMicroFormStart("");
@@ -10292,22 +10397,42 @@ export default function CargaExternaSection({
                     style={{
                       fontSize: "11px",
                       fontWeight: 800,
-                      background: "#e0f2fe",
-                      color: "#0369a1",
+                      background: "#f0fdf4",
+                      color: "#166534",
+                      border: "1px solid #bbf7d0",
                       padding: "2px 8px",
                       borderRadius: "999px",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "4px"
                     }}
                   >
-                    Personalizado
+                    💾 BBDD Conectada
                   </span>
+                  {saveMicroStatus && (
+                    <span style={{
+                      fontSize: "10.5px",
+                      fontWeight: 700,
+                      padding: "2px 8px",
+                      borderRadius: "12px",
+                      background: saveMicroStatus.includes("✓") ? "#dcfce7" : saveMicroStatus.includes("Guardando") ? "#fef3c7" : "#fee2e2",
+                      color: saveMicroStatus.includes("✓") ? "#15803d" : saveMicroStatus.includes("Guardando") ? "#b45309" : "#b91c1c",
+                      border: `1px solid ${saveMicroStatus.includes("✓") ? "#bbf7d0" : saveMicroStatus.includes("Guardando") ? "#fde047" : "#fca5a5"}`
+                    }}>
+                      {saveMicroStatus}
+                    </span>
+                  )}
                 </div>
                 <p style={{ margin: "4px 0 0", fontSize: "12px", color: "#64748b" }}>
-                  Define los rangos exactos de cada microciclo para agrupar las sesiones en los Ratios Semanales.
+                  Define los rangos exactos de cada microciclo. Se guardan de forma permanente en la base de datos Supabase.
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => setShowMicroModal(false)}
+                onClick={() => {
+                  setShowMicroModal(false);
+                  setSaveMicroStatus(null);
+                }}
                 style={{
                   border: "none",
                   background: "transparent",
@@ -10646,19 +10771,25 @@ export default function CargaExternaSection({
 
               <button
                 type="button"
-                onClick={() => setShowMicroModal(false)}
+                onClick={() => {
+                  setShowMicroModal(false);
+                  setSaveMicroStatus(null);
+                }}
                 style={{
                   padding: "7px 18px",
                   borderRadius: "8px",
                   border: "none",
-                  background: "#0f172a",
+                  background: "#0284c7",
                   color: "#ffffff",
                   fontSize: "12px",
                   fontWeight: 800,
                   cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px"
                 }}
               >
-                Listo
+                ✓ Guardar y Cerrar
               </button>
             </div>
           </div>

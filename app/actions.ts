@@ -4859,6 +4859,103 @@ export async function saveTeamRatioTargetsServer(targets: Record<string, number>
   }
 }
 
+export interface MicrocyclesConfigPayload {
+  microcycles: any[];
+  overrides?: Record<string, string>;
+  deletedIds?: string[];
+  updatedAt?: string;
+}
+
+const MICROCYCLES_CONFIG_UUID = "00000000-0000-0000-0000-000000000001";
+
+export async function getMicrocyclesConfigServer(): Promise<MicrocyclesConfigPayload> {
+  try {
+    // 1. Supabase db_testing
+    const supabase = getServerSupabase();
+    const { data: dbRow } = await supabase
+      .from("db_testing")
+      .select("data")
+      .eq("id", MICROCYCLES_CONFIG_UUID)
+      .eq("test_type_id", "microcycles_config")
+      .maybeSingle();
+
+    if (dbRow && dbRow.data && typeof dbRow.data === "object") {
+      const d = dbRow.data as any;
+      if (Array.isArray(d.microcycles) && d.microcycles.length > 0) {
+        return {
+          microcycles: d.microcycles,
+          overrides: d.overrides || {},
+          deletedIds: d.deletedIds || [],
+          updatedAt: d.updatedAt,
+        };
+      }
+    }
+
+    // 2. Fallback: Archivo JSON public/microciclos_config.json
+    const path = require("path");
+    const filePath = path.join(process.cwd(), "public", "microciclos_config.json");
+    if (fs.existsSync(filePath)) {
+      const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+      if (parsed && Array.isArray(parsed.microcycles) && parsed.microcycles.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.error("Error reading microcycles config from server:", e);
+  }
+  return { microcycles: [], overrides: {}, deletedIds: [] };
+}
+
+export async function saveMicrocyclesConfigServer(
+  payload: MicrocyclesConfigPayload
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const dataToSave = {
+      microcycles: payload.microcycles || [],
+      overrides: payload.overrides || {},
+      deletedIds: payload.deletedIds || [],
+      updatedAt: new Date().toISOString(),
+    };
+
+    // 1. Guardar en Supabase db_testing
+    const supabase = getServerSupabase();
+    const { error: sbError } = await supabase.from("db_testing").upsert({
+      id: MICROCYCLES_CONFIG_UUID,
+      name: "Configuracion Microciclos de Carga",
+      test_type_id: "microcycles_config",
+      structure: "CONFIG",
+      data: dataToSave,
+    });
+
+    if (sbError) {
+      console.error("Error guardando microcycles_config en Supabase db_testing:", sbError.message);
+    }
+
+    // 2. Guardar en archivo local public/microciclos_config.json
+    try {
+      const path = require("path");
+      const filePath = path.join(process.cwd(), "public", "microciclos_config.json");
+      fs.writeFileSync(filePath, JSON.stringify(dataToSave, null, 2), "utf8");
+    } catch (e) {}
+
+    // 3. Sincronizar también en configuracion_club si está disponible
+    try {
+      const config = await getClubConfig();
+      if (config) {
+        (config as any).customMicrocycles = dataToSave.microcycles;
+        (config as any).microcycleOverrides = dataToSave.overrides;
+        (config as any).deletedMicrocycleIds = dataToSave.deletedIds;
+        await saveClubConfig(config);
+      }
+    } catch (e) {}
+
+    return { success: !sbError, error: sbError?.message };
+  } catch (e: any) {
+    console.error("Error saving microcycles config:", e);
+    return { success: false, error: e?.message };
+  }
+}
+
 export async function getExternalLinksBBDD(): Promise<ExternalDatabaseLinks> {
   try {
     const supabase = getServerSupabase();

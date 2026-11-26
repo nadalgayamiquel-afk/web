@@ -87,6 +87,50 @@ export const MICROCICLE_TYPE_CONFIG: Record<
 
 export const OFFICIAL_SEASON_MICROCYCLES: CustomMicrocycleDef[] = [
   {
+    id: "mc-2026-11-30_2026-12-06",
+    nombre: "Microciclo 30 nov al 6 dic (Doble Partido)",
+    start: "2026-11-30",
+    end: "2026-12-06",
+    tipo: "doble_partido",
+    matchesCount: 2,
+    daysBetweenMd: "3-4",
+    matchDates: ["2026-12-01", "2026-12-06"],
+    sessionCount: 6,
+  },
+  {
+    id: "mc-2026-11-23_2026-11-29",
+    nombre: "Microciclo 23 nov al 29 nov (vs Villarreal CF B)",
+    start: "2026-11-23",
+    end: "2026-11-29",
+    tipo: "media",
+    matchesCount: 1,
+    daysBetweenMd: 7,
+    matchDates: ["2026-11-28"],
+    sessionCount: 5,
+  },
+  {
+    id: "mc-2026-11-16_2026-11-22",
+    nombre: "Microciclo 16 nov al 22 nov",
+    start: "2026-11-16",
+    end: "2026-11-22",
+    tipo: "media",
+    matchesCount: 1,
+    daysBetweenMd: 7,
+    matchDates: ["2026-11-21"],
+    sessionCount: 5,
+  },
+  {
+    id: "mc-2026-11-09_2026-11-15",
+    nombre: "Microciclo 9 nov al 15 nov",
+    start: "2026-11-09",
+    end: "2026-11-15",
+    tipo: "media",
+    matchesCount: 1,
+    daysBetweenMd: 7,
+    matchDates: ["2026-11-15"],
+    sessionCount: 5,
+  },
+  {
     id: "mc-2026-11-02_2026-11-08",
     nombre: "Microciclo 2 nov al 8 nov (Semana Larga)",
     start: "2026-11-02",
@@ -157,11 +201,15 @@ export const OFFICIAL_SEASON_MICROCYCLES: CustomMicrocycleDef[] = [
 export function getMicrocycleTypeForDate(dateStr: string): Exclude<MicrocycleType, "todos"> {
   const iso = parseDateStrToISO(dateStr);
   if (!iso) return "media";
+  if (iso >= "2026-11-30" && iso <= "2026-12-06") return "doble_partido";
+  if (iso >= "2026-11-23" && iso <= "2026-11-29") return "media";
+  if (iso >= "2026-11-16" && iso <= "2026-11-22") return "media";
+  if (iso >= "2026-11-09" && iso <= "2026-11-15") return "media";
+  if (iso >= "2026-11-02" && iso <= "2026-11-08") return "largo";
   if (iso >= "2026-10-26" && iso <= "2026-11-01") return "doble_partido";
   if (iso >= "2026-10-12" && iso <= "2026-10-18") return "corto";
   if (iso >= "2026-10-19" && iso <= "2026-10-25") return "media";
   if (iso >= "2026-10-05" && iso <= "2026-10-11") return "media";
-  if (iso >= "2026-11-02" && iso <= "2026-11-08") return "largo";
   if (iso >= "2026-09-28" && iso <= "2026-10-04") return "sin_categorizar";
   return "media";
 }
