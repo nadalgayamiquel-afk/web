@@ -1008,8 +1008,8 @@ export default function CargaExternaSection({
         }
       } catch {}
     }
-    // Variables estándar del perfil (incluye Distancia +24 km/h por defecto)
-    return ["Distance(m)", "+ 24 km/h (Distancia)", "Distance +21 (m)", "Acc+Dec", "Player Load"];
+    // 4 variables fijadas por el usuario: DT, HSR (19.8), ACC-DEC, Distancia +24 km/h (Sprint)
+    return ["Distance(m)", "derived_hsr_19_8", "Acc+Dec", "+ 24 km/h (Distancia)"];
   });
 
   // Carga inicial persistente desde Supabase / Servidor para garantizar sincronización entre dispositivos y recargas
@@ -1114,16 +1114,11 @@ export default function CargaExternaSection({
       (k) => Boolean(k) && typeof k === "string" && k !== "HSR_Personalizada" && k !== "derived_undefined" && k !== "derived_1791992159697" && !isCustomHsrKey(k)
     );
 
-    // Ordenar para que DT esté siempre primero
-    return [...cleanKeys].sort((a, b) => {
-      const aLower = (a || "").toLowerCase();
-      const bLower = (b || "").toLowerCase();
-      const aIsDT = a === "Distance(m)" || aLower.includes("distancia total") || aLower === "dt";
-      const bIsDT = b === "Distance(m)" || bLower.includes("distancia total") || bLower === "dt";
-      if (aIsDT && !bIsDT) return -1;
-      if (!aIsDT && bIsDT) return 1;
-      return 0;
-    });
+    // DT siempre primero si está presente, manteniendo exactamente el orden elegido por el usuario para todas las demás variables (sin movimientos imprevistos)
+    const hasDT = cleanKeys.some((k) => k === "Distance(m)" || k.toLowerCase().includes("distancia total") || k.toLowerCase() === "dt");
+    const withoutDT = cleanKeys.filter((k) => k !== "Distance(m)" && !k.toLowerCase().includes("distancia total") && k.toLowerCase() !== "dt");
+
+    return hasDT ? ["Distance(m)", ...withoutDT] : withoutDT;
   }, [selectedProfileKeys]);
 
   const [showHeatmapColors, setShowHeatmapColors] = useState<boolean>(() => {
@@ -1218,7 +1213,7 @@ export default function CargaExternaSection({
 
   // Variables seleccionadas por el usuario para la pestaña de Ratios Semanales
   const [selectedRatioKeys, setSelectedRatioKeys] = useState<string[]>(() => {
-    const defaultList = ["Distance(m)", "Distance +21 (m)", "+ 24 km/h (Distancia)", "Acc+Dec", "Player Load"];
+    const defaultList = ["Distance(m)", "derived_hsr_19_8", "Acc+Dec", "+ 24 km/h (Distancia)"];
     if (typeof window !== "undefined") {
       try {
         const stored = localStorage.getItem("gps_ratio_selected_variables");
@@ -1260,7 +1255,7 @@ export default function CargaExternaSection({
     const others = selectedRatioKeys.filter((k) => {
       if (k === "Distance(m)") return false;
       if (k === "derived_1791992159697" || k === "derived_undefined") return false;
-      if (k.startsWith("derived_") && !validDerivedIds.has(k)) return false;
+      if (k.startsWith("derived_") && !validDerivedIds.has(k) && !k.includes("19_8")) return false;
       return true;
     });
     return ["Distance(m)", ...others];
@@ -1485,20 +1480,20 @@ export default function CargaExternaSection({
     if (typeof window !== "undefined") {
       try {
         const stored = localStorage.getItem("gps_player_custom_targets_map");
-        if (stored) return JSON.parse(stored);
-        const legacy = localStorage.getItem("gps_player_custom_targets");
-        if (legacy) {
-          const parsed = JSON.parse(legacy);
-          const migrated: Record<string, Record<string, number>> = {};
-          Object.entries(parsed).forEach(([pId, vals]: [string, any]) => {
-            migrated[pId] = {};
-            if (vals.dist !== undefined) migrated[pId]["Distance(m)"] = vals.dist;
-            if (vals.hsr !== undefined) migrated[pId]["Distance +21 (m)"] = vals.hsr;
-            if (vals.sprint !== undefined) migrated[pId]["Sprint (m)"] = vals.sprint;
-            if (vals.accDec !== undefined) migrated[pId]["Acc+Dec"] = vals.accDec;
-            if (vals.load !== undefined) migrated[pId]["Player Load"] = vals.load;
-          });
-          return migrated;
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && typeof parsed === "object") {
+            // Purgar de inmediato cualquier mock antiguo (ej: ratios de 2.8 o valores de prueba residuales)
+            const hasLegacyFake = Object.values(parsed).some(
+              (r: any) => r && typeof r === "object" && (r["Acc+Dec"] === 2.8 || r["Distance(m)"] === 2.8 || r["derived_hsr_19_8"] === 1.4)
+            );
+            if (hasLegacyFake) {
+              localStorage.removeItem("gps_player_custom_targets_map");
+              localStorage.removeItem("gps_player_custom_targets");
+              return {};
+            }
+            return parsed;
+          }
         }
       } catch (e) {}
     }
@@ -1514,20 +1509,13 @@ export default function CargaExternaSection({
     getAllPlayerRatioTargetsServer()
       .then((serverMap) => {
         if (!isMounted || !serverMap || typeof serverMap !== "object") return;
-        setPlayerCustomTargets((prev) => {
-          const merged: Record<string, Record<string, number>> = { ...prev };
-          Object.entries(serverMap).forEach(([pId, ratios]) => {
-            if (pId && ratios && typeof ratios === "object" && Object.keys(ratios).length > 0) {
-              merged[pId] = { ...(merged[pId] || {}), ...ratios };
-            }
-          });
-          if (typeof window !== "undefined") {
-            try {
-              localStorage.setItem("gps_player_custom_targets_map", JSON.stringify(merged));
-            } catch (e) {}
-          }
-          return merged;
-        });
+        // El servidor es la fuente única de verdad: si está vacío, todos tienen los ratios del equipo por defecto
+        setPlayerCustomTargets(serverMap);
+        if (typeof window !== "undefined") {
+          try {
+            localStorage.setItem("gps_player_custom_targets_map", JSON.stringify(serverMap));
+          } catch (e) {}
+        }
       })
       .catch((err) => console.warn("Error cargando targets individuales de servidor:", err));
 

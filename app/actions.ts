@@ -4714,22 +4714,21 @@ export async function savePlayerProfileConfigServer(
   }
 }
 
-export async function getAllPlayerRatioTargetsServer(): Promise<Record<string, Record<string, number>>> {
-  const result: Record<string, Record<string, number>> = {};
-  try {
-    // 1. Supabase db_testing: todas las configuraciones de jugadores guardadas
-    const supabase = getServerSupabase();
-    const { data: dbRows } = await supabase
-      .from("db_testing")
-      .select("id, data")
-      .eq("test_type_id", "player_profile_config");
+const PLAYER_RATIO_TARGETS_MAP_UUID = "00000000-0000-0000-0000-000000000004";
 
-    if (dbRows && Array.isArray(dbRows)) {
-      dbRows.forEach((row) => {
-        if (row.id && row.data && typeof row.data === "object" && (row.data as any).ratios) {
-          result[row.id] = (row.data as any).ratios;
-        }
-      });
+export async function getAllPlayerRatioTargetsServer(): Promise<Record<string, Record<string, number>>> {
+  try {
+    // 1. Supabase db_testing: mapa limpio de ratios individualizados
+    const supabase = getServerSupabase();
+    const { data: dbRow } = await supabase
+      .from("db_testing")
+      .select("data")
+      .eq("id", PLAYER_RATIO_TARGETS_MAP_UUID)
+      .eq("test_type_id", "player_ratio_targets_map")
+      .maybeSingle();
+
+    if (dbRow?.data && typeof dbRow.data === "object" && (dbRow.data as any).targets) {
+      return (dbRow.data as any).targets as Record<string, Record<string, number>>;
     }
 
     // 2. Archivo dedicado public/player_ratio_targets.json
@@ -4740,34 +4739,14 @@ export async function getAllPlayerRatioTargetsServer(): Promise<Record<string, R
         const raw = fs.readFileSync(filePathDedicated, "utf8");
         const parsed = JSON.parse(raw);
         if (parsed && typeof parsed === "object") {
-          Object.entries(parsed).forEach(([pId, ratios]) => {
-            if (pId && ratios && typeof ratios === "object") {
-              result[pId] = { ...(result[pId] || {}), ...(ratios as Record<string, number>) };
-            }
-          });
-        }
-      } catch (err) {}
-    }
-
-    // 3. Archivo public/player_ratios_config.json
-    const filePathProfile = path.join(process.cwd(), "public", "player_ratios_config.json");
-    if (fs.existsSync(filePathProfile)) {
-      try {
-        const raw = fs.readFileSync(filePathProfile, "utf8");
-        const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed === "object") {
-          Object.entries(parsed).forEach(([pId, conf]: [string, any]) => {
-            if (pId && conf?.ratios && typeof conf.ratios === "object") {
-              result[pId] = { ...(result[pId] || {}), ...(conf.ratios as Record<string, number>) };
-            }
-          });
+          return parsed as Record<string, Record<string, number>>;
         }
       } catch (err) {}
     }
   } catch (e) {
     console.error("Error reading all player ratio targets from server:", e);
   }
-  return result;
+  return {};
 }
 
 export async function savePlayerRatioTargetsServer(
@@ -4776,24 +4755,36 @@ export async function savePlayerRatioTargetsServer(
   allMap?: Record<string, Record<string, number>>
 ): Promise<{ success: boolean }> {
   try {
-    const existing = await getPlayerProfileConfigServer(playerId);
-    await savePlayerProfileConfigServer(playerId, {
-      ratios: ratios,
-      variables: existing?.variables,
-      hsriVariableKey: existing?.hsriVariableKey,
-      benchmarkOverrides: existing?.benchmarkOverrides,
+    const supabase = getServerSupabase();
+    const path = require("path");
+    const filePath = path.join(process.cwd(), "public", "player_ratio_targets.json");
+    let allTargets: Record<string, Record<string, number>> = allMap || {};
+    if (!allMap && fs.existsSync(filePath)) {
+      try {
+        allTargets = JSON.parse(fs.readFileSync(filePath, "utf8")) || {};
+      } catch (err) {}
+    }
+
+    if (ratios && Object.keys(ratios).length > 0) {
+      allTargets[playerId] = ratios;
+    } else {
+      delete allTargets[playerId];
+    }
+
+    // 1. Guardar en Supabase db_testing
+    await supabase.from("db_testing").upsert({
+      id: PLAYER_RATIO_TARGETS_MAP_UUID,
+      name: "Mapa Ratios Individualizados Jugadores",
+      test_type_id: "player_ratio_targets_map",
+      structure: "CONFIG",
+      data: {
+        targets: allTargets,
+        updatedAt: new Date().toISOString(),
+      },
     });
 
+    // 2. Guardar en public/player_ratio_targets.json
     try {
-      const path = require("path");
-      const filePath = path.join(process.cwd(), "public", "player_ratio_targets.json");
-      let allTargets: Record<string, Record<string, number>> = allMap || {};
-      if (!allMap && fs.existsSync(filePath)) {
-        try {
-          allTargets = JSON.parse(fs.readFileSync(filePath, "utf8")) || {};
-        } catch (err) {}
-      }
-      allTargets[playerId] = ratios;
       fs.writeFileSync(filePath, JSON.stringify(allTargets, null, 2), "utf8");
     } catch (err) {}
 
@@ -4809,24 +4800,31 @@ export async function deletePlayerRatioTargetsServer(
   allMap?: Record<string, Record<string, number>>
 ): Promise<{ success: boolean }> {
   try {
-    const existing = await getPlayerProfileConfigServer(playerId);
-    await savePlayerProfileConfigServer(playerId, {
-      ratios: {},
-      variables: existing?.variables,
-      hsriVariableKey: existing?.hsriVariableKey,
-      benchmarkOverrides: existing?.benchmarkOverrides,
+    const supabase = getServerSupabase();
+    const path = require("path");
+    const filePath = path.join(process.cwd(), "public", "player_ratio_targets.json");
+    let allTargets: Record<string, Record<string, number>> = allMap || {};
+    if (!allMap && fs.existsSync(filePath)) {
+      try {
+        allTargets = JSON.parse(fs.readFileSync(filePath, "utf8")) || {};
+      } catch (err) {}
+    }
+    delete allTargets[playerId];
+
+    // 1. Guardar en Supabase db_testing
+    await supabase.from("db_testing").upsert({
+      id: PLAYER_RATIO_TARGETS_MAP_UUID,
+      name: "Mapa Ratios Individualizados Jugadores",
+      test_type_id: "player_ratio_targets_map",
+      structure: "CONFIG",
+      data: {
+        targets: allTargets,
+        updatedAt: new Date().toISOString(),
+      },
     });
 
+    // 2. Guardar en public/player_ratio_targets.json
     try {
-      const path = require("path");
-      const filePath = path.join(process.cwd(), "public", "player_ratio_targets.json");
-      let allTargets: Record<string, Record<string, number>> = allMap || {};
-      if (!allMap && fs.existsSync(filePath)) {
-        try {
-          allTargets = JSON.parse(fs.readFileSync(filePath, "utf8")) || {};
-        } catch (err) {}
-      }
-      delete allTargets[playerId];
       fs.writeFileSync(filePath, JSON.stringify(allTargets, null, 2), "utf8");
     } catch (err) {}
 
@@ -4961,18 +4959,16 @@ const WEEKLY_RATIO_COLUMNS_UUID = "00000000-0000-0000-0000-000000000003";
 
 const DEFAULT_PROFILE_COLUMNS = [
   "Distance(m)",
-  "+ 24 km/h (Distancia)",
-  "Distance +21 (m)",
+  "derived_hsr_19_8",
   "Acc+Dec",
-  "Player Load",
+  "+ 24 km/h (Distancia)",
 ];
 
 const DEFAULT_RATIO_COLUMNS = [
   "Distance(m)",
-  "Distance +21 (m)",
-  "+ 24 km/h (Distancia)",
+  "derived_hsr_19_8",
   "Acc+Dec",
-  "Player Load",
+  "+ 24 km/h (Distancia)",
 ];
 
 export async function getCompetitiveProfileColumnsServer(): Promise<string[]> {
