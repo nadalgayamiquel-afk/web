@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { resolvePlanificacionMD, getLocalStoragePlanificacionDays } from "@/app/lib/planificacionMd";
+import { resolvePlanificacionMD, getLocalStoragePlanificacionDays, isMatchDaySession } from "@/app/lib/planificacionMd";
 import Link from 'next/link';
 import {
   GimnasioEjercicio,
@@ -106,14 +106,17 @@ function formatFechaCol(fechaISO: string): { diaSem: string; diaMes: string } {
 }
 
 function getMdBadgeStyle(md?: string | null): { bg: string; text: string; border: string } {
-  if (!md) return { bg: '#f1f5f9', text: '#64748b', border: '#e2e8f0' };
-  const m = md.trim().toUpperCase();
+  if (!md || md === '—') return { bg: '#f8fafc', text: '#94a3b8', border: '#e2e8f0' };
+  const m = md.trim().toUpperCase().replace(/\s+/g, '');
   if (m === '-2MD' || m === 'MD-2') return { bg: '#ede9fe', text: '#6d28d9', border: '#c4b5fd' };
   if (m === '-3MD' || m === 'MD-3') return { bg: '#e0f2fe', text: '#0369a1', border: '#7dd3fc' };
+  if (m === '-4MD' || m === 'MD-4') return { bg: '#e0e7ff', text: '#3730a3', border: '#c7d2fe' };
+  if (m === '-5MD' || m === 'MD-5' || m.includes('>-5MD')) return { bg: '#f3e8ff', text: '#7e22ce', border: '#d8b4fe' };
   if (m === '-1MD' || m === 'MD-1') return { bg: '#fef3c7', text: '#b45309', border: '#fde68a' };
   if (m === 'MD') return { bg: '#fee2e2', text: '#b91c1c', border: '#fca5a5' };
   if (m === '+1MD' || m === 'MD+1') return { bg: '#ecfdf5', text: '#047857', border: '#a7f3d0' };
   if (m === '+2MD' || m === 'MD+2') return { bg: '#f0fdf4', text: '#15803d', border: '#bbf7d0' };
+  if (m === '+3MD' || m === 'MD+3') return { bg: '#f0fdf4', text: '#166534', border: '#bbf7d0' };
   return { bg: '#f1f5f9', text: '#475569', border: '#cbd5e1' };
 }
 
@@ -135,7 +138,12 @@ function normalizeMd(md?: string | null): string {
   return clean;
 }
 
-export default function GimnasioMatrixClient({ initialJugadores = [], initialDays = [], initialSesionesMap = {} }: Props) {
+export default function GimnasioMatrixClient({
+  initialJugadores = [],
+  initialDays = [],
+  initialSesionesMap = {},
+  initialBloquesMap = {},
+}: Props) {
   // 1. Jugadores
   const [jugadores] = useState<JugadorGimnasio[]>(() => {
     const list = initialJugadores && initialJugadores.length > 0 ? [...initialJugadores] : [...DEFAULT_JUGADORES];
@@ -156,9 +164,17 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
         meso_nombre: 'COMPETITIVO',
       } as any);
     }
-    return base;
+    // Sanitizar falsos "MD" que no correspondan a partidos reales
+    return base.map(d => {
+      if (d.md === 'MD' && !isMatchDaySession(d)) {
+        return { ...d, md: null };
+      }
+      return d;
+    });
   });
-  const [eventosPlanMap, setEventosPlanMap] = useState<Record<string, any>>({});
+  const [eventosPlanMap, setEventosPlanMap] = useState<Record<string, any>>(() => {
+    return initialBloquesMap && Object.keys(initialBloquesMap).length > 0 ? { ...initialBloquesMap } : {};
+  });
   const [playerEventsMap, setPlayerEventsMap] = useState<Record<string, string>>({});
   const [clubConfig, setClubConfig] = useState<{ nombreClub: string; escudoUrl: string; categoria: string }>({
     nombreClub: 'CE EUROPA',
@@ -198,11 +214,16 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
         }
       }
 
+      // Combinar initialDays y localStorage sin propagar corrupciones de MD
       const localCal = getLocalStoragePlanificacionDays();
-      if (localCal && localCal.length > 0) {
-        const cleaned = localCal.map((d: any) => {
-          const m = resolvePlanificacionMD(d.fecha, localCal);
-          return m ? { ...d, md: m } : d;
+      const sourceDays = (initialDays && initialDays.length > 0) ? initialDays : (localCal || []);
+      if (sourceDays && sourceDays.length > 0) {
+        const cleaned = sourceDays.map((d: any) => {
+          if (d.md === 'MD' && !isMatchDaySession(d)) {
+            const m = resolvePlanificacionMD(d.fecha, sourceDays);
+            return { ...d, md: m || null };
+          }
+          return d;
         });
         if (!cleaned.some((d: any) => d.fecha === '2026-10-10')) {
           cleaned.push({
@@ -214,34 +235,49 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
           } as any);
         }
         setAllDays(cleaned);
-        try {
-          localStorage.setItem("planificacion_days_v5", JSON.stringify(cleaned));
-          localStorage.setItem("planificacion_days_v2", JSON.stringify(cleaned));
-          localStorage.setItem("planificacion_days_v1", JSON.stringify(cleaned));
-        } catch { }
       }
-      const savedBloques = localStorage.getItem('eventos_bloques_map_v5') || localStorage.getItem('eventos_bloques_map_v4');
+
+      // Bloques de planificación: combinar initialBloquesMap (BBDD) con localStorage
+      let mergedBloques: Record<string, any> = { ...(initialBloquesMap || {}) };
+      const savedBloques = localStorage.getItem('eventos_bloques_map_v5') || localStorage.getItem('eventos_bloques_map_v4') || localStorage.getItem('eventos_bloques_map_v1');
       if (savedBloques) {
-        const parsedB = JSON.parse(savedBloques);
-        if (parsedB && typeof parsedB === 'object') setEventosPlanMap(parsedB);
+        try {
+          const parsedB = JSON.parse(savedBloques);
+          if (parsedB && typeof parsedB === 'object') {
+            mergedBloques = { ...mergedBloques, ...parsedB };
+          }
+        } catch {}
       }
+      setEventosPlanMap(mergedBloques);
       const savedPlayerEvents = localStorage.getItem('player_events_map_v1');
       if (savedPlayerEvents) {
         const parsedPE = JSON.parse(savedPlayerEvents);
         if (parsedPE && typeof parsedPE === 'object') setPlayerEventsMap(parsedPE);
       }
+      const map: Record<string, any> = {
+        'CO': { codigo: 'Co', color: '#713f12', bg: '#fde047', border: '#eab308' },
+        'COP': { codigo: 'Cop', color: '#ffffff', bg: '#d97706', border: '#b45309' },
+        'OP': { codigo: 'Op', color: '#1e3a8a', bg: '#93c5fd', border: '#60a5fa' },
+        'OOP': { codigo: 'Oop', color: '#ffffff', bg: '#1e40af', border: '#1e3a8a' },
+        'PA': { codigo: 'Pa', color: '#881337', bg: '#fecdd3', border: '#fda4af' },
+        'VD': { codigo: 'VD', color: '#713f12', bg: '#fef08a', border: '#fde047' },
+        'RED': { codigo: 'Red', color: '#713f12', bg: '#fef9c3', border: '#fef08a' },
+        'E': { codigo: 'E', color: '#ffffff', bg: '#1e3a8a', border: '#172554' },
+        'D': { codigo: 'D', color: '#334155', bg: '#e2e8f0', border: '#94a3b8' },
+      };
       const savedTipos = localStorage.getItem('tipos_evento_config_v1');
       if (savedTipos) {
-        const parsedT = JSON.parse(savedTipos);
-        if (Array.isArray(parsedT)) {
-          const map: Record<string, any> = {};
-          parsedT.forEach((t: any) => {
-            if (t.codigo) map[t.codigo.toUpperCase()] = t;
-            if (t.nombre) map[t.nombre.toUpperCase()] = t;
-          });
-          setTiposConfigMap(map);
-        }
+        try {
+          const parsedT = JSON.parse(savedTipos);
+          if (Array.isArray(parsedT)) {
+            parsedT.forEach((t: any) => {
+              if (t.codigo) map[t.codigo.toUpperCase()] = t;
+              if (t.nombre) map[t.nombre.toUpperCase()] = t;
+            });
+          }
+        } catch {}
       }
+      setTiposConfigMap(map);
     } catch (e) { }
   }, []);
 
@@ -517,118 +553,151 @@ export default function GimnasioMatrixClient({ initialJugadores = [], initialDay
     });
   }, [jugadores, selectedJugadorChip, searchJugadorText]);
 
-  // Helper para eventos de planificación con hora y color predeterminado (FILA COMPACTA: SOLO Op, Co, Pa)
+  // Helper para eventos de planificación con hora y color predeterminado en cabecera
   const getEventosEspecificosCompact = (day: SesionDia): Array<{ tipo: string; hora: string; bg: string; color: string; border: string }> => {
     const res: Array<{ tipo: string; hora: string; bg: string; color: string; border: string }> = [];
 
-    const classify = (tipoVal?: string | null): 'Co' | 'Op' | 'Pa' | null => {
-      if (!tipoVal) return null;
-      const c = tipoVal.trim().toUpperCase();
-      if (
-        c === 'CO' ||
-        c === 'COP' ||
-        c.startsWith('CO ') ||
-        c.startsWith('CO1') ||
-        c.startsWith('CO2') ||
-        c.includes('COADYUVANTE') ||
-        c.includes('COADJUVANT')
-      ) {
-        return 'Co';
-      }
-      if (
-        c === 'OP' ||
-        c === 'OOP' ||
-        c.startsWith('OP ') ||
-        c.startsWith('OP1') ||
-        c.startsWith('OP2') ||
-        c.includes('OPTIMIZADOR') ||
-        c.includes('OPTIMIZADORA')
-      ) {
-        return 'Op';
-      }
-      if (
-        c === 'PA' ||
-        c === 'PAL' ||
-        c === 'PAV' ||
-        c === 'PL' ||
-        c === 'PV' ||
-        c === 'PAAM' ||
-        c.startsWith('PA ') ||
-        c.startsWith('PA VS') ||
-        c.startsWith('PA.') ||
-        c.includes('PARTIDO')
-      ) {
-        return 'Pa';
-      }
-      return null;
-    };
+    const formatEventBadge = (rawTipo: string, horaVal: string = ''): { tipo: string; hora: string; bg: string; color: string; border: string } | null => {
+      if (!rawTipo || !rawTipo.trim()) return null;
+      const c = rawTipo.trim().toUpperCase();
 
-    const getColors = (cat: 'Co' | 'Op' | 'Pa', rawTipo: string) => {
-      const conf = tiposConfigMap[rawTipo.toUpperCase()] || tiposConfigMap[cat.toUpperCase()];
+      let label = rawTipo.trim();
+      let cat: 'Pa' | 'Co' | 'Op' | 'VD' | 'Red' | 'E' | 'D' | 'Other' = 'Other';
+
+      // 1. Partido
+      if (
+        c === 'PA' || c === 'PAL' || c === 'PAV' || c === 'PL' || c === 'PV' || c === 'PAAM' ||
+        c.startsWith('PA ') || c.startsWith('PA.') || c.startsWith('PA VS') || c.includes('PARTIDO')
+      ) {
+        cat = 'Pa';
+        label = day.rival?.trim() ? 'Pa vs ' + day.rival.trim() : (c.startsWith('PA') ? 'Pa' : rawTipo);
+      }
+      // 2. Coadyuvante / Fuerza / Gimnasio
+      else if (
+        c === 'CO' || c === 'COP' || c.startsWith('CO ') || c.startsWith('CO1') || c.startsWith('CO2') ||
+        c.includes('COADYUVANTE') || c.includes('COADJUVANT') || c.includes('FUERZA') || c.includes('GIMNASIO') || c === 'GYM'
+      ) {
+        cat = 'Co';
+        label = (c === 'COP' || c.startsWith('COP')) ? 'Cop' : (c.includes('FUERZA') ? 'Fuerza' : (c.includes('GIMNASIO') || c === 'GYM' ? 'Gym' : 'Co'));
+      }
+      // 3. Optimizador / Campo
+      else if (
+        c === 'OP' || c === 'OOP' || c.startsWith('OP ') || c.startsWith('OP1') || c.startsWith('OP2') ||
+        c.includes('OPTIMIZADOR') || c.includes('OPTIMIZADORA') || c.includes('CAMPO')
+      ) {
+        cat = 'Op';
+        label = (c === 'OOP' || c.startsWith('OOP')) ? 'Oop' : 'Op';
+      }
+      // 4. Video / Charla
+      else if (c.startsWith('VD') || c.startsWith('VIDEO') || c.startsWith('VÍDEO') || c.includes('CHARLA')) {
+        cat = 'VD';
+        label = c === 'VD' ? 'VD' : (rawTipo.length > 10 ? rawTipo.slice(0, 10) : rawTipo);
+      }
+      // 5. Readaptación
+      else if (c.startsWith('RED') || c.includes('READAPTACI')) {
+        cat = 'Red';
+        label = 'Red';
+      }
+      // 6. Entrenamiento general (E)
+      else if (c === 'E' || c.includes('ENTRENAMIENTO') || c.includes('ENTRENO')) {
+        cat = 'E';
+        label = 'E';
+      }
+      // 7. Descanso
+      else if (c === 'D' || c.includes('DESCANSO')) {
+        cat = 'D';
+        label = 'Descanso';
+      }
+      // 8. Activación / PAPE
+      else if (c.includes('ACTIVACI') || c.includes('PAPE')) {
+        cat = 'Co';
+        label = 'Activación';
+      }
+
+      // Colores: buscar en tiposConfigMap primero
+      const conf = tiposConfigMap[c] || tiposConfigMap[rawTipo.toUpperCase()] || tiposConfigMap[cat.toUpperCase()];
       if (conf?.bg && conf?.color && conf?.border) {
-        return { bg: conf.bg, color: conf.color, border: conf.border };
+        return { tipo: label, hora: horaVal, bg: conf.bg, color: conf.color, border: conf.border };
+      }
+
+      // Paletas por categoría según el diseño estándar del calendario
+      if (cat === 'Pa') {
+        return { tipo: label, hora: horaVal, bg: '#fecdd3', color: '#881337', border: '#fda4af' };
       }
       if (cat === 'Co') {
-        return { bg: '#fde047', color: '#713f12', border: '#eab308' };
+        return { tipo: label, hora: horaVal, bg: '#fde047', color: '#713f12', border: '#eab308' };
       }
       if (cat === 'Op') {
-        return { bg: '#93c5fd', color: '#1e3a8a', border: '#60a5fa' };
+        return { tipo: label, hora: horaVal, bg: '#93c5fd', color: '#1e3a8a', border: '#60a5fa' };
       }
-      return { bg: '#fecdd3', color: '#881337', border: '#fda4af' };
+      if (cat === 'VD') {
+        return { tipo: label, hora: horaVal, bg: '#fef08a', color: '#713f12', border: '#fde047' };
+      }
+      if (cat === 'Red') {
+        return { tipo: label, hora: horaVal, bg: '#fef9c3', color: '#713f12', border: '#fef08a' };
+      }
+      if (cat === 'E') {
+        return { tipo: label, hora: horaVal, bg: '#1e3a8a', color: '#ffffff', border: '#172554' };
+      }
+      if (cat === 'D') {
+        return { tipo: label, hora: horaVal, bg: '#e2e8f0', color: '#334155', border: '#94a3b8' };
+      }
+
+      return { tipo: label, hora: horaVal, bg: '#e0e7ff', color: '#3730a3', border: '#c7d2fe' };
     };
 
-    // 1. Revisar bloques / slots 0..6 (incluye slot 0 para sesiones matinales / Coadyuvante)
+    const findBloque = (slot: number) => {
+      const keys = [
+        `${day.id}_slot_${slot}`,
+        `${day.fecha}_slot_${slot}`,
+        `day_${day.fecha}_slot_${slot}`,
+        `day_${day.id}_slot_${slot}`,
+        `ev_${day.id}_slot_${slot}`,
+        `ev_${day.fecha}_slot_${slot}`,
+        `ev_${day.id}_${slot}`,
+        `ev_${day.fecha}_${slot}`,
+      ];
+      for (const k of keys) {
+        if (eventosPlanMap[k]) return eventosPlanMap[k];
+      }
+      // Búsqueda por coincidencia en los valores del mapa
+      const foundVal = Object.values(eventosPlanMap).find((b: any) => {
+        if (!b) return false;
+        const matchesDate = b.fecha === day.fecha || (day.id && b.day_id === day.id);
+        const matchesSlot = b.slot === slot || b.slot === String(slot);
+        return matchesDate && matchesSlot;
+      });
+      return foundVal || null;
+    };
+
+    // 1. Revisar bloques / slots 0..6
     for (let slot = 0; slot <= 6; slot++) {
-      const k1 = day.id + '_slot_' + slot;
-      const k2 = day.fecha + '_slot_' + slot;
-      const k3 = 'day_' + day.fecha + '_slot_' + slot;
-      const k4 = 'day_' + day.id + '_slot_' + slot;
-      const evObj = eventosPlanMap[k1] || eventosPlanMap[k2] || eventosPlanMap[k3] || eventosPlanMap[k4];
+      const evObj = findBloque(slot);
       const rawTipo = (evObj?.tipo || (day as any)['evento_' + slot] || (slot === 0 ? (day as any)['evento_1'] : '') || '').trim();
-      const horaVal = evObj?.hora || '';
+      const horaVal = (evObj?.hora || '').trim();
 
-      const cat = classify(rawTipo);
-      if (cat) {
-        let label: string = cat;
-        if (cat === 'Co' && rawTipo.toUpperCase().startsWith('COP')) label = 'Cop';
-        if (cat === 'Op' && rawTipo.toUpperCase().startsWith('OOP')) label = 'Oop';
-        if (cat === 'Pa') {
-          label = day.rival?.trim() ? 'Pa vs ' + day.rival.trim() : 'Pa';
-        }
-
-        const existing = res.find(r => r.tipo === label && r.hora === horaVal);
+      const badge = formatEventBadge(rawTipo, horaVal);
+      if (badge) {
+        const existing = res.find(r => r.tipo === badge.tipo && (r.hora === badge.hora || !r.hora || !badge.hora));
         if (!existing) {
-          const colors = getColors(cat, rawTipo);
-          res.push({ tipo: label, hora: horaVal, ...colors });
-        } else if (!existing.hora && horaVal) {
-          existing.hora = horaVal;
+          res.push(badge);
+        } else if (!existing.hora && badge.hora) {
+          existing.hora = badge.hora;
         }
       }
     }
 
     // 2. Si hay rival y no se ha añadido Pa
     if (day.rival?.trim() && !res.some(r => r.tipo.startsWith('Pa'))) {
-      const colors = getColors('Pa', 'PA');
-      res.push({
-        tipo: 'Pa vs ' + day.rival.trim(),
-        hora: (day as any).hora || '12:00',
-        ...colors,
-      });
+      const badge = formatEventBadge('Pa', (day as any).hora || '12:00');
+      if (badge) res.push(badge);
     }
 
     // 3. Revisar day.evento general si no se encontró nada en slots
-    if (res.length === 0 && day.evento) {
-      const cat = classify(day.evento);
-      if (cat) {
-        let label: string = cat;
-        if (cat === 'Co' && day.evento.toUpperCase().startsWith('COP')) label = 'Cop';
-        if (cat === 'Op' && day.evento.toUpperCase().startsWith('OOP')) label = 'Oop';
-        if (cat === 'Pa') {
-          label = day.rival?.trim() ? 'Pa vs ' + day.rival.trim() : 'Pa';
-        }
-        const colors = getColors(cat, day.evento);
-        res.push({ tipo: label, hora: '', ...colors });
-      }
+    if (res.length === 0 && (day.evento || day.evento_am || day.evento_pm)) {
+      const evGen = day.evento || day.evento_am || day.evento_pm || '';
+      const badge = formatEventBadge(evGen, '');
+      if (badge) res.push(badge);
     }
 
     return res;

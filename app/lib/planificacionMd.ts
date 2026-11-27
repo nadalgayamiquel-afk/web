@@ -5,12 +5,23 @@
 export function isMatchDaySession(d: any): boolean {
   if (!d) return false;
   if (d.rival && String(d.rival).trim().length > 0) return true;
-  if (String(d.md || "").trim().toUpperCase() === "MD") return true;
-  const evs = [d.evento, d.evento_am, d.evento_pm, d.evento_principal, d.evento_1];
-  const codes = ["PAV", "PAL", "PL", "PV", "PA", "PARTIDO"];
+  if (d.resultado_partido && String(d.resultado_partido).trim().length > 0) return true;
+  const evs = [
+    d.evento,
+    d.evento_am,
+    d.evento_pm,
+    d.evento_principal,
+    d.evento_1,
+    d.evento_2,
+    d.evento_3,
+    d.evento_4,
+    d.evento_5,
+    d.evento_6,
+  ];
+  const codes = ["PAV", "PAL", "PL", "PV", "PA", "PAAM", "PARTIDO"];
   return evs.some((e: any) => {
     if (!e) return false;
-    const n = String(e).toUpperCase().trim();
+    const n = String(e).toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
     return codes.some((c) => n === c || n.startsWith(c) || n.includes(" " + c));
   });
 }
@@ -45,7 +56,7 @@ export function resolvePlanificacionMD(
   gpsRecs: any[] = [],
   playerId?: string
 ): string {
-  if (!dateStr) return "MD";
+  if (!dateStr) return "";
 
   // Si se busca el perfil individual de un jugador específico y dicho jugador tiene partido registrado en esa fecha
   if (playerId && gpsRecs && gpsRecs.length > 0) {
@@ -70,18 +81,21 @@ export function resolvePlanificacionMD(
     return "MD";
   }
 
-  // 2. LA MD+1 SIEMPRE SE PRIORIZA: si el día anterior fue partido, SIEMPRE es +1 MD
+  // 2. Si directFound ya tiene un MD explícito que NO sea "MD" (o si es "MD" sólo si es un partido verificado)
+  if (directFound?.md && String(directFound.md).trim()) {
+    const rawMd = String(directFound.md).trim();
+    if (rawMd.toUpperCase() !== "MD" || isMatchDaySession(directFound)) {
+      return rawMd;
+    }
+  }
+
+  // 3. LA MD+1 SIEMPRE SE PRIORIZA: si el día anterior fue partido, SIEMPRE es +1 MD
   const prevDate = new Date(dateStr + "T12:00:00");
   prevDate.setDate(prevDate.getDate() - 1);
   const prevDateStr = prevDate.toISOString().split("T")[0];
   const prevDay = allKnownDays.find((d: any) => d && (d.fecha === prevDateStr || d.id === prevDateStr));
   if (prevDay && isMatchDaySession(prevDay)) {
     return "+1 MD";
-  }
-
-  // 3. Coincidencia directa en planificación
-  if (directFound?.md && String(directFound.md).trim()) {
-    return String(directFound.md).trim();
   }
 
   // 4. Recalcular según distancia a los partidos registrados en Planificación
@@ -163,14 +177,26 @@ export function resolvePlanificacionMD(
     } else if (upcoming.length > 0) {
       const uTime = new Date(upcoming[0] + "T12:00:00").getTime();
       const distNext = Math.round((uTime - tTime) / (1000 * 60 * 60 * 24));
-      return `-${distNext} MD`;
+      if (distNext <= 5) {
+        return `-${distNext} MD`;
+      }
+      return ">-5 MD";
     } else if (past.length > 0) {
       const pTime = new Date(past[0] + "T12:00:00").getTime();
       const distPrev = Math.round((tTime - pTime) / (1000 * 60 * 60 * 24));
-      if (distPrev > 3) return "MD";
-      return `+${distPrev} MD`;
+      if (distPrev <= 3) {
+        return `+${distPrev} MD`;
+      }
+      // Si distPrev > 3 y no hay partido próximo programado, NUNCA devolver "MD".
+      if (directFound?.md && String(directFound.md).trim().toUpperCase() !== "MD") {
+        return String(directFound.md).trim();
+      }
+      return "";
     }
   }
 
-  return "MD";
+  if (directFound?.md && String(directFound.md).trim().toUpperCase() !== "MD") {
+    return String(directFound.md).trim();
+  }
+  return "";
 }
