@@ -553,7 +553,7 @@ export default function GimnasioMatrixClient({
     });
   }, [jugadores, selectedJugadorChip, searchJugadorText]);
 
-  // Helper para eventos de planificación con hora y color predeterminado en cabecera
+  // Helper para eventos de planificación con hora y color predeterminado en cabecera (SOLO Co y Op)
   const getEventosEspecificosCompact = (day: SesionDia): Array<{ tipo: string; hora: string; bg: string; color: string; border: string }> => {
     const res: Array<{ tipo: string; hora: string; bg: string; color: string; border: string }> = [];
 
@@ -561,89 +561,47 @@ export default function GimnasioMatrixClient({
       if (!rawTipo || !rawTipo.trim()) return null;
       const c = rawTipo.trim().toUpperCase();
 
-      let label = rawTipo.trim();
-      let cat: 'Pa' | 'Co' | 'Op' | 'VD' | 'Red' | 'E' | 'D' | 'Other' = 'Other';
+      let label = '';
+      let cat: 'Co' | 'Op' | null = null;
 
-      // 1. Partido
+      // 1. Coadyuvante (Co / Cop)
       if (
-        c === 'PA' || c === 'PAL' || c === 'PAV' || c === 'PL' || c === 'PV' || c === 'PAAM' ||
-        c.startsWith('PA ') || c.startsWith('PA.') || c.startsWith('PA VS') || c.includes('PARTIDO')
-      ) {
-        cat = 'Pa';
-        label = day.rival?.trim() ? 'Pa vs ' + day.rival.trim() : (c.startsWith('PA') ? 'Pa' : rawTipo);
-      }
-      // 2. Coadyuvante / Fuerza / Gimnasio
-      else if (
         c === 'CO' || c === 'COP' || c.startsWith('CO ') || c.startsWith('CO1') || c.startsWith('CO2') ||
-        c.includes('COADYUVANTE') || c.includes('COADJUVANT') || c.includes('FUERZA') || c.includes('GIMNASIO') || c === 'GYM'
+        c.includes('COADYUVANTE') || c.includes('COADJUVANT')
       ) {
         cat = 'Co';
-        label = (c === 'COP' || c.startsWith('COP')) ? 'Cop' : (c.includes('FUERZA') ? 'Fuerza' : (c.includes('GIMNASIO') || c === 'GYM' ? 'Gym' : 'Co'));
+        label = (c === 'COP' || c.startsWith('COP')) ? 'Cop' : 'Co';
       }
-      // 3. Optimizador / Campo
+      // 2. Optimizador / Campo (Op / Oop)
       else if (
         c === 'OP' || c === 'OOP' || c.startsWith('OP ') || c.startsWith('OP1') || c.startsWith('OP2') ||
         c.includes('OPTIMIZADOR') || c.includes('OPTIMIZADORA') || c.includes('CAMPO')
       ) {
         cat = 'Op';
         label = (c === 'OOP' || c.startsWith('OOP')) ? 'Oop' : 'Op';
-      }
-      // 4. Video / Charla
-      else if (c.startsWith('VD') || c.startsWith('VIDEO') || c.startsWith('VÍDEO') || c.includes('CHARLA')) {
-        cat = 'VD';
-        label = c === 'VD' ? 'VD' : (rawTipo.length > 10 ? rawTipo.slice(0, 10) : rawTipo);
-      }
-      // 5. Readaptación
-      else if (c.startsWith('RED') || c.includes('READAPTACI')) {
-        cat = 'Red';
-        label = 'Red';
-      }
-      // 6. Entrenamiento general (E)
-      else if (c === 'E' || c.includes('ENTRENAMIENTO') || c.includes('ENTRENO')) {
-        cat = 'E';
-        label = 'E';
-      }
-      // 7. Descanso
-      else if (c === 'D' || c.includes('DESCANSO')) {
-        cat = 'D';
-        label = 'Descanso';
-      }
-      // 8. Activación / PAPE
-      else if (c.includes('ACTIVACI') || c.includes('PAPE')) {
-        cat = 'Co';
-        label = 'Activación';
+      } else {
+        // Excluir cualquier otro evento (VD, Red, Pa, E, D, etc.) según petición: SOLO Co y Op
+        return null;
       }
 
       // Colores: buscar en tiposConfigMap primero
-      const conf = tiposConfigMap[c] || tiposConfigMap[rawTipo.toUpperCase()] || tiposConfigMap[cat.toUpperCase()];
+      const conf = tiposConfigMap[label.toUpperCase()] || tiposConfigMap[c] || tiposConfigMap[cat.toUpperCase()];
       if (conf?.bg && conf?.color && conf?.border) {
         return { tipo: label, hora: horaVal, bg: conf.bg, color: conf.color, border: conf.border };
       }
 
       // Paletas por categoría según el diseño estándar del calendario
-      if (cat === 'Pa') {
-        return { tipo: label, hora: horaVal, bg: '#fecdd3', color: '#881337', border: '#fda4af' };
-      }
       if (cat === 'Co') {
+        if (label === 'Cop') {
+          return { tipo: label, hora: horaVal, bg: '#d97706', color: '#ffffff', border: '#b45309' };
+        }
         return { tipo: label, hora: horaVal, bg: '#fde047', color: '#713f12', border: '#eab308' };
       }
-      if (cat === 'Op') {
-        return { tipo: label, hora: horaVal, bg: '#93c5fd', color: '#1e3a8a', border: '#60a5fa' };
-      }
-      if (cat === 'VD') {
-        return { tipo: label, hora: horaVal, bg: '#fef08a', color: '#713f12', border: '#fde047' };
-      }
-      if (cat === 'Red') {
-        return { tipo: label, hora: horaVal, bg: '#fef9c3', color: '#713f12', border: '#fef08a' };
-      }
-      if (cat === 'E') {
-        return { tipo: label, hora: horaVal, bg: '#1e3a8a', color: '#ffffff', border: '#172554' };
-      }
-      if (cat === 'D') {
-        return { tipo: label, hora: horaVal, bg: '#e2e8f0', color: '#334155', border: '#94a3b8' };
-      }
 
-      return { tipo: label, hora: horaVal, bg: '#e0e7ff', color: '#3730a3', border: '#c7d2fe' };
+      if (label === 'Oop') {
+        return { tipo: label, hora: horaVal, bg: '#1e40af', color: '#ffffff', border: '#1e3a8a' };
+      }
+      return { tipo: label, hora: horaVal, bg: '#93c5fd', color: '#1e3a8a', border: '#60a5fa' };
     };
 
     const findBloque = (slot: number) => {
@@ -687,18 +645,20 @@ export default function GimnasioMatrixClient({
       }
     }
 
-    // 2. Si hay rival y no se ha añadido Pa
-    if (day.rival?.trim() && !res.some(r => r.tipo.startsWith('Pa'))) {
-      const badge = formatEventBadge('Pa', (day as any).hora || '12:00');
-      if (badge) res.push(badge);
-    }
-
-    // 3. Revisar day.evento general si no se encontró nada en slots
+    // 2. Revisar day.evento general si no se encontró nada en slots (solo si es Co u Op)
     if (res.length === 0 && (day.evento || day.evento_am || day.evento_pm)) {
       const evGen = day.evento || day.evento_am || day.evento_pm || '';
       const badge = formatEventBadge(evGen, '');
       if (badge) res.push(badge);
     }
+
+    // Ordenar para que Co (gimnasio) siempre aparezca antes de Op (campo) o por hora
+    res.sort((a, b) => {
+      if (a.hora && b.hora) return a.hora.localeCompare(b.hora);
+      if (a.tipo.startsWith('Co') && b.tipo.startsWith('Op')) return -1;
+      if (a.tipo.startsWith('Op') && b.tipo.startsWith('Co')) return 1;
+      return 0;
+    });
 
     return res;
   };
