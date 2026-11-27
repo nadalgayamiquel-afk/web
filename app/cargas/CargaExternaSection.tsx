@@ -33,6 +33,8 @@ import {
   saveWeeklyRatioColumnsServer,
   getCustomVariableNamesServer,
   saveCustomVariableNamesServer,
+  getCompetitiveProfileMatchesServer,
+  saveCompetitiveProfileMatchesServer,
 } from "@/app/actions";
 import {
   useFavoriteGpsVariables,
@@ -983,6 +985,7 @@ export default function CargaExternaSection({
         window.dispatchEvent(new CustomEvent("gps_competitive_profile_matches_updated", { detail: nextCustom }));
       } catch (e) {}
     }
+    saveCompetitiveProfileMatchesServer(nextCustom).catch(() => {});
   };
 
   const handleResetAutoInProfile = (jugadorId: string) => {
@@ -995,6 +998,7 @@ export default function CargaExternaSection({
         window.dispatchEvent(new CustomEvent("gps_competitive_profile_matches_updated", { detail: nextCustom }));
       } catch (e) {}
     }
+    saveCompetitiveProfileMatchesServer(nextCustom).catch(() => {});
   };
 
   useEffect(() => {
@@ -1010,6 +1014,22 @@ export default function CargaExternaSection({
   }, [pinnedMethodPlayerId]);
 
   useEffect(() => {
+    getCompetitiveProfileMatchesServer()
+      .then((serverMatches) => {
+        if (serverMatches && typeof serverMatches === "object" && Object.keys(serverMatches).length > 0) {
+          setCustomPlayerMatches((prev) => {
+            const merged = { ...serverMatches, ...prev };
+            if (typeof window !== "undefined") {
+              try {
+                localStorage.setItem("gps_competitive_profile_custom_matches", JSON.stringify(merged));
+              } catch (e) {}
+            }
+            return merged;
+          });
+        }
+      })
+      .catch(() => {});
+
     const handleUpdate = () => {
       if (typeof window !== "undefined") {
         try {
@@ -11803,6 +11823,7 @@ export default function CargaExternaSection({
                 window.dispatchEvent(new CustomEvent("gps_competitive_profile_matches_updated", { detail: next }));
               } catch (e) {}
             }
+            saveCompetitiveProfileMatchesServer(next).catch(() => {});
           }}
           onResetAuto={() => {
             const next = { ...customPlayerMatches };
@@ -11814,6 +11835,7 @@ export default function CargaExternaSection({
                 window.dispatchEvent(new CustomEvent("gps_competitive_profile_matches_updated", { detail: next }));
               } catch (e) {}
             }
+            saveCompetitiveProfileMatchesServer(next).catch(() => {});
           }}
         />
       )}

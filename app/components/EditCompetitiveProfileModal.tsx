@@ -57,7 +57,7 @@ export default function EditCompetitiveProfileModal({
       currentCustomDates.forEach((item: any) => {
         if (typeof item === "string") {
           const match = availableMatches.find((m) => m.fecha === item);
-          map[item] = match && match.minutos < 75 ? "parte" : "entero";
+          map[item] = match && match.minutos < 90 ? "parte" : "entero";
         } else if (item && item.fecha) {
           map[item.fecha] = item.modo || "entero";
         }
@@ -73,9 +73,9 @@ export default function EditCompetitiveProfileModal({
       });
       return map;
     }
-    // Si no, sugerir los partidos >= 75 min como entero
+    // Si no, sugerir los partidos >= 90 min como entero
     availableMatches.forEach((m) => {
-      if (m.minutos >= 75) {
+      if (m.minutos >= 90) {
         map[m.fecha] = "entero";
       }
     });
@@ -99,7 +99,7 @@ export default function EditCompetitiveProfileModal({
         delete next[dateStr];
       } else {
         const match = availableMatches.find((m) => m.fecha === dateStr);
-        next[dateStr] = match && match.minutos < 75 ? "parte" : "entero";
+        next[dateStr] = match && match.minutos < 90 ? "parte" : "entero";
       }
       return next;
     });
@@ -140,20 +140,39 @@ export default function EditCompetitiveProfileModal({
     return previewProfilesMap.get(jugador.id);
   }, [gpsRecords, allJugadores, jugador, derivedVariables, selectedMatchesArray, planificacionDays]);
 
-  // Extraer métricas clave para un partido específico
-  const getMatchMetricsSummary = (m: AnalyzedMatch) => {
-    const raw = m.rawRecord?.metricas || m.rawRecord || (m.parts?.[0]?.rawTask) || {};
-    const dt = Math.round(m.dist || calculateGpsMetricValue(raw, "Distance(m)", derivedVariables) || 0);
+  // Extraer métricas clave para un partido específico (aplica x2 a la parte más larga si es modo parte)
+  const getMatchMetricsSummary = (m: AnalyzedMatch, isFull: boolean = true) => {
+    let bestPt = m.parts?.[0];
+    let maxMin = -1;
+    (m.parts || []).forEach((pt) => {
+      if (pt.minutos > maxMin) {
+        maxMin = pt.minutos;
+        bestPt = pt;
+      }
+    });
+
+    const raw = isFull ? (m.rawRecord?.metricas || m.rawRecord || bestPt?.rawTask || {}) : (bestPt?.rawTask || {});
+    const mult = isFull ? 1 : 2;
+    const baseDist = isFull ? m.dist : (bestPt ? bestPt.dist : m.dist);
+    const dt = Math.round((baseDist || calculateGpsMetricValue(raw, "Distance(m)", derivedVariables) || 0) * mult);
     const hsr = Math.round(
-      calculateGpsMetricValue(raw, "Distance +21 (m)", derivedVariables) ||
-      calculateGpsMetricValue(raw, "HSR Abs (m)", derivedVariables) ||
-      0
+      (calculateGpsMetricValue(raw, "Distance +21 (m)", derivedVariables) ||
+        calculateGpsMetricValue(raw, "HSR Abs (m)", derivedVariables) ||
+        0) * mult
     );
     const vmax = calculateGpsMetricValue(raw, "MAX Speed(km/h)", derivedVariables) || 0;
-    const accDec = Math.round(calculateGpsMetricValue(raw, "Acc+Dec", derivedVariables) || 0);
-    const pl = Math.round(calculateGpsMetricValue(raw, "Player Load", derivedVariables) || 0);
+    const accDec = Math.round((calculateGpsMetricValue(raw, "Acc+Dec", derivedVariables) || 0) * mult);
+    const pl = Math.round((calculateGpsMetricValue(raw, "Player Load", derivedVariables) || 0) * mult);
 
-    return { dt, hsr, vmax: vmax > 0 ? vmax.toFixed(1) : "—", accDec, pl };
+    return {
+      dt,
+      hsr,
+      vmax: vmax > 0 ? vmax.toFixed(1) : "—",
+      accDec,
+      pl,
+      bestPartNombre: bestPt?.nombre,
+      bestPartMin: bestPt?.minutos,
+    };
   };
 
   // Fechas del equipo disponibles que no están todavía en availableMatches ni seleccionadas
@@ -314,9 +333,9 @@ export default function EditCompetitiveProfileModal({
               <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                 {availableMatches.map((m) => {
                   const isChecked = m.fecha in selectedMatches;
-                  const currentMode = selectedMatches[m.fecha] || (m.minutos >= 75 ? "entero" : "parte");
+                  const currentMode = selectedMatches[m.fecha] || (m.minutos >= 90 ? "entero" : "parte");
                   const isFull = currentMode === "entero";
-                  const metrics = getMatchMetricsSummary(m);
+                  const metrics = getMatchMetricsSummary(m, isFull);
                   const rival = m.rival || planificacionDays?.find((d: any) => d.fecha === m.fecha)?.rival;
 
                   return (
@@ -398,9 +417,18 @@ export default function EditCompetitiveProfileModal({
                             )}
                           </div>
                           <div style={{ fontSize: "10.5px", color: "#64748b", marginTop: "3px" }}>
-                            Tareas: {m.parts && m.parts.length > 0
-                              ? m.parts.map((p) => `${p.nombre} (${p.minutos}')`).join(" + ")
-                              : "Partido completo"}
+                            {m.parts && m.parts.length > 0 ? (
+                              <span>
+                                Tareas: {m.parts.map((p) => `${p.nombre} (${p.minutos}')`).join(" + ")}
+                                {!isFull && metrics.bestPartNombre && (
+                                  <span style={{ color: "#b45309", fontWeight: 700, marginLeft: "6px" }}>
+                                    • Parte computada: {metrics.bestPartNombre} ({metrics.bestPartMin}') x2
+                                  </span>
+                                )}
+                              </span>
+                            ) : (
+                              "Partido completo"
+                            )}
                           </div>
                         </div>
                       </div>

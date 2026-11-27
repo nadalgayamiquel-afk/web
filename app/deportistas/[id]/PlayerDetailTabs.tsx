@@ -39,7 +39,7 @@ import {
   Legend,
 } from "recharts";
 
-import { checkDuplicateJugadorNombre, addLesion, saveLesionesDataServer, getFullExcelBBDDRows, savePlayerProfileConfigServer, getAllGpsDatos } from "../../actions";
+import { checkDuplicateJugadorNombre, addLesion, saveLesionesDataServer, getFullExcelBBDDRows, savePlayerProfileConfigServer, getAllGpsDatos, getCompetitiveProfileMatchesServer } from "../../actions";
 import {
   CONTEXTOS_OPTIONS,
   CONTACTO_OPTIONS,
@@ -1590,6 +1590,37 @@ export default function PlayerDetailTabs({
   };
 
   // Se recalcula reactivamente al añadir nuevos partidos en gps_datos
+  const [customPlayerMatches, setCustomPlayerMatches] = useState<Record<string, any>>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("gps_competitive_profile_custom_matches");
+        if (stored) return JSON.parse(stored);
+      } catch {}
+    }
+    return {};
+  });
+
+  useEffect(() => {
+    getCompetitiveProfileMatchesServer()
+      .then((serverMatches) => {
+        if (serverMatches && typeof serverMatches === "object" && Object.keys(serverMatches).length > 0) {
+          setCustomPlayerMatches((prev) => ({ ...serverMatches, ...prev }));
+        }
+      })
+      .catch(() => {});
+
+    const handleUpdate = () => {
+      if (typeof window !== "undefined") {
+        try {
+          const stored = localStorage.getItem("gps_competitive_profile_custom_matches");
+          if (stored) setCustomPlayerMatches(JSON.parse(stored));
+        } catch {}
+      }
+    };
+    window.addEventListener("gps_competitive_profile_matches_updated", handleUpdate);
+    return () => window.removeEventListener("gps_competitive_profile_matches_updated", handleUpdate);
+  }, []);
+
   const competitiveProfilesMap = useMemo(() => {
     return computeCompetitiveProfiles({
       gpsRecords: localGpsRecords,
@@ -1597,8 +1628,9 @@ export default function PlayerDetailTabs({
       customOverrides: compProfileOverrides,
       availableFavVariables: favoriteVariables,
       derivedVariables,
+      customPlayerMatches,
     });
-  }, [localGpsRecords, allJugadores, jugador, compProfileOverrides, favoriteVariables, derivedVariables]);
+  }, [localGpsRecords, allJugadores, jugador, compProfileOverrides, favoriteVariables, derivedVariables, customPlayerMatches]);
 
   const playerCompProfile = useMemo(() => {
     return competitiveProfilesMap.get(jugador.id);

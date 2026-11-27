@@ -454,13 +454,9 @@ export function computeCompetitiveProfiles({
     // Ordenar partidos del más reciente al más antiguo
     const allSortedMatches = [...matches].sort((a, b) => b.fecha.localeCompare(a.fecha));
 
-    // Detección automática oficial: partidos de 90' (>=70 min o ambas partes con >=60 min)
+    // Detección automática oficial: partidos de 90' (>=90 min)
     const autoFullMatches = allSortedMatches.filter(
-      (m) =>
-        m.minutos >= 70 ||
-        (m.parts.some((pt) => isFirstHalfTask(pt.nombre)) &&
-          m.parts.some((pt) => isSecondHalfTask(pt.nombre)) &&
-          m.minutos >= 60)
+      (m) => m.minutos >= 90
     );
 
     // Extraer todas las partes individuales de ~45 min (entre 35 y 65 min) que no pertenezcan ya a un partido completo
@@ -487,7 +483,7 @@ export function computeCompetitiveProfiles({
         if (typeof item === "string") {
           customDatesSet.add(item);
           const foundM = allSortedMatches.find((m) => m.fecha === item);
-          customModeMap.set(item, foundM && foundM.minutos < 75 ? "parte" : "entero");
+          customModeMap.set(item, foundM && foundM.minutos < 90 ? "parte" : "entero");
         } else if (item && item.fecha) {
           customDatesSet.add(item.fecha);
           customModeMap.set(item.fecha, item.modo || "entero");
@@ -504,9 +500,9 @@ export function computeCompetitiveProfiles({
 
     const getMatchMode = (m: AnalyzedMatch): "entero" | "parte" => {
       if (isCustom) {
-        return customModeMap.get(m.fecha) || (m.minutos >= 75 ? "entero" : "parte");
+        return customModeMap.get(m.fecha) || (m.minutos >= 90 ? "entero" : "parte");
       }
-      return m.minutos >= 75 ? "entero" : "parte";
+      return m.minutos >= 90 ? "entero" : "parte";
     };
 
     const p: CompetitiveProfilePlayer = {
@@ -597,16 +593,34 @@ export function computeCompetitiveProfiles({
         const mode = getMatchMode(m);
         const isFull = mode === "entero";
         const totalMin = Math.round(m.minutos * 10) / 10;
+
+        // Seleccionar la parte de mayor duración (la que ha jugado entera)
+        let bestPartIdx = 0;
+        let maxPMin = -1;
+        m.parts.forEach((pt, idx) => {
+          if (pt.minutos > maxPMin) {
+            maxPMin = pt.minutos;
+            bestPartIdx = idx;
+          }
+        });
+        const bestPt = m.parts[bestPartIdx];
+        const usedDist = isFull ? Math.round(m.dist) : Math.round((bestPt ? bestPt.dist : m.dist) * 2);
+        const usedMin = isFull ? totalMin : (bestPt ? Math.round(bestPt.minutos * 10) / 10 : totalMin);
+        const desc = isFull
+          ? (m.parts.map((pt) => `${pt.nombre} (${pt.minutos}')`).join(" + ") || "Partido completo")
+          : (bestPt ? `${bestPt.nombre} (${bestPt.minutos}') x2` : "Parte x2");
+
         return {
           fecha: m.fecha,
           minutos: totalMin,
+          partMinutos: usedMin,
           rival: m.rival || rivalsByDate.get(m.fecha),
-          desc: m.parts.map((pt) => `${pt.nombre} (${pt.minutos}')`).join(" + ") || "Partido completo",
+          desc,
           isFull,
           modo: mode,
-          dist: isFull ? Math.round(m.dist) : Math.round(m.dist * 2),
+          dist: usedDist,
           velMax: Math.round(velMax * 10) / 10,
-          tipo: `${totalMin} min (${isFull ? "Entero 90'" : "Parte x2"})`,
+          tipo: isFull ? `${totalMin}' (Entero 90')` : `${usedMin}' (Parte x2)`,
         };
       });
 
@@ -631,22 +645,44 @@ export function computeCompetitiveProfiles({
 
           const mode = getMatchMode(m);
           let matchVal: number;
-          if (v.key === "Distancia / Min" || v.key.toLowerCase().includes("m/min")) {
-            matchVal = m.minutos > 0 ? Math.round((m.dist / m.minutos) * 10) / 10 : 0;
-          } else if (isRate) {
-            matchVal = Math.max(...partsBreakdown.map((pb) => pb.val));
-          } else {
-            const rawSum = partsBreakdown.reduce((sum, pb) => sum + pb.val, 0);
-            if (mode === "parte") {
-              const halfPart = partsBreakdown.find((pb) => pb.minutos >= 35 && pb.minutos <= 65);
-              if (halfPart) {
-                matchVal = Math.round(halfPart.val * 2);
+          if (mode === "parte") {
+            // Seleccionar la parte con más minutos (la que ha jugado entera)
+            let bestPartIdx = 0;
+            let maxMin = -1;
+            partsBreakdown.forEach((pb, idx) => {
+              if (pb.minutos > maxMin) {
+                maxMin = pb.minutos;
+                bestPartIdx = idx;
+              }
+            });
+            const bestPb = partsBreakdown[bestPartIdx];
+            const bestPt = m.parts[bestPartIdx];
+
+            if (v.key === "Distancia / Min" || v.key.toLowerCase().includes("m/min")) {
+              matchVal = bestPt && bestPt.minutos > 0
+                ? Math.round((bestPt.dist / bestPt.minutos) * 10) / 10
+                : (m.minutos > 0 ? Math.round((m.dist / m.minutos) * 10) / 10 : 0);
+            } else if (isRate) {
+              matchVal = bestPb ? bestPb.val : Math.max(...partsBreakdown.map((pb) => pb.val));
+            } else {
+              if (bestPb) {
+                matchVal = Math.round(bestPb.val * 2);
               } else if (m.minutos > 0) {
+                const rawSum = partsBreakdown.reduce((sum, pb) => sum + pb.val, 0);
                 matchVal = Math.round((rawSum * 90) / m.minutos);
               } else {
+                const rawSum = partsBreakdown.reduce((sum, pb) => sum + pb.val, 0);
                 matchVal = Math.round(rawSum * 2);
               }
+            }
+          } else {
+            // Modo "entero"
+            if (v.key === "Distancia / Min" || v.key.toLowerCase().includes("m/min")) {
+              matchVal = m.minutos > 0 ? Math.round((m.dist / m.minutos) * 10) / 10 : 0;
+            } else if (isRate) {
+              matchVal = Math.max(...partsBreakdown.map((pb) => pb.val));
             } else {
+              const rawSum = partsBreakdown.reduce((sum, pb) => sum + pb.val, 0);
               matchVal = rawSum;
             }
           }
@@ -748,17 +784,35 @@ export function computeCompetitiveProfiles({
 
       const singleVelMax = Math.max(0, ...m.parts.map((pt) => calculateGpsMetricValue(pt.rawTask, "MAX Speed(km/h)", derivedVariables) || 0));
       const singleTotalMin = Math.round(m.minutos * 10) / 10;
+
+      // Seleccionar la parte de mayor duración para la proyección x2
+      let singleBestPartIdx = 0;
+      let singleMaxMin = -1;
+      m.parts.forEach((pt, idx) => {
+        if (pt.minutos > singleMaxMin) {
+          singleMaxMin = pt.minutos;
+          singleBestPartIdx = idx;
+        }
+      });
+      const singleBestPt = m.parts[singleBestPartIdx];
+      const singleUsedDist = isSingleFull ? Math.round(m.dist) : Math.round((singleBestPt ? singleBestPt.dist : m.dist) * 2);
+      const singleUsedMin = isSingleFull ? singleTotalMin : (singleBestPt ? Math.round(singleBestPt.minutos * 10) / 10 : singleTotalMin);
+      const singleDesc = isSingleFull
+        ? (m.parts.map((pt) => `${pt.nombre} (${pt.minutos}')`).join(" + ") || "Partido completo")
+        : (singleBestPt ? `${singleBestPt.nombre} (${singleBestPt.minutos}') x2` : "Parte x2");
+
       p.usedMatchesList = [
         {
           fecha: m.fecha,
           minutos: singleTotalMin,
+          partMinutos: singleUsedMin,
           rival: m.rival || rivalsByDate.get(m.fecha),
-          desc: m.parts.map((pt) => `${pt.nombre} (${pt.minutos}')`).join(" + ") || "Partido completo",
+          desc: singleDesc,
           isFull: isSingleFull,
           modo: singleMode,
-          dist: isSingleFull ? Math.round(m.dist) : Math.round(m.dist * 2),
+          dist: singleUsedDist,
           velMax: Math.round(singleVelMax * 10) / 10,
-          tipo: `${singleTotalMin} min (${isSingleFull ? "Entero 90'" : "Parte x2"})`,
+          tipo: isSingleFull ? `${singleTotalMin}' (Entero 90')` : `${singleUsedMin}' (Parte x2)`,
         },
       ];
 
@@ -779,22 +833,43 @@ export function computeCompetitiveProfiles({
         });
 
         let raw: number;
-        if (v.key === "Distancia / Min" || v.key.toLowerCase().includes("m/min")) {
-          raw = m.minutos > 0 ? Math.round((m.dist / m.minutos) * 10) / 10 : 0;
-        } else if (isRate) {
-          raw = Math.max(...partsBreakdown.map((pb) => pb.val));
-        } else {
-          const rawSum = partsBreakdown.reduce((sum, pb) => sum + pb.val, 0);
-          if (singleMode === "parte") {
-            const halfPart = partsBreakdown.find((pb) => pb.minutos >= 35 && pb.minutos <= 65);
-            if (halfPart) {
-              raw = Math.round(halfPart.val * 2);
+        if (singleMode === "parte") {
+          let bestPartIdx = 0;
+          let maxMin = -1;
+          partsBreakdown.forEach((pb, idx) => {
+            if (pb.minutos > maxMin) {
+              maxMin = pb.minutos;
+              bestPartIdx = idx;
+            }
+          });
+          const bestPb = partsBreakdown[bestPartIdx];
+          const bestPt = m.parts[bestPartIdx];
+
+          if (v.key === "Distancia / Min" || v.key.toLowerCase().includes("m/min")) {
+            raw = bestPt && bestPt.minutos > 0
+              ? Math.round((bestPt.dist / bestPt.minutos) * 10) / 10
+              : (m.minutos > 0 ? Math.round((m.dist / m.minutos) * 10) / 10 : 0);
+          } else if (isRate) {
+            raw = bestPb ? bestPb.val : Math.max(...partsBreakdown.map((pb) => pb.val));
+          } else {
+            if (bestPb) {
+              raw = Math.round(bestPb.val * 2);
             } else if (m.minutos > 0) {
+              const rawSum = partsBreakdown.reduce((sum, pb) => sum + pb.val, 0);
               raw = Math.round((rawSum * 90) / m.minutos);
             } else {
+              const rawSum = partsBreakdown.reduce((sum, pb) => sum + pb.val, 0);
               raw = Math.round(rawSum * 2);
             }
+          }
+        } else {
+          // Modo entero
+          if (v.key === "Distancia / Min" || v.key.toLowerCase().includes("m/min")) {
+            raw = m.minutos > 0 ? Math.round((m.dist / m.minutos) * 10) / 10 : 0;
+          } else if (isRate) {
+            raw = Math.max(...partsBreakdown.map((pb) => pb.val));
           } else {
+            const rawSum = partsBreakdown.reduce((sum, pb) => sum + pb.val, 0);
             raw = rawSum;
           }
         }

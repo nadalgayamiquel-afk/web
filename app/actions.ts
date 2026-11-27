@@ -5251,6 +5251,116 @@ export async function saveCustomVariableNamesServer(
   }
 }
 
+const CUSTOM_COMPETITIVE_PROFILE_MATCHES_UUID = "00000000-0000-0000-0000-000000000009";
+
+export async function getCompetitiveProfileMatchesServer(): Promise<Record<string, any>> {
+  try {
+    // 1. Supabase db_testing
+    const supabase = getServerSupabase();
+    const { data: dbRow } = await supabase
+      .from("db_testing")
+      .select("data")
+      .eq("id", CUSTOM_COMPETITIVE_PROFILE_MATCHES_UUID)
+      .eq("test_type_id", "competitive_profile_matches")
+      .maybeSingle();
+
+    if (dbRow?.data && typeof dbRow.data === "object") {
+      const matches = (dbRow.data as any).matches;
+      if (matches && typeof matches === "object" && !Array.isArray(matches)) {
+        return matches;
+      }
+    }
+
+    // 2. configuracion_club
+    const { data: clubRow } = await supabase
+      .from("configuracion_club")
+      .select("config_json")
+      .eq("id", "default")
+      .maybeSingle();
+
+    if (clubRow?.config_json?.gpsConfig?.competitiveProfileMatches) {
+      const matches = clubRow.config_json.gpsConfig.competitiveProfileMatches;
+      if (matches && typeof matches === "object" && !Array.isArray(matches)) {
+        return matches;
+      }
+    }
+
+    // 3. Archivo JSON local
+    const path = require("path");
+    const filePath = path.join(process.cwd(), "public", "competitive_profile_matches.json");
+    if (fs.existsSync(filePath)) {
+      const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+      if (parsed?.matches && typeof parsed.matches === "object" && !Array.isArray(parsed.matches)) {
+        return parsed.matches;
+      }
+    }
+  } catch (e) {
+    console.error("Error reading competitive profile matches from server:", e);
+  }
+  return {};
+}
+
+export async function saveCompetitiveProfileMatchesServer(
+  matches: Record<string, any>
+): Promise<{ success: boolean; matches: Record<string, any> }> {
+  try {
+    const valid = matches && typeof matches === "object" && !Array.isArray(matches) ? matches : {};
+    const payload = {
+      matches: valid,
+      updatedAt: new Date().toISOString(),
+    };
+
+    // 1. Guardar en Supabase db_testing
+    const supabase = getServerSupabase();
+    await supabase.from("db_testing").upsert({
+      id: CUSTOM_COMPETITIVE_PROFILE_MATCHES_UUID,
+      name: "Partidos Personalizados Perfil Competitivo GPS",
+      test_type_id: "competitive_profile_matches",
+      structure: "CONFIG",
+      data: payload,
+    });
+
+    // 2. Guardar en configuracion_club
+    try {
+      const { data: clubRow } = await supabase
+        .from("configuracion_club")
+        .select("config_json")
+        .eq("id", "default")
+        .maybeSingle();
+
+      const existingConfig = clubRow?.config_json || {};
+      const updatedConfig = {
+        ...existingConfig,
+        gpsConfig: {
+          ...(existingConfig.gpsConfig || {}),
+          competitiveProfileMatches: valid,
+        },
+      };
+
+      await supabase.from("configuracion_club").upsert(
+        {
+          id: "default",
+          config_json: updatedConfig,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "id" }
+      );
+    } catch (e) {}
+
+    // 3. Guardar archivo local
+    try {
+      const path = require("path");
+      const filePath = path.join(process.cwd(), "public", "competitive_profile_matches.json");
+      fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), "utf8");
+    } catch (e) {}
+
+    return { success: true, matches: valid };
+  } catch (e) {
+    console.error("Error saving competitive profile matches to server:", e);
+    return { success: false, matches };
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // MULTAS: CONFIGURACIÓN, BAREMOS Y REGISTRO OFICIAL
 // ═══════════════════════════════════════════════════════════════════
