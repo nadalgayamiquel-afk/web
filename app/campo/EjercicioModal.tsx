@@ -8,6 +8,7 @@ import {
   CampoDiagramaData,
 } from "./campo-types";
 import TacticalPitchDesigner from "./TacticalPitchDesigner";
+import { getVideoEmbedInfo } from "./campo-video-utils";
 
 interface EjercicioModalProps {
   ejercicio?: CampoEjercicio | null;
@@ -24,12 +25,13 @@ export default function EjercicioModal({
 }: EjercicioModalProps) {
   if (!isOpen) return null;
 
-  const [activeTab, setActiveTab] = useState<"pizarra" | "espacio" | "metodologia" | "gps">("pizarra");
+  const [activeTab, setActiveTab] = useState<"pizarra" | "video" | "espacio" | "metodologia" | "gps">("pizarra");
 
   // Campos principales
   const [nombre, setNombre] = useState(ejercicio?.nombre || "");
   const [categoria, setCategoria] = useState<CampoCategoriaEjercicio>(ejercicio?.categoria || "POSESION");
   const [faseJuego, setFaseJuego] = useState<"ATAQUE" | "DEFENSA" | "TRANSICION_OF" | "TRANSICION_DEF" | "GLOBAL">(ejercicio?.faseJuego || "GLOBAL");
+  const [videoUrl, setVideoUrl] = useState<string>(ejercicio?.videoUrl || "");
 
   // Dimensiones
   const [largoM, setLargoM] = useState<number>(ejercicio?.dimensiones.largoM || 40);
@@ -136,6 +138,7 @@ export default function EjercicioModal({
       },
       perfilGps,
       diagrama,
+      videoUrl: videoUrl.trim() || undefined,
       creadoEn: ejercicio?.creadoEn || new Date().toISOString(),
       actualizadoEn: new Date().toISOString(),
     };
@@ -228,6 +231,12 @@ export default function EjercicioModal({
         >
           {[
             { id: "pizarra" as const, label: "🎨 Pizarra & Diseñador Táctico", icon: "📐" },
+            {
+              id: "video" as const,
+              label: `🎥 Vídeo Demostrativo ${videoUrl.trim() ? "✓" : ""}`,
+              icon: "▶️",
+              highlight: Boolean(videoUrl.trim()),
+            },
             { id: "espacio" as const, label: "📏 Espacio & Jugadores & Tiempo", icon: "⏱️" },
             { id: "metodologia" as const, label: "🎯 Objetivos & Consignas", icon: "📋" },
             { id: "gps" as const, label: "⚡ Perfil GPS Estimado", icon: "📊" },
@@ -239,7 +248,7 @@ export default function EjercicioModal({
               style={{
                 padding: "10px 14px",
                 borderBottom: activeTab === tab.id ? "3px solid #0284c7" : "3px solid transparent",
-                color: activeTab === tab.id ? "#0284c7" : "#64748b",
+                color: activeTab === tab.id ? "#0284c7" : (tab as any).highlight ? "#16a34a" : "#64748b",
                 fontWeight: activeTab === tab.id ? 900 : 700,
                 fontSize: "12.5px",
                 background: "transparent",
@@ -259,11 +268,11 @@ export default function EjercicioModal({
 
         {/* CUERPO DEL MODAL (SCROLLABLE) */}
         <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px" }}>
-          {/* BARRA SUPERIOR GENERAL (NOMBRE Y CATEGORÍA) */}
+          {/* BARRA SUPERIOR GENERAL (NOMBRE, CATEGORÍA, FASE Y VÍDEO) */}
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "2fr 1fr 1fr",
+              gridTemplateColumns: "1.8fr 1fr 1fr 1.4fr",
               gap: "12px",
               background: "#f1f5f9",
               padding: "12px",
@@ -351,6 +360,39 @@ export default function EjercicioModal({
                 <option value="TRANSICION_DEF">Transición Defensa-Ataque</option>
               </select>
             </div>
+
+            <div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "4px" }}>
+                <label style={{ fontSize: "11px", fontWeight: 800, color: "#334155" }}>
+                  🎥 Vídeo (YouTube/Vimeo/MP4)
+                </label>
+                {videoUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("video")}
+                    style={{ background: "none", border: "none", color: "#0284c7", fontSize: "10.5px", fontWeight: 800, cursor: "pointer", padding: 0 }}
+                  >
+                    Ver preview ▶
+                  </button>
+                )}
+              </div>
+              <input
+                type="url"
+                value={videoUrl}
+                onChange={(e) => setVideoUrl(e.target.value)}
+                placeholder="https://youtu.be/..."
+                style={{
+                  width: "100%",
+                  padding: "8px 10px",
+                  borderRadius: "6px",
+                  border: videoUrl.trim() ? "1.5px solid #16a34a" : "1px solid #cbd5e1",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  background: "#ffffff",
+                  boxSizing: "border-box",
+                }}
+              />
+            </div>
           </div>
 
           {/* CONTENIDO DE PESTAÑA 1: PIZARRA GRÁFICA */}
@@ -361,6 +403,156 @@ export default function EjercicioModal({
                 onChange={(newDiagram) => setDiagrama(newDiagram)}
                 height={500}
               />
+            </div>
+          )}
+
+          {/* CONTENIDO DE PESTAÑA VIDEO DEMOSTRATIVO */}
+          {activeTab === "video" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              <div style={{ background: "#f8fafc", padding: "16px", borderRadius: "10px", border: "1px solid #e2e8f0" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+                  <div>
+                    <h4 style={{ fontSize: "13px", fontWeight: 900, color: "#0f172a", margin: 0, textTransform: "uppercase" }}>
+                      🎥 Enlace de Vídeo Demostrativo
+                    </h4>
+                    <p style={{ fontSize: "11px", color: "#64748b", margin: "2px 0 0 0" }}>
+                      Pega un enlace de YouTube, Vimeo, Google Drive o archivo MP4 para mostrarlo a los jugadores y cuerpo técnico.
+                    </p>
+                  </div>
+                  {videoUrl.trim() && (
+                    <span style={{ fontSize: "11px", fontWeight: 800, padding: "3px 8px", borderRadius: "6px", background: "#dcfce7", color: "#166534" }}>
+                      {getVideoEmbedInfo(videoUrl)?.providerLabel || "Enlace añadido"} ✓
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <input
+                    type="url"
+                    value={videoUrl}
+                    onChange={(e) => setVideoUrl(e.target.value)}
+                    placeholder="https://www.youtube.com/watch?v=... o https://youtu.be/... o Vimeo / MP4 / Drive"
+                    style={{
+                      flex: 1,
+                      padding: "9px 12px",
+                      borderRadius: "6px",
+                      border: "1.5px solid #0284c7",
+                      fontSize: "13px",
+                      fontWeight: 600,
+                      background: "#ffffff",
+                      outline: "none",
+                    }}
+                  />
+                  {videoUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setVideoUrl("")}
+                      style={{
+                        padding: "8px 12px",
+                        background: "#f1f5f9",
+                        border: "1px solid #cbd5e1",
+                        borderRadius: "6px",
+                        fontSize: "12px",
+                        fontWeight: 700,
+                        color: "#475569",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Limpiar
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* REPRODUCTOR EN VIVO DE PRUEBA */}
+              <div
+                style={{
+                  background: "#0f172a",
+                  borderRadius: "12px",
+                  padding: "16px",
+                  color: "#ffffff",
+                  minHeight: "360px",
+                  display: "flex",
+                  flexDirection: "column",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
+                  <span style={{ fontSize: "12px", fontWeight: 800, color: "#94a3b8" }}>
+                    📺 Reproductor Integrado
+                  </span>
+                  {videoUrl.trim() && (
+                    <a
+                      href={videoUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ fontSize: "11px", color: "#38bdf8", textDecoration: "none", fontWeight: 700 }}
+                    >
+                      Probar en pestaña nueva ↗
+                    </a>
+                  )}
+                </div>
+
+                {(() => {
+                  const info = getVideoEmbedInfo(videoUrl);
+                  if (!info) {
+                    return (
+                      <div
+                        style={{
+                          flex: 1,
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          padding: "40px 20px",
+                          textAlign: "center",
+                          border: "2px dashed #334155",
+                          borderRadius: "8px",
+                          minHeight: "260px",
+                        }}
+                      >
+                        <div style={{ fontSize: "36px", marginBottom: "10px" }}>🎬</div>
+                        <p style={{ fontSize: "13px", fontWeight: 700, color: "#e2e8f0", margin: "0 0 6px 0" }}>
+                          Introduce una URL de vídeo para previsualizarlo aquí
+                        </p>
+                        <p style={{ fontSize: "11px", color: "#94a3b8", maxWidth: "420px", margin: 0 }}>
+                          Compatible con YouTube (incluye Shorts), Vimeo, Google Drive (compartido como lector) y vídeos MP4/WebM.
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  if (info.isDirectVideo) {
+                    return (
+                      <div style={{ position: "relative", width: "100%", paddingTop: "56.25%", background: "#000000", borderRadius: "8px", overflow: "hidden" }}>
+                        <video src={info.embedUrl} controls style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", objectFit: "contain" }} />
+                      </div>
+                    );
+                  }
+
+                  if (info.isEmbeddable) {
+                    return (
+                      <div style={{ position: "relative", width: "100%", paddingTop: "56.25%", background: "#000000", borderRadius: "8px", overflow: "hidden" }}>
+                        <iframe src={info.embedUrl} title="Vista previa" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: "none" }} />
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "30px", textAlign: "center", background: "#1e293b", borderRadius: "8px" }}>
+                      <div style={{ fontSize: "32px", marginBottom: "8px" }}>🌐</div>
+                      <p style={{ fontSize: "13px", fontWeight: 700, color: "#f8fafc", margin: "0 0 6px 0" }}>
+                        Enlace Web Externo ({info.providerLabel})
+                      </p>
+                      <p style={{ fontSize: "11px", color: "#94a3b8", maxWidth: "420px", margin: "0 0 12px 0" }}>
+                        Este sitio no permite incrustarse directamente en un marco seguro, pero el botón de vídeo abrirá el enlace automáticamente.
+                      </p>
+                      <a href={videoUrl} target="_blank" rel="noopener noreferrer" style={{ background: "#0284c7", color: "#ffffff", padding: "8px 16px", borderRadius: "6px", fontSize: "12px", fontWeight: 800, textDecoration: "none" }}>
+                        Abrir Enlace en Navegador ↗
+                      </a>
+                    </div>
+                  );
+                })()}
+              </div>
             </div>
           )}
 

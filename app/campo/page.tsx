@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import {
   CampoEjercicio,
@@ -9,38 +9,54 @@ import {
   CampoSesionBloqueItem,
   BENCHMARKS_CATEGORIA_DEFECTO,
   TARGETS_MICROCICLO_MD,
+  CampoDiagramaData,
 } from "./campo-types";
 import EjercicioModal from "./EjercicioModal";
+import EjercicioDetailModal from "./EjercicioDetailModal";
+import VideoPlayerModal from "./VideoPlayerModal";
+import TacticalPitchDesigner from "./TacticalPitchDesigner";
 import SesionFichaManager from "./SesionFichaManager";
 import CalculadoraCarga from "./CalculadoraCarga";
 import SesionGpsAnalysis from "./SesionGpsAnalysis";
-import { getActiveJugadores } from "@/app/actions";
-import { EJERCICIOS_REALES_DB } from "./ejercicios-reales-db";
+import { getVideoEmbedInfo } from "./campo-video-utils";
+import {
+  getActiveJugadores,
+  getCampoEjerciciosServer,
+  saveCampoEjerciciosServer,
+  getCampoSesionesServer,
+  saveCampoSesionesServer,
+} from "@/app/actions";
 
-const EJERCICIOS_STORAGE_KEY = "campo_ejercicios_v1";
-const SESIONES_STORAGE_KEY = "campo_sesiones_v1";
+const EJERCICIOS_STORAGE_KEY = "campo_ejercicios_v2";
+const SESIONES_STORAGE_KEY = "campo_sesiones_v2";
 
-const CATEGORIAS_LIST: Array<{ id: CampoCategoriaEjercicio; label: string; icon: string }> = [
-  { id: "RONDO", label: "Rondos & Ruedas", icon: "🔄" },
-  { id: "POSESION", label: "Juegos de Posición", icon: "🛡️" },
-  { id: "SSG_REDUCIDO", label: "Espacio Reducido (SSG)", icon: "⚡" },
-  { id: "LSG_AMPLIO", label: "Espacio Amplio (LSG)", icon: "📐" },
-  { id: "FINALIZACION", label: "Finalizaciones & Remates", icon: "🎯" },
-  { id: "ABP", label: "Balón Parado (ABP)", icon: "⛳" },
-  { id: "TRANSICION", label: "Transiciones Rápidas", icon: "🚀" },
-  { id: "FISICO_TECNICO", label: "Físico-Técnico / Circuitos", icon: "🏃" },
-  { id: "CALENTAMIENTO", label: "Calentamiento & Activación", icon: "🔥" },
-  { id: "OTRO", label: "Otros Ejercicios", icon: "⚽" },
+export const CATEGORIAS_LIST: Array<{
+  id: CampoCategoriaEjercicio;
+  label: string;
+  icon: string;
+  color: string;
+}> = [
+  { id: "RONDO", label: "Rondos & Ruedas", icon: "🔄", color: "#3b82f6" },
+  { id: "POSESION", label: "Juegos de Posición", icon: "🛡️", color: "#10b981" },
+  { id: "SSG_REDUCIDO", label: "Espacio Reducido (SSG)", icon: "⚡", color: "#f59e0b" },
+  { id: "LSG_AMPLIO", label: "Espacio Amplio (LSG)", icon: "📐", color: "#8b5cf6" },
+  { id: "FINALIZACION", label: "Finalizaciones", icon: "🎯", color: "#ef4444" },
+  { id: "ABP", label: "Balón Parado (ABP)", icon: "⛳", color: "#06b6d4" },
+  { id: "TRANSICION", label: "Transiciones Rápidas", icon: "🚀", color: "#ec4899" },
+  { id: "FISICO_TECNICO", label: "Físico - Técnico", icon: "🏃", color: "#6366f1" },
+  { id: "CALENTAMIENTO", label: "Calentamiento & Activación", icon: "🔥", color: "#f97316" },
+  { id: "OTRO", label: "Otros Ejercicios", icon: "⚽", color: "#64748b" },
 ];
 
-// Ejercicios iniciales de arranque con la estructura completa de CampoEjercicio
-const EJERCICIOS_DEFAULT: CampoEjercicio[] = [
+// Ejercicios oficiales de referencia iniciales (diseñados tácticamente)
+const EJERCICIOS_BASE_INICIALES: CampoEjercicio[] = [
   {
     id: "ej-def-1",
     nombre: "Rondo de Presión Tras Pérdida 4v4 + 3C",
     categoria: "RONDO",
     subcategoria: "MD-3 Potencia",
     faseJuego: "TRANSICION_DEF",
+    videoUrl: "https://www.youtube.com/watch?v=kY7iQWJc1hE",
     dimensiones: { largoM: 25, anchoM: 20, m2Totales: 500, m2PorJugador: 45.5 },
     jugadores: { atacantes: 4, defensores: 4, comodines: 3, porteros: 0, total: 11 },
     estructura: { series: 4, repsPorSerie: 1, tiempoTrabajoSeg: 210, tiempoDescansoSeg: 90, tiempoTotalMin: 14, ratioWR: "2.3:1" },
@@ -70,6 +86,7 @@ const EJERCICIOS_DEFAULT: CampoEjercicio[] = [
     },
     creadoEn: "2026-11-10T10:00:00Z",
     actualizadoEn: "2026-11-10T10:00:00Z",
+    autor: "Cuerpo Técnico",
   },
   {
     id: "ej-def-2",
@@ -77,6 +94,7 @@ const EJERCICIOS_DEFAULT: CampoEjercicio[] = [
     categoria: "POSESION",
     subcategoria: "MD-4 Capacidad",
     faseJuego: "ATAQUE",
+    videoUrl: "https://www.youtube.com/watch?v=3q-v_q6F3jE",
     dimensiones: { largoM: 45, anchoM: 38, m2Totales: 1710, m2PorJugador: 122 },
     jugadores: { atacantes: 6, defensores: 6, comodines: 2, porteros: 0, total: 14 },
     estructura: { series: 3, repsPorSerie: 1, tiempoTrabajoSeg: 360, tiempoDescansoSeg: 120, tiempoTotalMin: 18, ratioWR: "3:1" },
@@ -108,6 +126,7 @@ const EJERCICIOS_DEFAULT: CampoEjercicio[] = [
     },
     creadoEn: "2026-11-12T11:00:00Z",
     actualizadoEn: "2026-11-12T11:00:00Z",
+    autor: "Cuerpo Técnico",
   },
   {
     id: "ej-def-3",
@@ -141,6 +160,7 @@ const EJERCICIOS_DEFAULT: CampoEjercicio[] = [
     },
     creadoEn: "2026-11-13T12:00:00Z",
     actualizadoEn: "2026-11-13T12:00:00Z",
+    autor: "Cuerpo Técnico",
   },
   {
     id: "ej-def-4",
@@ -172,6 +192,7 @@ const EJERCICIOS_DEFAULT: CampoEjercicio[] = [
     },
     creadoEn: "2026-11-14T09:00:00Z",
     actualizadoEn: "2026-11-14T09:00:00Z",
+    autor: "Preparación Física",
   },
   {
     id: "ej-def-5",
@@ -209,19 +230,37 @@ const EJERCICIOS_DEFAULT: CampoEjercicio[] = [
     },
     creadoEn: "2026-11-15T11:00:00Z",
     actualizadoEn: "2026-11-15T11:00:00Z",
+    autor: "Cuerpo Técnico",
   },
 ];
 
-const ALL_INITIAL_EJERCICIOS: CampoEjercicio[] = [...EJERCICIOS_DEFAULT, ...EJERCICIOS_REALES_DB];
-
 export default function CampoPage() {
-  const [activeTab, setActiveTab] = useState<"ejercicios" | "sesion" | "calculadora" | "gps">("ejercicios");
+  const [activeTab, setActiveTab] = useState<"ejercicios" | "sesion" | "pizarra" | "calculadora" | "gps">("ejercicios");
   const [ejercicios, setEjercicios] = useState<CampoEjercicio[]>([]);
   const [sesiones, setSesiones] = useState<CampoSesionFicha[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [syncStatus, setSyncStatus] = useState<"synced" | "saving" | "offline">("synced");
+
+  // Modales
   const [modalEjercicioOpen, setModalEjercicioOpen] = useState(false);
   const [editingEjercicio, setEditingEjercicio] = useState<CampoEjercicio | null>(null);
+  const [detailEjercicio, setDetailEjercicio] = useState<CampoEjercicio | null>(null);
+  const [videoModalOpen, setVideoModalOpen] = useState(false);
+  const [activeVideoDrill, setActiveVideoDrill] = useState<{ url: string; title: string; category?: string } | null>(null);
+  const [backupModalOpen, setBackupModalOpen] = useState(false);
 
-  // Datos para GPS y plantilla
+  // Vista de biblioteca (grid de tarjetas vs tabla)
+  const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
+
+  // Filtros de la base de datos
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterCategoria, setFilterCategoria] = useState<string>("todas");
+  const [filterFase, setFilterFase] = useState<string>("todas");
+  const [filterOnlyWithVideo, setFilterOnlyWithVideo] = useState(false);
+  const [filterDensity, setFilterDensity] = useState<"todos" | "reducido" | "medio" | "amplio">("todos");
+  const [filterMd, setFilterMd] = useState<string>("todos");
+
+  // Datos para GPS y jugadores
   const [allGpsRows, setAllGpsRows] = useState<any[]>([]);
   const [allJugadores, setAllJugadores] = useState<any[]>([]);
   const [selectedGpsDate, setSelectedGpsDate] = useState<string>(() => {
@@ -229,72 +268,130 @@ export default function CampoPage() {
     return today.toISOString().split("T")[0];
   });
 
-  // Filtros biblioteca
-  const [searchTerm, setSearchTerm] = useState("");
-  const [filterCategoria, setFilterCategoria] = useState<string>("todas");
-  const [filterMd, setFilterMd] = useState<string>("todos");
+  // Pizarra libre independiente
+  const [freePitchData, setFreePitchData] = useState<CampoDiagramaData>({
+    pitchType: "medio_campo",
+    elementos: [],
+    trazosLibres: [],
+  });
 
-  // Cargar ejercicios y sesiones de localStorage al montar
+  // 1. CARGA INICIAL: Eliminar ejercicios simulados (ej-bbdd-) y cargar del Servidor + LocalStorage
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const storedEj = localStorage.getItem(EJERCICIOS_STORAGE_KEY);
-      if (storedEj) {
-        const parsed = JSON.parse(storedEj);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          // Aseguramos que los 37 ejercicios reales de BBDD estén disponibles
-          const existingIds = new Set(parsed.map((e: any) => e.id));
-          const missingBbdd = EJERCICIOS_REALES_DB.filter((e) => !existingIds.has(e.id));
-          if (missingBbdd.length > 0) {
-            const merged = [...parsed, ...missingBbdd];
-            setEjercicios(merged);
-            localStorage.setItem(EJERCICIOS_STORAGE_KEY, JSON.stringify(merged));
-          } else {
-            setEjercicios(parsed);
-          }
-        } else {
-          setEjercicios(ALL_INITIAL_EJERCICIOS);
-          localStorage.setItem(EJERCICIOS_STORAGE_KEY, JSON.stringify(ALL_INITIAL_EJERCICIOS));
-        }
-      } else {
-        setEjercicios(ALL_INITIAL_EJERCICIOS);
-        localStorage.setItem(EJERCICIOS_STORAGE_KEY, JSON.stringify(ALL_INITIAL_EJERCICIOS));
-      }
+    async function loadData() {
+      setLoading(true);
+      try {
+        // A) Intentar cargar de Supabase / Servidor
+        let serverEjercicios = await getCampoEjerciciosServer();
+        let serverSesiones = await getCampoSesionesServer();
 
-      const storedSes = localStorage.getItem(SESIONES_STORAGE_KEY);
-      if (storedSes) {
-        setSesiones(JSON.parse(storedSes));
+        // B) Revisar localStorage
+        let localEj: CampoEjercicio[] = [];
+        if (typeof window !== "undefined") {
+          try {
+            // Limpiar datos antiguos de la clave previa
+            const oldStored = localStorage.getItem("campo_ejercicios_v1");
+            if (oldStored) {
+              const oldParsed = JSON.parse(oldStored);
+              if (Array.isArray(oldParsed)) {
+                // Purgamos estrictamente cualquier tarea simulada
+                localEj = oldParsed.filter((e: CampoEjercicio) => !e.id?.startsWith("ej-bbdd-"));
+              }
+            }
+            const currentStored = localStorage.getItem(EJERCICIOS_STORAGE_KEY);
+            if (currentStored) {
+              const currParsed = JSON.parse(currentStored);
+              if (Array.isArray(currParsed) && currParsed.length > 0) {
+                localEj = currParsed.filter((e: CampoEjercicio) => !e.id?.startsWith("ej-bbdd-"));
+              }
+            }
+          } catch (e) {
+            console.error("Error reading localStorage:", e);
+          }
+        }
+
+        // Combinar datos: Servidor tiene prioridad si existe, si no local, si no base inicial
+        let finalEjercicios: CampoEjercicio[] = [];
+        if (Array.isArray(serverEjercicios) && serverEjercicios.length > 0) {
+          finalEjercicios = serverEjercicios.filter((e: CampoEjercicio) => !e.id?.startsWith("ej-bbdd-"));
+        } else if (localEj.length > 0) {
+          finalEjercicios = localEj;
+        } else {
+          finalEjercicios = EJERCICIOS_BASE_INICIALES;
+        }
+
+        setEjercicios(finalEjercicios);
+        if (typeof window !== "undefined") {
+          localStorage.setItem(EJERCICIOS_STORAGE_KEY, JSON.stringify(finalEjercicios));
+        }
+
+        // Sesiones
+        let finalSesiones: CampoSesionFicha[] = [];
+        if (Array.isArray(serverSesiones) && serverSesiones.length > 0) {
+          finalSesiones = serverSesiones;
+        } else if (typeof window !== "undefined") {
+          const storedSes = localStorage.getItem(SESIONES_STORAGE_KEY);
+          if (storedSes) {
+            finalSesiones = JSON.parse(storedSes);
+          }
+        }
+        setSesiones(finalSesiones);
+
+        setSyncStatus("synced");
+      } catch (err) {
+        console.error("Error al inicializar módulo de campo:", err);
+        setEjercicios(EJERCICIOS_BASE_INICIALES);
+        setSyncStatus("offline");
+      } finally {
+        setLoading(false);
       }
-    } catch (err) {
-      console.error("Error al cargar de localStorage en /campo:", err);
-      setEjercicios(ALL_INITIAL_EJERCICIOS);
     }
+
+    loadData();
   }, []);
 
-  // Cargar datos GPS y jugadores para el módulo GPS
+  // Cargar datos GPS y jugadores para módulo GPS
   useEffect(() => {
     async function loadGpsAndPlayers() {
       try {
         const jug = await getActiveJugadores();
         if (Array.isArray(jug)) setAllJugadores(jug);
       } catch (e) {
-        console.warn("No se pudieron cargar jugadores:", e);
-      }
-
-      try {
-        const resp = await fetch("/gps_datos_synced.json");
-        if (resp.ok) {
-          const data = await resp.json();
-          if (Array.isArray(data)) setAllGpsRows(data);
-        }
-      } catch (e) {
-        console.warn("No se pudo cargar /gps_datos_synced.json:", e);
+        console.error("Error loading players:", e);
       }
     }
     loadGpsAndPlayers();
   }, []);
 
-  // Guardar ejercicios
+  // Guardar ejercicios en Servidor y LocalStorage
+  const persistEjercicios = async (updated: CampoEjercicio[]) => {
+    setEjercicios(updated);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(EJERCICIOS_STORAGE_KEY, JSON.stringify(updated));
+    }
+    setSyncStatus("saving");
+    try {
+      await saveCampoEjerciciosServer(updated);
+      setSyncStatus("synced");
+    } catch (e) {
+      console.error("Error syncing to server:", e);
+      setSyncStatus("offline");
+    }
+  };
+
+  // Guardar sesiones en Servidor y LocalStorage
+  const persistSesiones = async (updated: CampoSesionFicha[]) => {
+    setSesiones(updated);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(SESIONES_STORAGE_KEY, JSON.stringify(updated));
+    }
+    try {
+      await saveCampoSesionesServer(updated);
+    } catch (e) {
+      console.error("Error syncing sessions to server:", e);
+    }
+  };
+
+  // Guardar / Crear ejercicio
   const handleSaveEjercicio = (ejercicio: CampoEjercicio) => {
     let updated: CampoEjercicio[];
     const exists = ejercicios.some((e) => e.id === ejercicio.id);
@@ -303,10 +400,7 @@ export default function CampoPage() {
     } else {
       updated = [ejercicio, ...ejercicios];
     }
-    setEjercicios(updated);
-    if (typeof window !== "undefined") {
-      localStorage.setItem(EJERCICIOS_STORAGE_KEY, JSON.stringify(updated));
-    }
+    persistEjercicios(updated);
     setModalEjercicioOpen(false);
     setEditingEjercicio(null);
   };
@@ -321,23 +415,19 @@ export default function CampoPage() {
       actualizadoEn: new Date().toISOString(),
     };
     const updated = [duplicated, ...ejercicios];
-    setEjercicios(updated);
-    if (typeof window !== "undefined") {
-      localStorage.setItem(EJERCICIOS_STORAGE_KEY, JSON.stringify(updated));
-    }
+    persistEjercicios(updated);
   };
 
   // Eliminar ejercicio
   const handleDelete = (id: string) => {
-    if (!window.confirm("¿Estás seguro de eliminar este ejercicio de la biblioteca?")) return;
+    const target = ejercicios.find((e) => e.id === id);
+    const confirmName = target ? `"${target.nombre}"` : "este ejercicio";
+    if (!window.confirm(`¿Estás seguro de eliminar ${confirmName} de la base de datos?`)) return;
     const updated = ejercicios.filter((e) => e.id !== id);
-    setEjercicios(updated);
-    if (typeof window !== "undefined") {
-      localStorage.setItem(EJERCICIOS_STORAGE_KEY, JSON.stringify(updated));
-    }
+    persistEjercicios(updated);
   };
 
-  // Guardar ficha de sesión
+  // Guardar sesión desde ficha manager
   const handleSaveSesion = (ses: CampoSesionFicha) => {
     let updated: CampoSesionFicha[];
     const idx = sesiones.findIndex((s) => s.id === ses.id);
@@ -347,47 +437,42 @@ export default function CampoPage() {
     } else {
       updated = [ses, ...sesiones];
     }
-    setSesiones(updated);
-    if (typeof window !== "undefined") {
-      localStorage.setItem(SESIONES_STORAGE_KEY, JSON.stringify(updated));
-    }
+    persistSesiones(updated);
   };
 
-  // Eliminar ficha de sesión
+  // Eliminar sesión
   const handleDeleteSesion = (id: string) => {
     if (!window.confirm("¿Eliminar esta ficha de sesión?")) return;
     const updated = sesiones.filter((s) => s.id !== id);
-    setSesiones(updated);
-    if (typeof window !== "undefined") {
-      localStorage.setItem(SESIONES_STORAGE_KEY, JSON.stringify(updated));
-    }
+    persistSesiones(updated);
   };
 
-  // Exportar desde calculadora a ficha de sesión
+  // Exportar desde calculadora a sesión
   const handleExportFromCalculadora = (items: CampoSesionBloqueItem[], md: string) => {
     const today = new Date().toISOString().split("T")[0];
+    const durTotalMin = items.reduce((acc, it) => acc + it.tiempoTotalMin, 0);
     const nuevaSesion: CampoSesionFicha = {
       id: `ses-${Date.now()}`,
       fecha: today,
       microcicloMd: md,
       instalacion: "Nou Sardenya",
       objetivoPrincipal: `Sesión ${md} calculada por objetivos de carga`,
-      duracionEstimadaMin: items.reduce((acc, it) => acc + it.tiempoTotalMin, 0),
+      duracionEstimadaMin: durTotalMin,
       bloques: [
         {
-          id: "b-calc-1",
+          id: `b-calc-${Date.now()}`,
           nombre: "Parte Principal (Calculada)",
           orden: 1,
           items,
         },
       ],
       metricasEstimadas: {
-        duracionTotalMin: items.reduce((acc, it) => acc + it.tiempoTotalMin, 0),
-        distanciaTotalM: Math.round(items.reduce((acc, it) => acc + (it.ejercicioSnapshot?.perfilGps.mMin || 90) * it.tiempoTrabajoMin, 0)),
-        hsrTotalM: Math.round(items.reduce((acc, it) => acc + (it.ejercicioSnapshot?.perfilGps.hsrMin || 5) * it.tiempoTrabajoMin, 0)),
-        sprintTotalM: Math.round(items.reduce((acc, it) => acc + (it.ejercicioSnapshot?.perfilGps.sprintMin || 1) * it.tiempoTrabajoMin, 0)),
-        accTotal: Math.round(items.reduce((acc, it) => acc + (it.ejercicioSnapshot?.perfilGps.accMin || 1.5) * it.tiempoTrabajoMin, 0)),
-        playerLoadTotal: Math.round(items.reduce((acc, it) => acc + (it.ejercicioSnapshot?.perfilGps.playerLoadMin || 10) * it.tiempoTrabajoMin, 0)),
+        duracionTotalMin: durTotalMin,
+        distanciaTotalM: Math.round(items.reduce((acc, it) => acc + (it.ejercicioSnapshot?.perfilGps?.mMin || 90) * it.tiempoTrabajoMin, 0)),
+        hsrTotalM: Math.round(items.reduce((acc, it) => acc + (it.ejercicioSnapshot?.perfilGps?.hsrMin || 5) * it.tiempoTrabajoMin, 0)),
+        sprintTotalM: Math.round(items.reduce((acc, it) => acc + (it.ejercicioSnapshot?.perfilGps?.sprintMin || 1) * it.tiempoTrabajoMin, 0)),
+        accTotal: Math.round(items.reduce((acc, it) => acc + (it.ejercicioSnapshot?.perfilGps?.accMin || 1.5) * it.tiempoTrabajoMin, 0)),
+        playerLoadTotal: Math.round(items.reduce((acc, it) => acc + (it.ejercicioSnapshot?.perfilGps?.playerLoadMin || 10) * it.tiempoTrabajoMin, 0)),
       },
       estado: "planificada",
       creadaEn: new Date().toISOString(),
@@ -396,49 +481,122 @@ export default function CampoPage() {
     setActiveTab("sesion");
   };
 
-  // Filtrado de ejercicios
+  // Abrir reproductor de vídeo
+  const handlePlayVideo = (url: string, title: string, category?: string) => {
+    setActiveVideoDrill({ url, title, category });
+    setVideoModalOpen(true);
+  };
+
+  // Exportar JSON de la BBDD
+  const handleExportJson = () => {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(ejercicios, null, 2));
+    const downloadAnchor = document.createElement("a");
+    downloadAnchor.setAttribute("href", dataStr);
+    downloadAnchor.setAttribute("download", `campo_ejercicios_${new Date().toISOString().split("T")[0]}.json`);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+  };
+
+  // Importar JSON
+  const handleImportJson = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const parsed = JSON.parse(event.target?.result as string);
+        if (Array.isArray(parsed)) {
+          const cleaned = parsed.filter((it) => it && it.id && it.nombre);
+          if (cleaned.length > 0) {
+            persistEjercicios(cleaned);
+            alert(`¡Base de datos importada con éxito! Se cargaron ${cleaned.length} tareas.`);
+            setBackupModalOpen(false);
+          } else {
+            alert("El archivo no contenía un formato válido de ejercicios.");
+          }
+        }
+      } catch (err) {
+        alert("Error al leer el archivo JSON.");
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  // Métricas agregadas
+  const totalEjercicios = ejercicios.length;
+  const countConVideo = ejercicios.filter((e) => Boolean(e.videoUrl?.trim())).length;
+  const avgTiempoMin = totalEjercicios > 0
+    ? Math.round(ejercicios.reduce((acc, it) => acc + (it.estructura?.tiempoTotalMin || 10), 0) / totalEjercicios)
+    : 0;
+  const avgM2 = totalEjercicios > 0
+    ? Math.round(ejercicios.reduce((acc, it) => acc + (it.dimensiones?.m2PorJugador || 100), 0) / totalEjercicios)
+    : 0;
+
+  // Filtrado de la Base de Datos
   const filteredEjercicios = useMemo(() => {
     return ejercicios.filter((ej) => {
-      if (filterCategoria === "bbdd") {
-        if (!ej.id.startsWith("ej-bbdd-")) return false;
-      } else if (filterCategoria !== "todas" && ej.categoria !== filterCategoria) {
+      // Categoría
+      if (filterCategoria !== "todas" && ej.categoria !== filterCategoria) {
         return false;
       }
+      // Fase de juego
+      if (filterFase !== "todas" && ej.faseJuego !== filterFase) {
+        return false;
+      }
+      // Solo con vídeo
+      if (filterOnlyWithVideo && !ej.videoUrl?.trim()) {
+        return false;
+      }
+      // Densidad
+      if (filterDensity === "reducido" && (ej.dimensiones?.m2PorJugador || 100) >= 80) {
+        return false;
+      }
+      if (filterDensity === "medio" && ((ej.dimensiones?.m2PorJugador || 100) < 80 || (ej.dimensiones?.m2PorJugador || 100) > 160)) {
+        return false;
+      }
+      if (filterDensity === "amplio" && (ej.dimensiones?.m2PorJugador || 100) <= 160) {
+        return false;
+      }
+      // Microciclo MD
       if (filterMd !== "todos") {
         const sub = (ej.subcategoria || "").toUpperCase();
         if (!sub.includes(filterMd.toUpperCase())) return false;
       }
+      // Búsqueda libre
       if (searchTerm.trim()) {
         const q = searchTerm.toLowerCase();
-        const inTitle = ej.nombre.toLowerCase().includes(q);
+        const inTitle = (ej.nombre || "").toLowerCase().includes(q);
         const inSub = (ej.subcategoria || "").toLowerCase().includes(q);
-        const inObj = (ej.consignas.objetivoPrincipal || "").toLowerCase().includes(q);
-        if (!inTitle && !inSub && !inObj) return false;
+        const inObj = (ej.consignas?.objetivoPrincipal || "").toLowerCase().includes(q);
+        const inDesc = (ej.consignas?.descripcion || "").toLowerCase().includes(q);
+        if (!inTitle && !inSub && !inObj && !inDesc) return false;
       }
       return true;
     });
-  }, [ejercicios, filterCategoria, filterMd, searchTerm]);
+  }, [ejercicios, filterCategoria, filterFase, filterOnlyWithVideo, filterDensity, filterMd, searchTerm]);
 
   return (
     <div style={{ minHeight: "100vh", background: "#f8fafc", color: "#0f172a", fontFamily: "inherit" }}>
-      {/* HEADER SUPERIOR CON NAVEGACIÓN Y ACCIONES */}
+      {/* CABECERA PRINCIPAL MODERNA */}
       <header
         style={{
           background: "#ffffff",
           borderBottom: "1px solid #e2e8f0",
-          padding: "14px 24px",
+          padding: "16px 28px",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
           flexWrap: "wrap",
-          gap: "12px",
+          gap: "14px",
           position: "sticky",
           top: 0,
-          zIndex: 30,
-          boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+          zIndex: 40,
+          boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+        {/* TÍTULO Y RETORNO */}
+        <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
           <Link
             href="/"
             style={{
@@ -447,74 +605,110 @@ export default function CampoPage() {
               color: "#475569",
               textDecoration: "none",
               background: "#f1f5f9",
-              padding: "7px 12px",
+              padding: "8px 14px",
               borderRadius: "8px",
               border: "1px solid #e2e8f0",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
             }}
           >
-            ← Volver al Menú
+            <span>←</span>
+            <span>Menú Principal</span>
           </Link>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
             <div
               style={{
-                width: "36px",
-                height: "36px",
-                borderRadius: "10px",
+                width: "42px",
+                height: "42px",
+                borderRadius: "12px",
                 background: "linear-gradient(135deg, #1e3a8a, #0284c7)",
                 display: "grid",
                 placeItems: "center",
                 color: "#ffffff",
-                fontSize: "18px",
-                boxShadow: "0 2px 6px rgba(2, 132, 199, 0.3)",
+                fontSize: "20px",
+                boxShadow: "0 3px 8px rgba(2, 132, 199, 0.35)",
               }}
             >
               ⚽
             </div>
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <h1 style={{ fontSize: "17px", fontWeight: 900, color: "#0f172a", margin: 0, letterSpacing: "-0.3px" }}>
-                  Área de Campo & Táctica
+                <h1 style={{ fontSize: "18px", fontWeight: 900, color: "#0f172a", margin: 0, letterSpacing: "-0.4px" }}>
+                  Metodología de Campo & Base de Datos Táctica
                 </h1>
                 <span
                   style={{
-                    background: "#e0f2fe",
-                    color: "#0284c7",
-                    fontSize: "10px",
-                    fontWeight: 900,
+                    background: syncStatus === "synced" ? "#dcfce7" : "#fef3c7",
+                    color: syncStatus === "synced" ? "#166534" : "#92400e",
+                    fontSize: "10.5px",
+                    fontWeight: 800,
                     padding: "2px 8px",
                     borderRadius: "999px",
-                    textTransform: "uppercase",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
                   }}
                 >
-                  Suite 1RFEF
+                  <span
+                    style={{
+                      width: "6px",
+                      height: "6px",
+                      borderRadius: "50%",
+                      background: syncStatus === "synced" ? "#16a34a" : "#f59e0b",
+                    }}
+                  />
+                  {syncStatus === "synced" ? "BBDD Sincronizada" : syncStatus === "saving" ? "Guardando..." : "Local"}
                 </span>
               </div>
-              <p style={{ fontSize: "11px", color: "#64748b", margin: 0 }}>
-                Diseñador táctico, fichas de sesión, calculadora de carga por MD y vinculación GPS
+              <p style={{ fontSize: "11.5px", color: "#64748b", margin: "2px 0 0 0" }}>
+                Banco de tareas con vídeo demostrativo, diseñador de pizarra táctica, planificador y cargas GPS
               </p>
             </div>
           </div>
         </div>
 
-        {/* BOTONES DE ACCIÓN SUPERIOR */}
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        {/* CONTADORES RESUMEN Y BOTONES DE ACCIÓN */}
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+          {/* STATS RÁPIDOS */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "12px",
+              background: "#f8fafc",
+              border: "1px solid #e2e8f0",
+              padding: "6px 14px",
+              borderRadius: "10px",
+            }}
+          >
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: "9px", fontWeight: 800, color: "#64748b", textTransform: "uppercase" }}>Tareas</div>
+              <div style={{ fontSize: "13px", fontWeight: 900, color: "#0f172a" }}>{totalEjercicios}</div>
+            </div>
+            <div style={{ width: "1px", height: "18px", background: "#cbd5e1" }} />
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: "9px", fontWeight: 800, color: "#ef4444", textTransform: "uppercase" }}>Con Vídeo</div>
+              <div style={{ fontSize: "13px", fontWeight: 900, color: "#dc2626" }}>{countConVideo}</div>
+            </div>
+            <div style={{ width: "1px", height: "18px", background: "#cbd5e1" }} />
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: "9px", fontWeight: 800, color: "#0284c7", textTransform: "uppercase" }}>Media m²/j</div>
+              <div style={{ fontSize: "13px", fontWeight: 900, color: "#0369a1" }}>{avgM2}</div>
+            </div>
+          </div>
+
+          {/* BOTÓN BACKUP / GESTIÓN */}
           <button
             type="button"
-            onClick={() => {
-              const currentCustom = ejercicios.filter((e) => !e.id.startsWith("ej-bbdd-") && !e.id.startsWith("ej-def-"));
-              const updated = [...currentCustom, ...ALL_INITIAL_EJERCICIOS];
-              setEjercicios(updated);
-              if (typeof window !== "undefined") {
-                localStorage.setItem(EJERCICIOS_STORAGE_KEY, JSON.stringify(updated));
-              }
-              alert(`¡Sincronizadas ${EJERCICIOS_REALES_DB.length} tareas reales desde la base de datos de dispositivos GPS!`);
-            }}
+            onClick={() => setBackupModalOpen(true)}
             style={{
-              padding: "8px 14px",
+              padding: "8px 12px",
               borderRadius: "8px",
-              border: "1px solid #bbf7d0",
-              background: "#f0fdf4",
-              color: "#166534",
+              border: "1px solid #cbd5e1",
+              background: "#ffffff",
+              color: "#475569",
               fontSize: "12px",
               fontWeight: 800,
               cursor: "pointer",
@@ -522,12 +716,13 @@ export default function CampoPage() {
               alignItems: "center",
               gap: "6px",
             }}
-            title="Recargar ejercicios y métricas extraídas directamente de las sesiones GPS reales de la BBDD"
+            title="Copias de seguridad e importación/exportación JSON de tareas"
           >
-            <span>📡</span>
-            <span>Recargar BBDD GPS ({EJERCICIOS_REALES_DB.length})</span>
+            <span>⚙️</span>
+            <span>BBDD JSON</span>
           </button>
 
+          {/* BOTÓN NUEVO EJERCICIO */}
           <button
             type="button"
             onClick={() => {
@@ -535,40 +730,41 @@ export default function CampoPage() {
               setModalEjercicioOpen(true);
             }}
             style={{
-              padding: "8px 16px",
+              padding: "9px 18px",
               borderRadius: "8px",
               border: "none",
               background: "linear-gradient(135deg, #0284c7, #1e3a8a)",
               color: "#ffffff",
-              fontSize: "12px",
-              fontWeight: 800,
+              fontSize: "12.5px",
+              fontWeight: 900,
               cursor: "pointer",
               display: "flex",
               alignItems: "center",
               gap: "6px",
-              boxShadow: "0 2px 6px rgba(2, 132, 199, 0.35)",
+              boxShadow: "0 2px 8px rgba(2, 132, 199, 0.35)",
             }}
           >
             <span>✨</span>
-            <span>Nuevo Ejercicio con Pizarra</span>
+            <span>+ Nuevo Ejercicio</span>
           </button>
         </div>
       </header>
 
-      {/* BARRA DE PESTAÑAS PRINCIPALES */}
+      {/* BARRA DE NAVEGACIÓN DE PESTAÑAS */}
       <div
         style={{
           background: "#ffffff",
           borderBottom: "1px solid #e2e8f0",
-          padding: "0 24px",
+          padding: "0 28px",
           display: "flex",
           gap: "4px",
           overflowX: "auto",
         }}
       >
         {[
-          { id: "ejercicios", label: "📚 Biblioteca de Ejercicios", count: ejercicios.length },
-          { id: "sesion", label: "📋 Creador Ficha de Sesión", count: sesiones.length },
+          { id: "ejercicios", label: "📚 Base de Datos de Tareas", count: totalEjercicios },
+          { id: "sesion", label: "📋 Planificador de Sesión", count: sesiones.length },
+          { id: "pizarra", label: "📐 Pizarra Táctica Libre" },
           { id: "calculadora", label: "⚡ Calculadora Carga MD" },
           { id: "gps", label: "📡 Análisis Post-Sesión GPS" },
         ].map((tab) => {
@@ -579,7 +775,7 @@ export default function CampoPage() {
               type="button"
               onClick={() => setActiveTab(tab.id as any)}
               style={{
-                padding: "12px 18px",
+                padding: "13px 18px",
                 border: "none",
                 background: "transparent",
                 color: isActive ? "#0284c7" : "#64748b",
@@ -602,7 +798,7 @@ export default function CampoPage() {
                     color: isActive ? "#0284c7" : "#64748b",
                     fontSize: "11px",
                     fontWeight: 800,
-                    padding: "2px 6px",
+                    padding: "2px 7px",
                     borderRadius: "999px",
                   }}
                 >
@@ -614,21 +810,84 @@ export default function CampoPage() {
         })}
       </div>
 
-      {/* CONTENIDO PRINCIPAL SEGÚN PESTAÑA */}
-      <main style={{ maxWidth: "1600px", margin: "0 auto", padding: "20px 24px" }}>
+      {/* CONTENIDO PRINCIPAL */}
+      <main style={{ maxWidth: "1680px", margin: "0 auto", padding: "20px 28px" }}>
         {/* ========================================================================= */}
-        {/* TAB 1: BIBLIOTECA DE EJERCICIOS & PIZARRA                                 */}
+        {/* TAB 1: BASE DE DATOS DE EJERCICIOS CON VÍDEO Y DIAGRAMAS                   */}
         {/* ========================================================================= */}
         {activeTab === "ejercicios" && (
-          <div>
-            {/* BARRA DE FILTROS Y BÚSQUEDA */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            {/* CARROUSEL / CHIPS DE CATEGORÍAS */}
+            <div
+              style={{
+                display: "flex",
+                gap: "8px",
+                overflowX: "auto",
+                paddingBottom: "4px",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setFilterCategoria("todas")}
+                style={{
+                  padding: "7px 14px",
+                  borderRadius: "999px",
+                  border: filterCategoria === "todas" ? "1.5px solid #0284c7" : "1px solid #cbd5e1",
+                  background: filterCategoria === "todas" ? "#e0f2fe" : "#ffffff",
+                  color: filterCategoria === "todas" ? "#0369a1" : "#475569",
+                  fontSize: "12px",
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                <span>🌐 Todas las tareas</span>
+                <span style={{ fontSize: "10.5px", background: "rgba(0,0,0,0.06)", padding: "1px 6px", borderRadius: "999px" }}>
+                  {ejercicios.length}
+                </span>
+              </button>
+
+              {CATEGORIAS_LIST.map((cat) => {
+                const count = ejercicios.filter((e) => e.categoria === cat.id).length;
+                const isSelected = filterCategoria === cat.id;
+                return (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => setFilterCategoria(cat.id)}
+                    style={{
+                      padding: "7px 14px",
+                      borderRadius: "999px",
+                      border: isSelected ? `1.5px solid ${cat.color}` : "1px solid #cbd5e1",
+                      background: isSelected ? `${cat.color}15` : "#ffffff",
+                      color: isSelected ? cat.color : "#475569",
+                      fontSize: "12px",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    <span>{cat.icon}</span>
+                    <span>{cat.label}</span>
+                    <span style={{ fontSize: "10.5px", opacity: 0.75 }}>({count})</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* BARRA DE BÚSQUEDA Y FILTROS AVANZADOS */}
             <div
               style={{
                 background: "#ffffff",
-                borderRadius: "12px",
+                borderRadius: "14px",
                 border: "1px solid #e2e8f0",
-                padding: "16px",
-                marginBottom: "20px",
+                padding: "14px 18px",
                 display: "flex",
                 flexWrap: "wrap",
                 gap: "12px",
@@ -637,23 +896,25 @@ export default function CampoPage() {
                 boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
               }}
             >
+              {/* LADO IZQUIERDO: INPUT + DROPDOWNS */}
               <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", alignItems: "center", flex: 1 }}>
-                {/* Input Búsqueda */}
-                <div style={{ position: "relative", minWidth: "260px" }}>
+                {/* BUSCADOR */}
+                <div style={{ position: "relative", minWidth: "260px", flex: "1 1 280px" }}>
                   <input
                     type="text"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="🔍 Buscar por nombre, objetivo, categoría..."
+                    placeholder="🔍 Buscar por nombre, consignas, dinámica..."
                     style={{
                       width: "100%",
-                      padding: "8px 12px",
+                      padding: "8px 14px",
                       borderRadius: "8px",
                       border: "1px solid #cbd5e1",
-                      fontSize: "12px",
+                      fontSize: "12.5px",
                       fontWeight: 600,
                       outline: "none",
                       boxSizing: "border-box",
+                      background: "#f8fafc",
                     }}
                   />
                   {searchTerm && (
@@ -662,7 +923,7 @@ export default function CampoPage() {
                       onClick={() => setSearchTerm("")}
                       style={{
                         position: "absolute",
-                        right: "8px",
+                        right: "10px",
                         top: "50%",
                         transform: "translateY(-50%)",
                         background: "none",
@@ -677,10 +938,43 @@ export default function CampoPage() {
                   )}
                 </div>
 
-                {/* Filtro Categoría */}
+                {/* TOGGLE: SOLO CON VÍDEO */}
+                <button
+                  type="button"
+                  onClick={() => setFilterOnlyWithVideo(!filterOnlyWithVideo)}
+                  style={{
+                    padding: "8px 14px",
+                    borderRadius: "8px",
+                    border: filterOnlyWithVideo ? "1.5px solid #ef4444" : "1px solid #cbd5e1",
+                    background: filterOnlyWithVideo ? "#fef2f2" : "#ffffff",
+                    color: filterOnlyWithVideo ? "#dc2626" : "#475569",
+                    fontSize: "12px",
+                    fontWeight: 800,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                  }}
+                >
+                  <span>▶️ Solo con vídeo</span>
+                  <span
+                    style={{
+                      background: filterOnlyWithVideo ? "#ef4444" : "#f1f5f9",
+                      color: filterOnlyWithVideo ? "#ffffff" : "#64748b",
+                      fontSize: "10px",
+                      fontWeight: 900,
+                      padding: "1px 6px",
+                      borderRadius: "999px",
+                    }}
+                  >
+                    {countConVideo}
+                  </span>
+                </button>
+
+                {/* FILTRO FASE DE JUEGO */}
                 <select
-                  value={filterCategoria}
-                  onChange={(e) => setFilterCategoria(e.target.value)}
+                  value={filterFase}
+                  onChange={(e) => setFilterFase(e.target.value)}
                   style={{
                     padding: "8px 12px",
                     borderRadius: "8px",
@@ -691,16 +985,35 @@ export default function CampoPage() {
                     cursor: "pointer",
                   }}
                 >
-                  <option value="todas">Todas las categorías ({ejercicios.length})</option>
-                  <option value="bbdd">📡 Solo Ejercicios BBDD GPS ({ejercicios.filter((e) => e.id.startsWith("ej-bbdd-")).length})</option>
-                  {CATEGORIAS_LIST.map((cat) => (
-                    <option key={cat.id} value={cat.id}>
-                      {cat.icon} {cat.label}
-                    </option>
-                  ))}
+                  <option value="todas">Fase de Juego: Todas</option>
+                  <option value="GLOBAL">Global / Juego Real</option>
+                  <option value="ATAQUE">Fase Ofensiva</option>
+                  <option value="DEFENSA">Fase Defensiva</option>
+                  <option value="TRANSICION_OF">Transición Ofensiva</option>
+                  <option value="TRANSICION_DEF">Transición Defensiva</option>
                 </select>
 
-                {/* Filtro Microciclo MD */}
+                {/* FILTRO ESPACIO / DENSIDAD */}
+                <select
+                  value={filterDensity}
+                  onChange={(e) => setFilterDensity(e.target.value as any)}
+                  style={{
+                    padding: "8px 12px",
+                    borderRadius: "8px",
+                    border: "1px solid #cbd5e1",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    background: "#ffffff",
+                    cursor: "pointer",
+                  }}
+                >
+                  <option value="todos">Densidad: Todas</option>
+                  <option value="reducido">Reducido (&lt;80 m²/j)</option>
+                  <option value="medio">Medio (80-160 m²/j)</option>
+                  <option value="amplio">Amplio (&gt;160 m²/j)</option>
+                </select>
+
+                {/* FILTRO MICROCICLO */}
                 <select
                   value={filterMd}
                   onChange={(e) => setFilterMd(e.target.value)}
@@ -716,59 +1029,124 @@ export default function CampoPage() {
                 >
                   <option value="todos">Todos los MDs</option>
                   <option value="MD-4">MD-4 (Capacidad / Espacios Amplios)</option>
-                  <option value="MD-3">MD-3 (Potencia / Espacios Reducidos)</option>
+                  <option value="MD-3">MD-3 (Potencia / Reducidos)</option>
                   <option value="MD-2">MD-2 (Velocidad / Reactividad)</option>
                   <option value="MD-1">MD-1 (Activación / Balón Parado)</option>
-                  <option value="MD+1">MD+1 (Recuperación / Compensatorio)</option>
                 </select>
               </div>
 
-              <div style={{ fontSize: "12px", fontWeight: 700, color: "#64748b" }}>
-                Mostrando <strong style={{ color: "#0f172a" }}>{filteredEjercicios.length}</strong> de{" "}
-                {ejercicios.length} tareas
+              {/* LADO DERECHO: CONMUTADOR DE VISTA (GRID / TABLE) */}
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <div style={{ fontSize: "12px", fontWeight: 700, color: "#64748b" }}>
+                  Mostrando <strong style={{ color: "#0f172a" }}>{filteredEjercicios.length}</strong> tareas
+                </div>
+
+                <div style={{ display: "flex", background: "#f1f5f9", padding: "2px", borderRadius: "8px", border: "1px solid #cbd5e1" }}>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("grid")}
+                    style={{
+                      border: "none",
+                      padding: "5px 10px",
+                      borderRadius: "6px",
+                      background: viewMode === "grid" ? "#ffffff" : "transparent",
+                      color: viewMode === "grid" ? "#0284c7" : "#64748b",
+                      fontWeight: 800,
+                      fontSize: "12px",
+                      cursor: "pointer",
+                      boxShadow: viewMode === "grid" ? "0 1px 2px rgba(0,0,0,0.1)" : "none",
+                    }}
+                    title="Vista en tarjetas cuadrícula"
+                  >
+                    🔲 Tarjetas
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("table")}
+                    style={{
+                      border: "none",
+                      padding: "5px 10px",
+                      borderRadius: "6px",
+                      background: viewMode === "table" ? "#ffffff" : "transparent",
+                      color: viewMode === "table" ? "#0284c7" : "#64748b",
+                      fontWeight: 800,
+                      fontSize: "12px",
+                      cursor: "pointer",
+                      boxShadow: viewMode === "table" ? "0 1px 2px rgba(0,0,0,0.1)" : "none",
+                    }}
+                    title="Vista en tabla compacta"
+                  >
+                    📋 Tabla
+                  </button>
+                </div>
               </div>
             </div>
 
-            {/* GRILLA DE TARJETAS DE EJERCICIO */}
+            {/* CONTENIDO DE LA BIBLIOTECA */}
             {filteredEjercicios.length === 0 ? (
               <div
                 style={{
                   background: "#ffffff",
-                  borderRadius: "12px",
+                  borderRadius: "14px",
                   border: "2px dashed #cbd5e1",
                   padding: "60px 20px",
                   textAlign: "center",
                 }}
               >
-                <div style={{ fontSize: "40px", marginBottom: "12px" }}>⚽</div>
+                <div style={{ fontSize: "44px", marginBottom: "12px" }}>⚽</div>
                 <h3 style={{ fontSize: "16px", fontWeight: 800, color: "#1e293b", margin: "0 0 6px 0" }}>
-                  No se encontraron ejercicios con estos filtros
+                  No se encontraron ejercicios con estos criterios
                 </h3>
                 <p style={{ fontSize: "13px", color: "#64748b", margin: "0 0 16px 0" }}>
-                  Prueba a limpiar la búsqueda o crea un nuevo ejercicio desde cero.
+                  Prueba a limpiar los filtros de búsqueda o crea un nuevo ejercicio para tu base de datos.
                 </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearchTerm("");
-                    setFilterCategoria("todas");
-                    setFilterMd("todos");
-                  }}
-                  style={{
-                    padding: "8px 16px",
-                    borderRadius: "8px",
-                    border: "1px solid #cbd5e1",
-                    background: "#f1f5f9",
-                    color: "#334155",
-                    fontSize: "12px",
-                    fontWeight: 800,
-                    cursor: "pointer",
-                  }}
-                >
-                  Restablecer Filtros
-                </button>
+                <div style={{ display: "flex", gap: "10px", justifyContent: "center" }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchTerm("");
+                      setFilterCategoria("todas");
+                      setFilterFase("todas");
+                      setFilterOnlyWithVideo(false);
+                      setFilterDensity("todos");
+                      setFilterMd("todos");
+                    }}
+                    style={{
+                      padding: "8px 16px",
+                      borderRadius: "8px",
+                      border: "1px solid #cbd5e1",
+                      background: "#f1f5f9",
+                      color: "#334155",
+                      fontSize: "12px",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Restablecer Filtros
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingEjercicio(null);
+                      setModalEjercicioOpen(true);
+                    }}
+                    style={{
+                      padding: "8px 16px",
+                      borderRadius: "8px",
+                      border: "none",
+                      background: "#0284c7",
+                      color: "#ffffff",
+                      fontSize: "12px",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                    }}
+                  >
+                    + Nuevo Ejercicio
+                  </button>
+                </div>
               </div>
-            ) : (
+            ) : viewMode === "grid" ? (
+              /* ==================== VISTA CUADRÍCULA DE TARJETAS ==================== */
               <div
                 style={{
                   display: "grid",
@@ -778,6 +1156,7 @@ export default function CampoPage() {
               >
                 {filteredEjercicios.map((ej) => {
                   const catInfo = CATEGORIAS_LIST.find((c) => c.id === ej.categoria);
+                  const hasVideo = Boolean(ej.videoUrl?.trim());
                   const elementsCount = ej.diagrama?.elementos?.length || 0;
 
                   return (
@@ -785,40 +1164,41 @@ export default function CampoPage() {
                       key={ej.id}
                       style={{
                         background: "#ffffff",
-                        borderRadius: "12px",
+                        borderRadius: "14px",
                         border: "1px solid #e2e8f0",
                         overflow: "hidden",
                         display: "flex",
                         flexDirection: "column",
-                        boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+                        boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
                         transition: "all 0.15s ease",
                       }}
                     >
                       {/* MINIATURA PIZARRA TÁCTICA */}
                       <div
+                        onClick={() => setDetailEjercicio(ej)}
                         style={{
-                          height: "170px",
+                          height: "175px",
                           background: "#044320",
                           position: "relative",
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
                           borderBottom: "1px solid #e2e8f0",
+                          cursor: "pointer",
                         }}
                       >
-                        {/* Mini preview SVG de elementos */}
+                        {/* Mini preview SVG */}
                         <svg
                           viewBox="0 0 100 100"
                           style={{
                             width: "100%",
                             height: "100%",
-                            opacity: 0.9,
+                            opacity: 0.92,
                           }}
                         >
-                          {/* Campo básico */}
-                          <rect x="5" y="5" width="90" height="90" fill="#0b5e2b" stroke="#ffffff" strokeWidth="1" strokeOpacity="0.4" rx="2" />
-                          <circle cx="50" cy="50" r="14" fill="none" stroke="#ffffff" strokeWidth="0.8" strokeOpacity="0.3" />
-                          <line x1="50" y1="5" x2="50" y2="95" stroke="#ffffff" strokeWidth="0.8" strokeOpacity="0.3" />
+                          <rect x="4" y="4" width="92" height="92" fill="#0b5e2b" stroke="#ffffff" strokeWidth="1" strokeOpacity="0.45" rx="2" />
+                          <circle cx="50" cy="50" r="14" fill="none" stroke="#ffffff" strokeWidth="0.8" strokeOpacity="0.35" />
+                          <line x1="50" y1="4" x2="50" y2="96" stroke="#ffffff" strokeWidth="0.8" strokeOpacity="0.35" />
 
                           {/* Elementos colocados */}
                           {ej.diagrama?.elementos?.slice(0, 30).map((elem) => {
@@ -850,10 +1230,10 @@ export default function CampoPage() {
                             position: "absolute",
                             top: "8px",
                             left: "8px",
-                            background: "rgba(15, 23, 42, 0.8)",
+                            background: "rgba(15, 23, 42, 0.85)",
                             backdropFilter: "blur(4px)",
                             color: "#ffffff",
-                            fontSize: "10px",
+                            fontSize: "10.5px",
                             fontWeight: 800,
                             padding: "3px 8px",
                             borderRadius: "6px",
@@ -866,24 +1246,56 @@ export default function CampoPage() {
                           <span>{catInfo?.label || ej.categoria}</span>
                         </div>
 
-                        {/* Badge Tiempo Total arriba derecha */}
+                        {/* Badge Vídeo si existe arriba derecha */}
+                        {hasVideo && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePlayVideo(ej.videoUrl!, ej.nombre, catInfo?.label);
+                            }}
+                            style={{
+                              position: "absolute",
+                              top: "8px",
+                              right: "8px",
+                              background: "linear-gradient(135deg, #ef4444, #b91c1c)",
+                              color: "#ffffff",
+                              fontSize: "11px",
+                              fontWeight: 900,
+                              padding: "4px 10px",
+                              borderRadius: "6px",
+                              border: "none",
+                              cursor: "pointer",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "4px",
+                              boxShadow: "0 2px 6px rgba(220, 38, 38, 0.5)",
+                            }}
+                            title="Reproducir vídeo demostrativo"
+                          >
+                            <span>▶️</span>
+                            <span>Ver Vídeo</span>
+                          </button>
+                        )}
+
+                        {/* Duración abajo derecha */}
                         <div
                           style={{
                             position: "absolute",
-                            top: "8px",
+                            bottom: "8px",
                             right: "8px",
-                            background: "rgba(2, 132, 199, 0.9)",
+                            background: "rgba(15, 23, 42, 0.8)",
                             color: "#ffffff",
-                            fontSize: "11px",
+                            fontSize: "10.5px",
                             fontWeight: 900,
-                            padding: "3px 8px",
-                            borderRadius: "6px",
+                            padding: "2px 7px",
+                            borderRadius: "5px",
                           }}
                         >
                           ⏱️ {ej.estructura.tiempoTotalMin} min
                         </div>
 
-                        {/* Contador de elementos pizarra abajo izquierda */}
+                        {/* Elementos abajo izquierda */}
                         <div
                           style={{
                             position: "absolute",
@@ -902,30 +1314,50 @@ export default function CampoPage() {
                       </div>
 
                       {/* CUERPO DE LA TARJETA */}
-                      <div style={{ padding: "14px", flex: 1, display: "flex", flexDirection: "column" }}>
-                        <h4
-                          style={{
-                            fontSize: "14px",
-                            fontWeight: 900,
-                            color: "#0f172a",
-                            margin: "0 0 4px 0",
-                            lineHeight: 1.3,
-                          }}
-                        >
-                          {ej.nombre}
-                        </h4>
+                      <div style={{ padding: "14px 16px", flex: 1, display: "flex", flexDirection: "column" }}>
+                        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "8px" }}>
+                          <h4
+                            onClick={() => setDetailEjercicio(ej)}
+                            style={{
+                              fontSize: "14px",
+                              fontWeight: 900,
+                              color: "#0f172a",
+                              margin: "0 0 4px 0",
+                              lineHeight: 1.3,
+                              cursor: "pointer",
+                            }}
+                          >
+                            {ej.nombre}
+                          </h4>
+                          {ej.faseJuego && (
+                            <span
+                              style={{
+                                background: "#f1f5f9",
+                                color: "#475569",
+                                fontSize: "9.5px",
+                                fontWeight: 800,
+                                padding: "2px 6px",
+                                borderRadius: "4px",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {ej.faseJuego}
+                            </span>
+                          )}
+                        </div>
+
                         {ej.subcategoria && (
                           <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 600, marginBottom: "8px" }}>
                             {ej.subcategoria}
                           </div>
                         )}
 
-                        {/* OBJETIVO TÁCTICO */}
-                        <div style={{ fontSize: "11px", color: "#475569", marginBottom: "12px", lineHeight: 1.3 }}>
-                          <strong>Obj:</strong> {ej.consignas.objetivoPrincipal}
+                        {/* OBJETIVO PRINCIPAL */}
+                        <div style={{ fontSize: "11.5px", color: "#475569", marginBottom: "12px", lineHeight: 1.35 }}>
+                          <strong style={{ color: "#1e293b" }}>Obj:</strong> {ej.consignas.objetivoPrincipal}
                         </div>
 
-                        {/* DATOS CLAVE: ESPACIO, JUGADORES Y W:R */}
+                        {/* DATOS CLAVE (ESPACIO, JUGADORES, DENSIDAD) */}
                         <div
                           style={{
                             display: "grid",
@@ -946,7 +1378,7 @@ export default function CampoPage() {
                             <div style={{ fontSize: "11px", fontWeight: 800, color: "#1e293b", marginTop: "1px" }}>
                               {ej.dimensiones.anchoM}x{ej.dimensiones.largoM}m
                             </div>
-                            <div style={{ fontSize: "9px", color: "#0284c7", fontWeight: 700 }}>
+                            <div style={{ fontSize: "9px", color: "#0284c7", fontWeight: 800 }}>
                               {ej.dimensiones.m2PorJugador} m²/j
                             </div>
                           </div>
@@ -966,10 +1398,10 @@ export default function CampoPage() {
 
                           <div>
                             <div style={{ fontSize: "9px", color: "#64748b", fontWeight: 700, textTransform: "uppercase" }}>
-                              Densidad
+                              Estructura
                             </div>
                             <div style={{ fontSize: "11px", fontWeight: 800, color: "#1e293b", marginTop: "1px" }}>
-                              {ej.estructura.series}x{ej.estructura.tiempoTrabajoSeg / 60}'
+                              {ej.estructura.series}x{Math.round(ej.estructura.tiempoTrabajoSeg / 60)}'
                             </div>
                             <div style={{ fontSize: "9px", color: "#16a34a", fontWeight: 800 }}>
                               W:R {ej.estructura.ratioWR}
@@ -977,7 +1409,7 @@ export default function CampoPage() {
                           </div>
                         </div>
 
-                        {/* ESTIMACIÓN GPS PREVIA */}
+                        {/* PERFIL GPS ESTIMADO */}
                         <div
                           style={{
                             display: "grid",
@@ -993,33 +1425,48 @@ export default function CampoPage() {
                           }}
                         >
                           <div>
-                            <div style={{ fontSize: "8.5px", color: "#64748b", fontWeight: 700 }}>DIST/MIN</div>
-                            <div style={{ fontWeight: 800, color: "#0284c7" }}>
-                              {ej.perfilGps.mMin} m
-                            </div>
+                            <div style={{ fontSize: "8px", color: "#64748b", fontWeight: 700 }}>DIST/MIN</div>
+                            <div style={{ fontWeight: 800, color: "#0284c7" }}>{ej.perfilGps.mMin} m</div>
                           </div>
                           <div>
-                            <div style={{ fontSize: "8.5px", color: "#64748b", fontWeight: 700 }}>HSR &gt;21</div>
-                            <div style={{ fontWeight: 800, color: "#d97706" }}>
-                              {ej.perfilGps.hsrMin} m
-                            </div>
+                            <div style={{ fontSize: "8px", color: "#64748b", fontWeight: 700 }}>HSR &gt;21</div>
+                            <div style={{ fontWeight: 800, color: "#d97706" }}>{ej.perfilGps.hsrMin} m</div>
                           </div>
                           <div>
-                            <div style={{ fontSize: "8.5px", color: "#64748b", fontWeight: 700 }}>ACC &gt;3</div>
-                            <div style={{ fontWeight: 800, color: "#16a34a" }}>
-                              {ej.perfilGps.accMin} /m
-                            </div>
+                            <div style={{ fontSize: "8px", color: "#64748b", fontWeight: 700 }}>ACC &gt;3</div>
+                            <div style={{ fontWeight: 800, color: "#16a34a" }}>{ej.perfilGps.accMin} /m</div>
                           </div>
                           <div>
-                            <div style={{ fontSize: "8.5px", color: "#64748b", fontWeight: 700 }}>PL/MIN</div>
-                            <div style={{ fontWeight: 800, color: "#7c3aed" }}>
-                              {ej.perfilGps.playerLoadMin}
-                            </div>
+                            <div style={{ fontSize: "8px", color: "#64748b", fontWeight: 700 }}>PL/MIN</div>
+                            <div style={{ fontWeight: 800, color: "#7c3aed" }}>{ej.perfilGps.playerLoadMin}</div>
                           </div>
                         </div>
 
                         {/* BOTONES DE ACCIÓN */}
                         <div style={{ display: "flex", gap: "6px", marginTop: "auto" }}>
+                          <button
+                            type="button"
+                            onClick={() => setDetailEjercicio(ej)}
+                            style={{
+                              flex: 1,
+                              padding: "7px 10px",
+                              borderRadius: "6px",
+                              border: "1px solid #cbd5e1",
+                              background: "#f8fafc",
+                              color: "#334155",
+                              fontSize: "11px",
+                              fontWeight: 800,
+                              cursor: "pointer",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              gap: "4px",
+                            }}
+                          >
+                            <span>👁️</span>
+                            <span>Ver Ficha</span>
+                          </button>
+
                           <button
                             type="button"
                             onClick={() => {
@@ -1043,7 +1490,7 @@ export default function CampoPage() {
                             }}
                           >
                             <span>✏️</span>
-                            <span>Editar & Pizarra</span>
+                            <span>Editar</span>
                           </button>
 
                           <button
@@ -1087,12 +1534,170 @@ export default function CampoPage() {
                   );
                 })}
               </div>
+            ) : (
+              /* ==================== VISTA TABLA COMPACTA ==================== */
+              <div
+                style={{
+                  background: "#ffffff",
+                  borderRadius: "14px",
+                  border: "1px solid #e2e8f0",
+                  overflowX: "auto",
+                  boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+                }}
+              >
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", textAlign: "left" }}>
+                  <thead>
+                    <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0", color: "#475569", fontSize: "11px", fontWeight: 800 }}>
+                      <th style={{ padding: "12px 14px" }}>Nombre del Ejercicio</th>
+                      <th style={{ padding: "12px 10px" }}>Categoría</th>
+                      <th style={{ padding: "12px 10px" }}>Fase</th>
+                      <th style={{ padding: "12px 10px", textAlign: "center" }}>Vídeo</th>
+                      <th style={{ padding: "12px 10px" }}>Jugadores</th>
+                      <th style={{ padding: "12px 10px" }}>Espacio</th>
+                      <th style={{ padding: "12px 10px" }}>Duración</th>
+                      <th style={{ padding: "12px 10px" }}>GPS PL/min</th>
+                      <th style={{ padding: "12px 14px", textAlign: "right" }}>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredEjercicios.map((ej) => {
+                      const catInfo = CATEGORIAS_LIST.find((c) => c.id === ej.categoria);
+                      const hasVideo = Boolean(ej.videoUrl?.trim());
+                      return (
+                        <tr
+                          key={ej.id}
+                          style={{
+                            borderBottom: "1px solid #f1f5f9",
+                            transition: "background 0.15s ease",
+                          }}
+                        >
+                          <td style={{ padding: "10px 14px", fontWeight: 800, color: "#0f172a" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                              <span style={{ cursor: "pointer" }} onClick={() => setDetailEjercicio(ej)}>
+                                {ej.nombre}
+                              </span>
+                            </div>
+                            {ej.subcategoria && (
+                              <div style={{ fontSize: "10px", color: "#64748b", fontWeight: 600 }}>{ej.subcategoria}</div>
+                            )}
+                          </td>
+                          <td style={{ padding: "10px" }}>
+                            <span
+                              style={{
+                                background: `${catInfo?.color || "#0284c7"}15`,
+                                color: catInfo?.color || "#0284c7",
+                                padding: "2px 8px",
+                                borderRadius: "4px",
+                                fontSize: "10.5px",
+                                fontWeight: 800,
+                              }}
+                            >
+                              {catInfo?.icon} {catInfo?.label || ej.categoria}
+                            </span>
+                          </td>
+                          <td style={{ padding: "10px", color: "#475569", fontWeight: 700 }}>
+                            {ej.faseJuego || "GLOBAL"}
+                          </td>
+                          <td style={{ padding: "10px", textAlign: "center" }}>
+                            {hasVideo ? (
+                              <button
+                                type="button"
+                                onClick={() => handlePlayVideo(ej.videoUrl!, ej.nombre, catInfo?.label)}
+                                style={{
+                                  background: "#fee2e2",
+                                  border: "1px solid #fca5a5",
+                                  color: "#dc2626",
+                                  padding: "3px 8px",
+                                  borderRadius: "6px",
+                                  fontSize: "10.5px",
+                                  fontWeight: 800,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                ▶️ Vídeo
+                              </button>
+                            ) : (
+                              <span style={{ color: "#cbd5e1" }}>—</span>
+                            )}
+                          </td>
+                          <td style={{ padding: "10px", color: "#334155" }}>
+                            <strong>{ej.jugadores.total} pax</strong> ({ej.jugadores.atacantes}v{ej.jugadores.defensores})
+                          </td>
+                          <td style={{ padding: "10px", color: "#334155" }}>
+                            {ej.dimensiones.anchoM}x{ej.dimensiones.largoM}m ({ej.dimensiones.m2PorJugador} m²/j)
+                          </td>
+                          <td style={{ padding: "10px", fontWeight: 800, color: "#16a34a" }}>
+                            ⏱️ {ej.estructura.tiempoTotalMin} min
+                          </td>
+                          <td style={{ padding: "10px", color: "#7c3aed", fontWeight: 800 }}>
+                            {ej.perfilGps.playerLoadMin} PL
+                          </td>
+                          <td style={{ padding: "10px 14px", textAlign: "right" }}>
+                            <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
+                              <button
+                                type="button"
+                                onClick={() => setDetailEjercicio(ej)}
+                                style={{
+                                  background: "#f1f5f9",
+                                  border: "1px solid #cbd5e1",
+                                  padding: "4px 8px",
+                                  borderRadius: "4px",
+                                  fontSize: "11px",
+                                  fontWeight: 700,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                Ver
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingEjercicio(ej);
+                                  setModalEjercicioOpen(true);
+                                }}
+                                style={{
+                                  background: "#e0f2fe",
+                                  border: "1px solid #bae6fd",
+                                  color: "#0369a1",
+                                  padding: "4px 8px",
+                                  borderRadius: "4px",
+                                  fontSize: "11px",
+                                  fontWeight: 700,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                Editar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDelete(ej.id)}
+                                style={{
+                                  background: "#fef2f2",
+                                  border: "1px solid #fecaca",
+                                  color: "#dc2626",
+                                  padding: "4px 8px",
+                                  borderRadius: "4px",
+                                  fontSize: "11px",
+                                  fontWeight: 700,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                🗑️
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         )}
 
         {/* ========================================================================= */}
-        {/* TAB 2: CREADOR DE FICHA DE SESIÓN (ORDENACIÓN, BLOQUES, PDF)              */}
+        {/* TAB 2: CREADOR / GESTOR DE FICHA DE SESIÓN                                */}
         {/* ========================================================================= */}
         {activeTab === "sesion" && (
           <SesionFichaManager
@@ -1104,7 +1709,79 @@ export default function CampoPage() {
         )}
 
         {/* ========================================================================= */}
-        {/* TAB 3: CALCULADORA DE CARGA POR EJERCICIOS ANTERIORES & MD TARGETS        */}
+        {/* TAB 3: PIZARRA TÁCTICA LIBRE (DIBUJAR Y EXPORTAR)                         */}
+        {/* ========================================================================= */}
+        {activeTab === "pizarra" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            <div
+              style={{
+                background: "#ffffff",
+                borderRadius: "14px",
+                border: "1px solid #e2e8f0",
+                padding: "16px 20px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: "12px",
+              }}
+            >
+              <div>
+                <h3 style={{ fontSize: "16px", fontWeight: 900, color: "#0f172a", margin: "0 0 3px 0" }}>
+                  📐 Diseñador & Pizarra Táctica Libre
+                </h3>
+                <p style={{ fontSize: "12px", color: "#64748b", margin: 0 }}>
+                  Dibuja jugadas ensayadas, esquemas tácticos, sistemas de juego y descárgalos en imagen o guárdalos como nueva tarea.
+                </p>
+              </div>
+
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingEjercicio({
+                      id: `ej-${Date.now()}`,
+                      nombre: "Nueva Tarea desde Pizarra",
+                      categoria: "POSESION",
+                      dimensiones: { largoM: 40, anchoM: 30, m2Totales: 1200, m2PorJugador: 100 },
+                      jugadores: { atacantes: 6, defensores: 6, comodines: 0, porteros: 0, total: 12 },
+                      estructura: { series: 3, repsPorSerie: 1, tiempoTrabajoSeg: 240, tiempoDescansoSeg: 90, tiempoTotalMin: 12, ratioWR: "2.7:1" },
+                      consignas: { objetivoPrincipal: "Tarea diseñada en pizarra libre", reglasProvocacion: "", descripcion: "" },
+                      perfilGps: { ...BENCHMARKS_CATEGORIA_DEFECTO.POSESION },
+                      diagrama: freePitchData,
+                      creadoEn: new Date().toISOString(),
+                      actualizadoEn: new Date().toISOString(),
+                    });
+                    setModalEjercicioOpen(true);
+                  }}
+                  style={{
+                    background: "#0284c7",
+                    color: "#ffffff",
+                    border: "none",
+                    borderRadius: "8px",
+                    padding: "8px 16px",
+                    fontSize: "12px",
+                    fontWeight: 800,
+                    cursor: "pointer",
+                  }}
+                >
+                  💾 Convertir Pizarra en Ejercicio
+                </button>
+              </div>
+            </div>
+
+            <div style={{ background: "#ffffff", borderRadius: "14px", border: "1px solid #e2e8f0", padding: "16px" }}>
+              <TacticalPitchDesigner
+                initialData={freePitchData}
+                onChange={(data) => setFreePitchData(data)}
+                height={620}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB 4: CALCULADORA DE CARGA POR EJERCICIOS & TARGETS MD                   */}
         {/* ========================================================================= */}
         {activeTab === "calculadora" && (
           <CalculadoraCarga
@@ -1114,16 +1791,16 @@ export default function CampoPage() {
         )}
 
         {/* ========================================================================= */}
-        {/* TAB 4: SESIÓN CON DATOS GPS POST-SESIÓN (BBDD gps_datos)                  */}
+        {/* TAB 5: VINCULACIÓN POST-SESIÓN CON DISPOSITIVOS GPS                       */}
         {/* ========================================================================= */}
         {activeTab === "gps" && (
           <div>
             <div
               style={{
                 background: "#ffffff",
-                borderRadius: "12px",
+                borderRadius: "14px",
                 border: "1px solid #e2e8f0",
-                padding: "14px 18px",
+                padding: "16px 20px",
                 marginBottom: "16px",
                 display: "flex",
                 alignItems: "center",
@@ -1133,11 +1810,11 @@ export default function CampoPage() {
               }}
             >
               <div>
-                <h3 style={{ fontSize: "15px", fontWeight: 900, color: "#0f172a", margin: "0 0 3px 0" }}>
+                <h3 style={{ fontSize: "16px", fontWeight: 900, color: "#0f172a", margin: "0 0 3px 0" }}>
                   📡 Vinculación Post-Sesión con Dispositivos GPS (BBDD)
                 </h3>
-                <p style={{ fontSize: "11px", color: "#64748b", margin: 0 }}>
-                  Compara los metros, HSR, sprints y Player Load reales registrados con la planificación.
+                <p style={{ fontSize: "12px", color: "#64748b", margin: 0 }}>
+                  Compara los metros, HSR, sprints y Player Load reales registrados con la planificación de la sesión.
                 </p>
               </div>
 
@@ -1150,7 +1827,7 @@ export default function CampoPage() {
                   value={selectedGpsDate}
                   onChange={(e) => setSelectedGpsDate(e.target.value)}
                   style={{
-                    padding: "6px 12px",
+                    padding: "7px 12px",
                     borderRadius: "8px",
                     border: "1px solid #cbd5e1",
                     fontSize: "12px",
@@ -1172,7 +1849,11 @@ export default function CampoPage() {
         )}
       </main>
 
-      {/* MODAL CREADOR / EDITOR DE EJERCICIO CON PIZARRA TÁCTICA */}
+      {/* ========================================================================= */}
+      {/* MODALES GLOBALES                                                          */}
+      {/* ========================================================================= */}
+
+      {/* MODAL CREADOR / EDITOR DE EJERCICIO CON PIZARRA Y VÍDEO */}
       <EjercicioModal
         ejercicio={editingEjercicio}
         isOpen={modalEjercicioOpen}
@@ -1182,6 +1863,147 @@ export default function CampoPage() {
           setEditingEjercicio(null);
         }}
       />
+
+      {/* MODAL DETALLE / INSPECTOR DE EJERCICIO */}
+      <EjercicioDetailModal
+        ejercicio={detailEjercicio}
+        isOpen={Boolean(detailEjercicio)}
+        onClose={() => setDetailEjercicio(null)}
+        onEdit={(ej) => {
+          setEditingEjercicio(ej);
+          setModalEjercicioOpen(true);
+        }}
+        onDuplicate={handleDuplicate}
+      />
+
+      {/* MODAL REPRODUCTOR DE VÍDEO INTEGRADO */}
+      <VideoPlayerModal
+        isOpen={videoModalOpen}
+        onClose={() => setVideoModalOpen(false)}
+        videoUrl={activeVideoDrill?.url}
+        title={activeVideoDrill?.title || "Vídeo Demostrativo"}
+        categoryLabel={activeVideoDrill?.category}
+      />
+
+      {/* MODAL DE BACKUP / EXPORTACIÓN & IMPORTACIÓN JSON */}
+      {backupModalOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15, 23, 42, 0.75)",
+            backdropFilter: "blur(6px)",
+            zIndex: 9999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "16px",
+          }}
+          onClick={() => setBackupModalOpen(false)}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: "520px",
+              background: "#ffffff",
+              borderRadius: "16px",
+              padding: "24px",
+              border: "1px solid #e2e8f0",
+              boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
+              <h3 style={{ fontSize: "16px", fontWeight: 900, color: "#0f172a", margin: 0 }}>
+                ⚙️ Gestión de Base de Datos de Campo
+              </h3>
+              <button
+                type="button"
+                onClick={() => setBackupModalOpen(false)}
+                style={{ background: "none", border: "none", fontSize: "16px", cursor: "pointer", color: "#64748b" }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <p style={{ fontSize: "13px", color: "#64748b", margin: "0 0 20px 0" }}>
+              Actualmente tienes <strong>{ejercicios.length}</strong> ejercicios en tu base de datos persistente. Puedes descargar una copia de seguridad o restaurar tareas previas.
+            </p>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+              {/* EXPORTAR */}
+              <button
+                type="button"
+                onClick={handleExportJson}
+                style={{
+                  background: "#0284c7",
+                  color: "#ffffff",
+                  border: "none",
+                  borderRadius: "8px",
+                  padding: "12px 18px",
+                  fontSize: "13px",
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "8px",
+                }}
+              >
+                <span>📥 Descargar Copia de Seguridad JSON</span>
+              </button>
+
+              {/* IMPORTAR */}
+              <label
+                style={{
+                  background: "#f1f5f9",
+                  border: "1.5px dashed #cbd5e1",
+                  borderRadius: "8px",
+                  padding: "14px 18px",
+                  textAlign: "center",
+                  cursor: "pointer",
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  color: "#334155",
+                  display: "block",
+                }}
+              >
+                <span>📤 Importar Ejercicios desde Archivo JSON</span>
+                <input
+                  type="file"
+                  accept=".json"
+                  onChange={handleImportJson}
+                  style={{ display: "none" }}
+                />
+              </label>
+
+              {/* RESTABLECER A BASE */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm("¿Restablecer la biblioteca a los 5 ejercicios tácticos base? (No afectará a las copias de seguridad descargadas)")) {
+                    persistEjercicios(EJERCICIOS_BASE_INICIALES);
+                    setBackupModalOpen(false);
+                  }
+                }}
+                style={{
+                  background: "#fef2f2",
+                  border: "1px solid #fecaca",
+                  color: "#dc2626",
+                  borderRadius: "8px",
+                  padding: "10px",
+                  fontSize: "12px",
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  marginTop: "8px",
+                }}
+              >
+                ⚠️ Reiniciar Biblioteca a Ejercicios Base
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

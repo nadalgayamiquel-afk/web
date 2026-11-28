@@ -5362,6 +5362,206 @@ export async function saveCompetitiveProfileMatchesServer(
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// BASE DE DATOS DE EJERCICIOS Y SESIONES DE CAMPO (FÚTBOL)
+// ═══════════════════════════════════════════════════════════════════
+const CAMPO_EJERCICIOS_UUID = "00000000-0000-0000-0000-00000000000a";
+const CAMPO_SESIONES_UUID = "00000000-0000-0000-0000-00000000000b";
+
+export async function getCampoEjerciciosServer(): Promise<any[]> {
+  try {
+    const supabase = getServerSupabase();
+    // 1. Supabase db_testing
+    const { data: dbRow } = await supabase
+      .from("db_testing")
+      .select("data")
+      .eq("id", CAMPO_EJERCICIOS_UUID)
+      .eq("test_type_id", "campo_ejercicios")
+      .maybeSingle();
+
+    if (dbRow?.data && typeof dbRow.data === "object") {
+      const ejercicios = (dbRow.data as any).ejercicios;
+      if (Array.isArray(ejercicios)) {
+        return ejercicios;
+      }
+    }
+
+    // 2. configuracion_club
+    const { data: clubRow } = await supabase
+      .from("configuracion_club")
+      .select("config_json")
+      .eq("id", "default")
+      .maybeSingle();
+
+    if (clubRow?.config_json?.campoEjercicios && Array.isArray(clubRow.config_json.campoEjercicios)) {
+      return clubRow.config_json.campoEjercicios;
+    }
+
+    // 3. Archivo JSON local
+    const path = require("path");
+    const filePath = path.join(process.cwd(), "public", "campo_ejercicios.json");
+    if (fs.existsSync(filePath)) {
+      const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+      if (Array.isArray(parsed?.ejercicios)) {
+        return parsed.ejercicios;
+      }
+    }
+  } catch (e) {
+    console.error("Error al obtener ejercicios de campo del servidor:", e);
+  }
+  return [];
+}
+
+export async function saveCampoEjerciciosServer(
+  ejercicios: any[]
+): Promise<{ success: boolean; count: number }> {
+  try {
+    const valid = Array.isArray(ejercicios) ? ejercicios : [];
+    const payload = {
+      ejercicios: valid,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const supabase = getServerSupabase();
+    // 1. Supabase db_testing
+    await supabase.from("db_testing").upsert({
+      id: CAMPO_EJERCICIOS_UUID,
+      name: "Base de Datos de Ejercicios de Campo",
+      test_type_id: "campo_ejercicios",
+      structure: "CONFIG",
+      data: payload,
+    });
+
+    // 2. configuracion_club
+    try {
+      const { data: clubRow } = await supabase
+        .from("configuracion_club")
+        .select("config_json")
+        .eq("id", "default")
+        .maybeSingle();
+
+      const existingConfig = clubRow?.config_json || {};
+      await supabase.from("configuracion_club").upsert(
+        {
+          id: "default",
+          config_json: {
+            ...existingConfig,
+            campoEjercicios: valid,
+          },
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "id" }
+      );
+    } catch (e) {}
+
+    // 3. Guardar archivo local
+    try {
+      const path = require("path");
+      const filePath = path.join(process.cwd(), "public", "campo_ejercicios.json");
+      fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), "utf8");
+    } catch (e) {}
+
+    return { success: true, count: valid.length };
+  } catch (e) {
+    console.error("Error al guardar ejercicios de campo en servidor:", e);
+    return { success: false, count: 0 };
+  }
+}
+
+export async function getCampoSesionesServer(): Promise<any[]> {
+  try {
+    const supabase = getServerSupabase();
+    const { data: dbRow } = await supabase
+      .from("db_testing")
+      .select("data")
+      .eq("id", CAMPO_SESIONES_UUID)
+      .eq("test_type_id", "campo_sesiones")
+      .maybeSingle();
+
+    if (dbRow?.data && typeof dbRow.data === "object") {
+      const sesiones = (dbRow.data as any).sesiones;
+      if (Array.isArray(sesiones)) {
+        return sesiones;
+      }
+    }
+
+    const { data: clubRow } = await supabase
+      .from("configuracion_club")
+      .select("config_json")
+      .eq("id", "default")
+      .maybeSingle();
+
+    if (clubRow?.config_json?.campoSesiones && Array.isArray(clubRow.config_json.campoSesiones)) {
+      return clubRow.config_json.campoSesiones;
+    }
+
+    const path = require("path");
+    const filePath = path.join(process.cwd(), "public", "campo_sesiones.json");
+    if (fs.existsSync(filePath)) {
+      const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+      if (Array.isArray(parsed?.sesiones)) {
+        return parsed.sesiones;
+      }
+    }
+  } catch (e) {
+    console.error("Error al obtener sesiones de campo del servidor:", e);
+  }
+  return [];
+}
+
+export async function saveCampoSesionesServer(
+  sesiones: any[]
+): Promise<{ success: boolean; count: number }> {
+  try {
+    const valid = Array.isArray(sesiones) ? sesiones : [];
+    const payload = {
+      sesiones: valid,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const supabase = getServerSupabase();
+    await supabase.from("db_testing").upsert({
+      id: CAMPO_SESIONES_UUID,
+      name: "Fichas de Sesiones de Campo",
+      test_type_id: "campo_sesiones",
+      structure: "CONFIG",
+      data: payload,
+    });
+
+    try {
+      const { data: clubRow } = await supabase
+        .from("configuracion_club")
+        .select("config_json")
+        .eq("id", "default")
+        .maybeSingle();
+
+      const existingConfig = clubRow?.config_json || {};
+      await supabase.from("configuracion_club").upsert(
+        {
+          id: "default",
+          config_json: {
+            ...existingConfig,
+            campoSesiones: valid,
+          },
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "id" }
+      );
+    } catch (e) {}
+
+    try {
+      const path = require("path");
+      const filePath = path.join(process.cwd(), "public", "campo_sesiones.json");
+      fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), "utf8");
+    } catch (e) {}
+
+    return { success: true, count: valid.length };
+  } catch (e) {
+    console.error("Error al guardar sesiones de campo en servidor:", e);
+    return { success: false, count: 0 };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // MULTAS: CONFIGURACIÓN, BAREMOS Y REGISTRO OFICIAL
 // ═══════════════════════════════════════════════════════════════════
 const MULTAS_CONFIG_UUID = "00000000-0000-0000-0000-000000000005";

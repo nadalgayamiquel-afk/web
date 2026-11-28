@@ -10616,29 +10616,25 @@ export default function CargaExternaSection({
             alignItems: "center",
             justifyContent: "center",
             zIndex: 9999,
-            padding: "16px",
           }}
-          onClick={() => setSelectedPlayerForTarget(null)}
         >
           <div
             style={{
               background: "#ffffff",
-              borderRadius: "12px",
-              width: "100%",
-              maxWidth: "520px",
-              maxHeight: "90vh",
+              borderRadius: "16px",
+              width: "90%",
+              maxWidth: "600px",
+              maxHeight: "85vh",
               display: "flex",
               flexDirection: "column",
-              boxShadow: "0 20px 40px rgba(0,0,0,0.2)",
               overflow: "hidden",
+              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1)",
             }}
-            onClick={(e) => e.stopPropagation()}
           >
             <div
               style={{
                 padding: "16px 20px",
                 borderBottom: "1px solid #e2e8f0",
-                background: "#f8fafc",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",

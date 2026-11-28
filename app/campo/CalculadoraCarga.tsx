@@ -41,8 +41,7 @@ export default function CalculadoraCarga({
 
   // Añadir un ejercicio a la calculadora
   const handleAddDrill = (ej: CampoEjercicio) => {
-    const isBbdd = ej.id.startsWith("ej-bbdd-");
-    const pausaIncluida = ej.estructura.pausaIncluida !== undefined ? ej.estructura.pausaIncluida : isBbdd;
+    const pausaIncluida = ej.estructura.pausaIncluida !== undefined ? ej.estructura.pausaIncluida : false;
     const durTotal = ej.estructura.tiempoTotalMin || (ej.estructura.tiempoTrabajoSeg / 60) || 10;
     const trabajoMin = Math.round(durTotal * 10) / 10;
     const pausaMin = pausaIncluida ? 0 : Math.round((((ej.estructura.series || 1) - 1) * (ej.estructura.tiempoDescansoSeg || 0)) / 60 * 10) / 10;
@@ -591,9 +590,7 @@ export default function CalculadoraCarga({
           <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "6px" }}>
             {ejerciciosDB
               .filter((ej) => {
-                if (filterCat === "bbdd") {
-                  if (!ej.id.startsWith("ej-bbdd-")) return false;
-                } else if (filterCat !== "todas" && ej.categoria !== filterCat) {
+                if (filterCat !== "todas" && ej.categoria !== filterCat) {
                   return false;
                 }
                 if (filterQuery.trim()) {
@@ -607,13 +604,12 @@ export default function CalculadoraCarga({
                 return true;
               })
               .map((ej) => {
-                const isBbdd = ej.id.startsWith("ej-bbdd-");
                 return (
                   <div
                     key={ej.id}
                     style={{
-                      background: isBbdd ? "#f0fdf4" : "#f8fafc",
-                      border: `1px solid ${isBbdd ? "#bbf7d0" : "#e2e8f0"}`,
+                      background: "#f8fafc",
+                      border: "1px solid #e2e8f0",
                       borderRadius: "6px",
                       padding: "8px 10px",
                       display: "flex",
@@ -627,9 +623,9 @@ export default function CalculadoraCarga({
                         <span style={{ fontSize: "11.5px", fontWeight: 800, color: "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                           {ej.nombre}
                         </span>
-                        {isBbdd && (
-                          <span style={{ fontSize: "8.5px", fontWeight: 900, color: "#166534", background: "#dcfce7", padding: "1px 4px", borderRadius: "3px" }}>
-                            BBDD
+                        {ej.videoUrl && (
+                          <span style={{ fontSize: "9px", color: "#dc2626" }} title="Tiene vídeo">
+                            ▶️
                           </span>
                         )}
                       </div>

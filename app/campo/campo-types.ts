@@ -80,6 +80,7 @@ export interface CampoEjercicio {
   categoria: CampoCategoriaEjercicio;
   subcategoria?: string;
   faseJuego?: "ATAQUE" | "DEFENSA" | "TRANSICION_OF" | "TRANSICION_DEF" | "GLOBAL";
+  videoUrl?: string; // URL demostrativa (YouTube, Vimeo, MP4, Google Drive, etc.)
   
   // Dimensiones del espacio
   dimensiones: {
