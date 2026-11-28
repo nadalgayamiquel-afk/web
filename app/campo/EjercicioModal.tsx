@@ -230,7 +230,7 @@ export default function EjercicioModal({
           }}
         >
           {[
-            { id: "pizarra" as const, label: "🎨 Pizarra & Diseñador Táctico", icon: "📐" },
+            { id: "pizarra" as const, label: "🎨 Diseño Gráfico (Pizarra / Imagen / Plantilla)", icon: "📐" },
             {
               id: "video" as const,
               label: `🎥 Vídeo Demostrativo ${videoUrl.trim() ? "✓" : ""}`,

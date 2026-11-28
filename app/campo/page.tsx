@@ -18,6 +18,7 @@ import TacticalPitchDesigner from "./TacticalPitchDesigner";
 import SesionFichaManager from "./SesionFichaManager";
 import CalculadoraCarga from "./CalculadoraCarga";
 import SesionGpsAnalysis from "./SesionGpsAnalysis";
+import PitchGraphicView from "./PitchGraphicView";
 import { getVideoEmbedInfo } from "./campo-video-utils";
 import {
   getActiveJugadores,
@@ -1173,56 +1174,19 @@ export default function CampoPage() {
                         transition: "all 0.15s ease",
                       }}
                     >
-                      {/* MINIATURA PIZARRA TÁCTICA */}
+                      {/* MINIATURA PIZARRA TÁCTICA / IMAGEN */}
                       <div
                         onClick={() => setDetailEjercicio(ej)}
                         style={{
                           height: "175px",
                           background: "#044320",
                           position: "relative",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
                           borderBottom: "1px solid #e2e8f0",
                           cursor: "pointer",
+                          overflow: "hidden",
                         }}
                       >
-                        {/* Mini preview SVG */}
-                        <svg
-                          viewBox="0 0 100 100"
-                          style={{
-                            width: "100%",
-                            height: "100%",
-                            opacity: 0.92,
-                          }}
-                        >
-                          <rect x="4" y="4" width="92" height="92" fill="#0b5e2b" stroke="#ffffff" strokeWidth="1" strokeOpacity="0.45" rx="2" />
-                          <circle cx="50" cy="50" r="14" fill="none" stroke="#ffffff" strokeWidth="0.8" strokeOpacity="0.35" />
-                          <line x1="50" y1="4" x2="50" y2="96" stroke="#ffffff" strokeWidth="0.8" strokeOpacity="0.35" />
-
-                          {/* Elementos colocados */}
-                          {ej.diagrama?.elementos?.slice(0, 30).map((elem) => {
-                            if (elem.tipo === "balon") {
-                              return <circle key={elem.id} cx={elem.x} cy={elem.y} r="2.2" fill="#ffffff" stroke="#000000" strokeWidth="0.4" />;
-                            }
-                            if (elem.tipo === "cono" || elem.tipo === "seta") {
-                              return <circle key={elem.id} cx={elem.x} cy={elem.y} r="1.6" fill={elem.color || "#f97316"} />;
-                            }
-                            if (elem.tipo === "mini_porteria" || elem.tipo === "porteria") {
-                              return <rect key={elem.id} x={elem.x - 3} y={elem.y - 1.5} width="6" height="3" fill="#ffffff" stroke="#0f172a" strokeWidth="0.4" />;
-                            }
-                            return (
-                              <g key={elem.id}>
-                                <circle cx={elem.x} cy={elem.y} r="3" fill={elem.color || "#1e3a8a"} stroke="#ffffff" strokeWidth="0.6" />
-                                {elem.label && (
-                                  <text x={elem.x} y={elem.y + 1} fontSize="2.8" fontWeight="bold" fill="#ffffff" textAnchor="middle">
-                                    {elem.label}
-                                  </text>
-                                )}
-                              </g>
-                            );
-                          })}
-                        </svg>
+                        <PitchGraphicView diagrama={ej.diagrama} height="100%" />
 
                         {/* Badge Categoría arriba izquierda */}
                         <div
@@ -1548,6 +1512,7 @@ export default function CampoPage() {
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", textAlign: "left" }}>
                   <thead>
                     <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0", color: "#475569", fontSize: "11px", fontWeight: 800 }}>
+                      <th style={{ padding: "12px 10px", width: "52px" }}>Diseño</th>
                       <th style={{ padding: "12px 14px" }}>Nombre del Ejercicio</th>
                       <th style={{ padding: "12px 10px" }}>Categoría</th>
                       <th style={{ padding: "12px 10px" }}>Fase</th>
@@ -1571,6 +1536,22 @@ export default function CampoPage() {
                             transition: "background 0.15s ease",
                           }}
                         >
+                          <td style={{ padding: "8px 10px", width: "52px" }}>
+                            <div
+                              onClick={() => setDetailEjercicio(ej)}
+                              style={{
+                                width: "48px",
+                                height: "36px",
+                                borderRadius: "6px",
+                                overflow: "hidden",
+                                border: "1px solid #cbd5e1",
+                                cursor: "pointer",
+                                background: "#044320",
+                              }}
+                            >
+                              <PitchGraphicView diagrama={ej.diagrama} height="100%" />
+                            </div>
+                          </td>
                           <td style={{ padding: "10px 14px", fontWeight: 800, color: "#0f172a" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                               <span style={{ cursor: "pointer" }} onClick={() => setDetailEjercicio(ej)}>
@@ -1728,10 +1709,10 @@ export default function CampoPage() {
             >
               <div>
                 <h3 style={{ fontSize: "16px", fontWeight: 900, color: "#0f172a", margin: "0 0 3px 0" }}>
-                  📐 Diseñador & Pizarra Táctica Libre
+                  📐 Estudio Táctico & Pizarra (Vectorial / Imagen / Plantillas)
                 </h3>
                 <p style={{ fontSize: "12px", color: "#64748b", margin: 0 }}>
-                  Dibuja jugadas ensayadas, esquemas tácticos, sistemas de juego y descárgalos en imagen o guárdalos como nueva tarea.
+                  Diseña con césped profesional rayado, modo oscuro analista, sube imágenes de TacticalPad o aplica plantillas tácticas en 1 clic.
                 </p>
               </div>
 

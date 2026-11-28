@@ -47,8 +47,14 @@ export interface CampoFreeDrawPath {
   points: Array<{ x: number; y: number }>;
 }
 
+export type CampoGraphicMode = "tactical_pitch" | "uploaded_image" | "template_quick";
+export type CampoPitchTheme = "real_turf" | "dark_board" | "whiteboard" | "tactical_zones";
+
 export interface CampoDiagramaData {
   pitchType: CampoPitchType;
+  graphicMode?: CampoGraphicMode;
+  pitchTheme?: CampoPitchTheme;
+  imageUrl?: string; // Imagen subida o externa (TacticalPad, PowerPoint, foto de pizarra, etc.)
   elementos: CampoElementoGrafico[];
   trazosLibres?: CampoFreeDrawPath[];
   previewUrl?: string; // Data URL PNG para thumbnail

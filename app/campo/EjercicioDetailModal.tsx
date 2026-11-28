@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { CampoEjercicio } from "./campo-types";
 import { getVideoEmbedInfo } from "./campo-video-utils";
 import VideoPlayerModal from "./VideoPlayerModal";
+import PitchGraphicView from "./PitchGraphicView";
 
 interface EjercicioDetailModalProps {
   ejercicio: CampoEjercicio | null;
@@ -199,7 +200,7 @@ export default function EjercicioDetailModal({
             <div style={{ display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: "20px" }}>
               {/* COLUMNA IZQUIERDA: DIAGRAMA TÁCTICO & VÍDEO */}
               <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                {/* PIZARRA TÁCTICA */}
+                {/* PIZARRA TÁCTICA / IMAGEN */}
                 <div
                   style={{
                     background: "#044320",
@@ -209,45 +210,16 @@ export default function EjercicioDetailModal({
                     boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
                     aspectRatio: "4 / 3",
                     position: "relative",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
                   }}
                 >
-                  <svg viewBox="0 0 100 100" style={{ width: "100%", height: "100%" }}>
-                    <rect x="4" y="4" width="92" height="92" fill="#0b5e2b" stroke="#ffffff" strokeWidth="1" strokeOpacity="0.5" rx="3" />
-                    <circle cx="50" cy="50" r="14" fill="none" stroke="#ffffff" strokeWidth="0.8" strokeOpacity="0.4" />
-                    <line x1="50" y1="4" x2="50" y2="96" stroke="#ffffff" strokeWidth="0.8" strokeOpacity="0.4" />
-
-                    {ejercicio.diagrama?.elementos?.map((elem) => {
-                      if (elem.tipo === "balon") {
-                        return <circle key={elem.id} cx={elem.x} cy={elem.y} r="2.4" fill="#ffffff" stroke="#000000" strokeWidth="0.5" />;
-                      }
-                      if (elem.tipo === "cono" || elem.tipo === "seta") {
-                        return <circle key={elem.id} cx={elem.x} cy={elem.y} r="1.8" fill={elem.color || "#f97316"} />;
-                      }
-                      if (elem.tipo === "mini_porteria" || elem.tipo === "porteria") {
-                        return <rect key={elem.id} x={elem.x - 3} y={elem.y - 1.5} width="6" height="3" fill="#ffffff" stroke="#0f172a" strokeWidth="0.5" />;
-                      }
-                      return (
-                        <g key={elem.id}>
-                          <circle cx={elem.x} cy={elem.y} r="3.2" fill={elem.color || "#1e3a8a"} stroke="#ffffff" strokeWidth="0.7" />
-                          {elem.label && (
-                            <text x={elem.x} y={elem.y + 1} fontSize="3" fontWeight="bold" fill="#ffffff" textAnchor="middle">
-                              {elem.label}
-                            </text>
-                          )}
-                        </g>
-                      );
-                    })}
-                  </svg>
+                  <PitchGraphicView diagrama={ejercicio.diagrama} height="100%" />
 
                   <div
                     style={{
                       position: "absolute",
                       bottom: "8px",
                       right: "8px",
-                      background: "rgba(0,0,0,0.6)",
+                      background: "rgba(0,0,0,0.65)",
                       color: "#f8fafc",
                       fontSize: "10px",
                       fontWeight: 700,
